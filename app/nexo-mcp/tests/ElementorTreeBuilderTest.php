@@ -121,4 +121,28 @@ final class ElementorTreeBuilderTest extends TestCase {
 		$this->assertNull( $style['variants'][0]['custom_css'] );
 		$this->assertStringNotContainsString( 'body', (string) wp_json_encode( $tree ) );
 	}
+
+	public function test_los_ids_reservados_no_se_entregan(): void {
+		// El generador devuelve primero ids ya usados por el documento.
+		$queue   = array( 'aaaaaaa', 'bbbbbbb', 'ccccccc', 'ddddddd', 'eeeeeee' );
+		$builder = new ElementorTreeBuilder(
+			static function () use ( &$queue ): string {
+				return (string) array_shift( $queue );
+			}
+		);
+		$builder->reserve( array( 'aaaaaaa', 'bbbbbbb' ) );
+
+		$tree = $builder->build( array( array( 'type' => 'e-flexbox', 'elements' => array( array( 'type' => 'e-divider' ) ) ) ) );
+
+		$this->assertSame( 'ccccccc', $tree[0]['id'] );
+		$this->assertSame( 'ddddddd', $tree[0]['elements'][0]['id'] );
+	}
+
+	public function test_la_reserva_sobrevive_a_varias_construcciones(): void {
+		$builder = $this->builder();
+		$builder->reserve( array( '0000001', '0000003' ) );
+
+		$first = $builder->build( array( array( 'type' => 'e-divider' ) ) );
+		$this->assertSame( '0000002', $first[0]['id'] );
+	}
 }

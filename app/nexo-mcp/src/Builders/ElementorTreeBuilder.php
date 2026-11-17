@@ -35,12 +35,35 @@ final class ElementorTreeBuilder {
 	private array $used = array();
 
 	/**
+	 * Ids que no se pueden entregar: los que el documento de destino ya tiene.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $reserved = array();
+
+	/**
 	 * Construye el armador.
 	 *
 	 * @param callable|null $generator fn(): string. Por omisión, 7 dígitos hexadecimales aleatorios como los del editor.
 	 */
 	public function __construct( ?callable $generator = null ) {
 		$this->generator = $generator ?? static fn(): string => substr( bin2hex( random_bytes( 4 ) ), 0, 7 );
+	}
+
+	/**
+	 * Reserva ids que ya existen en el documento donde se insertará el árbol.
+	 *
+	 * Los ids nuevos nunca coinciden con ellos, ni en esta construcción ni en las
+	 * siguientes.
+	 *
+	 * @param array<int|string, mixed> $ids Ids existentes (valores o claves de un conjunto).
+	 */
+	public function reserve( array $ids ): self {
+		foreach ( $ids as $key => $value ) {
+			$this->reserved[ (string) ( is_string( $value ) ? $value : $key ) ] = true;
+		}
+
+		return $this;
 	}
 
 	/**
@@ -51,7 +74,7 @@ final class ElementorTreeBuilder {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function build( array $elements ): array {
-		$this->used = array();
+		$this->used = $this->reserved;
 		$out        = array();
 
 		foreach ( $elements as $node ) {
