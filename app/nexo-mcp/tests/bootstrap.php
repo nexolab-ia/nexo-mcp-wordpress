@@ -55,7 +55,15 @@ final class WP_Test_State {
 
 	public static int $user_id = 1;
 
+	/** Si es true, get_post() sirve copias cacheadas (como la caché de objetos de WordPress). */
+	public static bool $cache_posts = false;
+
+	/** @var array<int, WP_Post> */
+	public static array $post_cache = array();
+
 	public static function reset(): void {
+		self::$cache_posts = false;
+		self::$post_cache  = array();
 		self::$options   = array();
 		self::$caps      = array();
 		self::$posts     = array();
@@ -128,22 +136,88 @@ class WP_Post {
  * Doble de $wpdb: guarda las filas de auditoría.
  */
 final class WPDB_Test_Double {
-	public string $prefix = 'wp_';
+	public string $prefix  = 'wp_';
+	public string $options = 'wp_options';
 
 	public function insert( string $table, array $row, $format = null ) {
 		WP_Test_State::$audit[] = $row;
 		return 1;
 	}
 
+	/**
+	 * Sustituye %s y %d como el real (cadenas entre comillas y escapadas).
+	 */
 	public function prepare( string $sql, ...$args ): string {
-		return $sql;
+		if ( 1 === count( $args ) && is_array( $args[0] ) ) {
+			$args = $args[0];
+		}
+		return (string) preg_replace_callback(
+			'/%([sd])/',
+			static function ( array $m ) use ( &$args ) {
+				$value = array_shift( $args );
+				return 's' === $m[1] ? "'" . addslashes( (string) $value ) . "'" : (string) (int) $value;
+			},
+			$sql
+		);
 	}
 
 	public function get_results( $sql, $output = null ): array {
 		return array();
 	}
 
+	/**
+	 * Cadenas entre comillas de una sentencia, ya sin escapes.
+	 *
+	 * @return list<string>
+	 */
+	private function strings( string $sql ): array {
+		preg_match_all( "/'((?:[^'\\\\]|\\\\.)*)'/", $sql, $m );
+		return array_map( 'stripslashes', $m[1] );
+	}
+
+	/**
+	 * Lectura directa de una opción (sin caché), como la haría la base.
+	 */
+	public function get_var( $sql ) {
+		if ( ! str_contains( (string) $sql, 'SELECT option_value' ) ) {
+			return null;
+		}
+		$name = $this->strings( (string) $sql )[0] ?? '';
+		return array_key_exists( $name, WP_Test_State::$options ) ? WP_Test_State::$options[ $name ] : null;
+	}
+
+	/**
+	 * Sólo entiende las sentencias de opciones que usa el bloqueo; devuelve filas afectadas.
+	 */
 	public function query( $sql ) {
+		$sql = (string) $sql;
+		$q   = $this->strings( $sql );
+
+		if ( str_starts_with( $sql, 'INSERT IGNORE INTO' ) && str_contains( $sql, 'options' ) ) {
+			if ( array_key_exists( $q[0], WP_Test_State::$options ) ) {
+				return 0;
+			}
+			WP_Test_State::$options[ $q[0] ] = $q[1];
+			return 1;
+		}
+
+		if ( str_starts_with( $sql, 'UPDATE' ) && str_contains( $sql, 'options' ) ) {
+			// UPDATE options SET option_value = new WHERE option_name = name AND option_value = old.
+			if ( ( WP_Test_State::$options[ $q[1] ] ?? null ) !== $q[2] ) {
+				return 0;
+			}
+			WP_Test_State::$options[ $q[1] ] = $q[0];
+			return 1;
+		}
+
+		if ( str_starts_with( $sql, 'DELETE FROM' ) && str_contains( $sql, 'options' ) ) {
+			if ( ( WP_Test_State::$options[ $q[0] ] ?? null ) !== $q[1] ) {
+				return 0;
+			}
+			unset( WP_Test_State::$options[ $q[0] ] );
+			return 1;
+		}
+
 		return 0;
 	}
 
@@ -238,7 +312,14 @@ function get_post( $post = null ) {
 	if ( $post instanceof WP_Post ) {
 		return $post;
 	}
-	return WP_Test_State::$posts[ (int) $post ] ?? null;
+	$id = (int) $post;
+	if ( WP_Test_State::$cache_posts && isset( WP_Test_State::$posts[ $id ] ) ) {
+		// Como `WP_Post::get_instance()`: la primera lectura cachea y las siguientes
+		// devuelven lo cacheado hasta que alguien limpia la caché del contenido.
+		WP_Test_State::$post_cache[ $id ] ??= clone WP_Test_State::$posts[ $id ];
+		return WP_Test_State::$post_cache[ $id ];
+	}
+	return WP_Test_State::$posts[ $id ] ?? null;
 }
 function maybe_serialize( $data ) {
 	return is_array( $data ) || is_object( $data ) ? serialize( $data ) : $data;
@@ -300,10 +381,23 @@ function delete_post_meta( $post_id, $key, $value = '' ): bool {
 	unset( WP_Test_State::$meta[ (int) $post_id ][ $key ] );
 	return true;
 }
+function wp_cache_delete( $key, $group = '' ): bool {
+	if ( 'posts' === $group ) {
+		unset( WP_Test_State::$post_cache[ (int) $key ] );
+	}
+	return true;
+}
 function wp_update_post( $data, $wp_error = false ) {
 	$id = (int) ( $data['ID'] ?? 0 );
 	if ( ! isset( WP_Test_State::$posts[ $id ] ) ) {
 		return new WP_Error( 'invalid_post', 'No existe.' );
+	}
+	// Como el real: parte de `get_post()` (posible copia cacheada) y escribe todos los campos.
+	if ( WP_Test_State::$cache_posts ) {
+		foreach ( get_object_vars( get_post( $id ) ) as $key => $value ) {
+			WP_Test_State::$posts[ $id ]->$key = $value;
+		}
+		unset( WP_Test_State::$post_cache[ $id ] );
 	}
 	foreach ( $data as $key => $value ) {
 		if ( 'ID' !== $key ) {

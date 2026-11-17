@@ -205,6 +205,18 @@ final class BuilderGateway {
 			return $post;
 		}
 
+		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->update_node_text_locked( $fresh, $input ) );
+	}
+
+	/**
+	 * Versión de update_node_text con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post             $post  Contenido ya resuelto.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update_node_text_locked( \WP_Post $post, array $input ) {
 		$adapter = $this->registry->resolve( $post );
 
 		if ( null === $adapter ) {
@@ -309,6 +321,18 @@ final class BuilderGateway {
 			return $post;
 		}
 
+		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->update_node_attribute_locked( $fresh, $input ) );
+	}
+
+	/**
+	 * Versión de update_node_attribute con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post             $post  Contenido ya resuelto.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update_node_attribute_locked( \WP_Post $post, array $input ) {
 		$adapter = $this->registry->resolve( $post );
 
 		if ( null === $adapter ) {
@@ -417,6 +441,18 @@ final class BuilderGateway {
 			return $post;
 		}
 
+		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->edit_structure_locked( $fresh, $input ) );
+	}
+
+	/**
+	 * Versión de edit_structure con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post             $post  Contenido ya resuelto.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function edit_structure_locked( \WP_Post $post, array $input ) {
 		$adapter = $this->registry->resolve( $post );
 
 		if ( ! $adapter instanceof StructureAdapter ) {
@@ -518,6 +554,17 @@ final class BuilderGateway {
 			return $post;
 		}
 
+		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->restore_backup_locked( $fresh ) );
+	}
+
+	/**
+	 * Versión de restore_backup con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post $post Contenido ya resuelto.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function restore_backup_locked( \WP_Post $post ) {
 		$locked = $this->locked_by_other( $post );
 
 		if ( is_wp_error( $locked ) ) {
@@ -557,6 +604,32 @@ final class BuilderGateway {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Corre una escritura bajo el bloqueo del original del contenido.
+	 *
+	 * Las ediciones por el ID de la copia y por el del original compiten por el
+	 * mismo bloqueo. Si está ocupado no se escribe nada ({@see WorkingCopy::with_lock()}).
+	 *
+	 * @param \WP_Post $post Contenido indicado.
+	 * @param callable $work  Escritura: fn( \WP_Post $fresco ): array|\WP_Error.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function locked( \WP_Post $post, callable $work ) {
+		return WorkingCopy::with_lock(
+			(int) $post->ID,
+			static function () use ( $post, $work ) {
+				// El árbol del constructor vive en `post_meta` y el objeto recibido se
+				// leyó antes de esperar: dentro del bloqueo se relee todo.
+				$fresh = get_post( $post->ID );
+
+				return $fresh instanceof \WP_Post
+					? $work( $fresh )
+					: new \WP_Error( 'nexo_mcp_builder_not_found', __( 'El contenido no existe.', 'nexo-mcp' ) );
+			}
+		);
 	}
 
 	/**

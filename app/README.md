@@ -119,7 +119,14 @@ Reglas que siempre se cumplen:
   (desde la lista de páginas/entradas o con `set-content-status`).
   Antes de publicarla, `get-working-copy-diff` muestra qué cambió respecto al
   original (título, extracto, diff del contenido, metadatos, términos) y si
-  el original cambió desde que se creó la copia.
+  el original cambió desde que se creó la copia. Las escrituras que leen y
+  reescriben un contenido (crear la copia, `update-page`/`update-post`,
+  `edit-elementor-section`, las herramientas de constructor, publicar y
+  descartar) corren bajo un bloqueo por original en la base de datos
+  (`nexo_mcp_lock_<id>` en `wp_options`, con vencimiento de 30 s): dos
+  ediciones simultáneas nunca crean dos copias ni se pisan. Si el bloqueo no
+  se obtiene tras ~5 s, la herramienta responde «Otra edición de este
+  contenido está en curso. Reintentá en unos segundos.» y no escribe nada.
 - **Elementor 4 (atómicos)**: `get-page-structure` lee los elementos atómicos
   (`e-heading`, `e-paragraph`, `e-button`, `e-flexbox`…) con su texto y sus
   clases; `get-design-system` lista las clases globales, las variables y los

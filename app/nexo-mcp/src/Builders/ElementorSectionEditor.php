@@ -112,6 +112,33 @@ final class ElementorSectionEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function edit( \WP_Post $post, array $input ) {
+		// Todo el ciclo (leer el árbol, empalmar, crear la copia, guardar) corre bajo
+		// el bloqueo del original: sin él, dos ediciones leen el mismo árbol y una
+		// pisa a la otra, o ambas crean su copia. Si está ocupado no se escribe nada.
+		return WorkingCopy::with_lock(
+			(int) $post->ID,
+			function () use ( $post, $input ) {
+				// El objeto recibido se leyó antes de esperar el bloqueo: se relee.
+				$fresh = get_post( $post->ID );
+
+				if ( ! $fresh instanceof \WP_Post ) {
+					return new \WP_Error( 'nexo_mcp_builder_not_found', __( 'El contenido no existe.', 'nexo-mcp' ) );
+				}
+
+				return $this->edit_locked( $fresh, $input );
+			}
+		);
+	}
+
+	/**
+	 * Aplica la operación ya con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post             $post  Contenido indicado.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function edit_locked( \WP_Post $post, array $input ) {
 		if ( ! $this->adapter->handles( $post ) ) {
 			return new \WP_Error(
 				'nexo_mcp_elementor_not_elementor',
