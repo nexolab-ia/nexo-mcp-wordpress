@@ -17,12 +17,13 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
   - `prueba_adaptadores.sh`: guardar el estado «sin variables» con un centinela explícito y abortar si la captura falla, para no borrar las variables del sitio al restaurar.
   - `prueba_punta_a_punta.py` paso 10: avisar en la salida cuando se saltea por falta de `mcp:publish`, y comprobar `isError` del `update-post` antes de leerlo.
 - S5. Avisos de la review nativa de T1 (L5): (a) las cuatro herramientas de constructor no tienen test del bloqueo (busy sin escribir, liberación, relectura dentro del bloqueo) → se cubren en T2; (b) `ElementorSectionEditorTest` baja `PostLock::$wait` sin restaurarlo en `tearDown` → T2; (c) sin renovación del bloqueo: antes de escribir, comprobar que el bloqueo sigue siendo propio (si venció y otro lo tomó, no escribir y responder busy) y registrar en el log de auditoría las tomas de bloqueos vencidos → T3.
+- S6. Avisos de la review nativa de T2 (L7): (a) `restore-builder-backup` con el id de una página publicada que ya tiene copia debe deshacer la última edición de la copia (restaurar el respaldo de la copia), igual que con el id de la copia; sólo si no hay copia usa el respaldo del original y lo restaura en una copia nueva; (b) restaurar dos veces seguidas (reintento) no puede perder las ediciones de la copia: restaurar el respaldo propio de la copia no captura antes de escribir (como antes de T2), y restaurar el del original en una copia nueva no tiene ediciones que perder; (c) test de la vuelta atrás de las cuatro herramientas de constructor cuando falla el respaldo o el guardado después de crear la copia (no queda copia huérfana).
 
 ## Tasks
 
 - [x] T1 (S2) Bloqueo por original en `WorkingCopy::obtain()` y en las escrituras de constructor; test de concurrencia. Ruta: worker + verify (Risk: item 4, concurrencia). Commit propio. Commit: a9e0a02
-- [x] T2 (S3, S5a, S5b) Herramientas de constructor viejas a la copia de trabajo. Ruta: worker (Risk: item 3, cambia el comportamiento de herramientas existentes). Commit: —
-- [ ] T3 (S4, S5c) Avisos menores. Ruta: worker. Commit: —
+- [x] T2 (S3, S5a, S5b) Herramientas de constructor viejas a la copia de trabajo. Ruta: worker (Risk: item 3, cambia el comportamiento de herramientas existentes). Commit: 221e8f8
+- [ ] T3 (S4, S5c, S6) Avisos menores. Ruta: worker. Commit: —
 
 ## Log
 
@@ -51,3 +52,4 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
   - E2E (`tools/prueba_adaptadores.sh`, bloque nuevo «Herramientas de constructor viejas», 6/6): las cuatro sobre publicada → copia creada, `_elementor_data` del original idéntico, `get-working-copy-diff` nombra la copia, por el id de la copia no crea otra, publicar fusiona; restaurar sobre publicada tras una fusión (restaura en la copia, original intacto, por la copia se deshace); borrador → en su sitio con los campos de siempre; 7 rechazos (nodo, atributo, valor, destino que no cabe, sin respaldo) sin copia ni respaldo ni página nueva. Los chequeos existentes del `.py` (update-node-text/attribute/restore) ya corrían sobre un borrador, así que siguen intactos y cubren el camino en su sitio; no hizo falta tocar `prueba_reglas.sh` ni `prueba_punta_a_punta.py`.
   - Después del último cambio de código: PHPUnit 312 pruebas, 1319 aserciones OK; PHPCS 0; PHPStan sin errores; `prueba_adaptadores.sh` exit 0 (0 FALLA); `prueba_reglas.sh` exit 0.
   - Pendiente del padre: línea de changelog bajo `= 1.2.1 =` en `readme.txt` (no se tocó) y verificación independiente (Risk: item 3).
+- L7 (2026-11-17): review nativa de 221e8f8 (riesgo + fiabilidad) aprobada con avisos sobre la semántica de deshacer por el id del original, la restauración repetida y la vuelta atrás sin test. Pasan a S6.
