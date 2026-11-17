@@ -19,22 +19,25 @@ count_live() {
 }
 
 original="$(wp option get nexo_mcp_settings --format=json)"
+[ -n "$original" ] || { echo "FALLA: no se pudieron leer los ajustes"; exit 1; }
+# Ajustes de partida con cambios puntuales (un sitio recién instalado arranca
+# en «Solo revisar»: cada modo fija lo que necesita y al final se restaura).
+with_settings() { printf '%s' "$original" | python3 -I -c "import json,sys; s=json.load(sys.stdin); s.update($1); print(json.dumps(s))"; }
 restore() { wp option update nexo_mcp_settings "$original" --format=json >/dev/null; echo "Ajustes restaurados."; }
 trap restore EXIT
 
 echo "### 1. Modo «Solo revisar»"
 title_ro="Prueba solo lectura $RANDOM$RANDOM"
-read_only_json="$(printf '%s' "$original" | python3 -I -c 'import json,sys; s=json.load(sys.stdin); s["read_only"]=True; print(json.dumps(s))')"
-wp option update nexo_mcp_settings "$read_only_json" --format=json >/dev/null
+wp option update nexo_mcp_settings "$(with_settings 'read_only=True')" --format=json >/dev/null
 python3 -I tools/prueba_punta_a_punta.py --solo-lectura --titulo "$title_ro"
 live="$(count_live "$title_ro")"
 [ "$live" = "0" ] || { echo "FALLA: «Solo revisar» dejó $live post(s) creados"; exit 1; }
 echo "OK: no se creó ningún post en «Solo revisar»."
-restore
-trap - EXIT
 
 echo
 echo "### 2. Modo edición con limpieza"
+edit="read_only=False, drafts_only=False, content_tools_enabled=True, publishing_enabled=True, working_copy_default=True"
+wp option update nexo_mcp_settings "$(with_settings "$edit")" --format=json >/dev/null
 title_rw="Prueba edición $RANDOM$RANDOM"
 output="$(python3 -I tools/prueba_punta_a_punta.py --titulo "$title_rw")" || { printf '%s\n' "$output"; exit 1; }
 printf '%s\n' "$output"

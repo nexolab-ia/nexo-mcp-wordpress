@@ -61,7 +61,8 @@ jobs:
       # El docker monta nexo-mcp/ tal cual: necesita vendor/ de producción.
       - name: Dependencias de producción del plugin
         run: |
-          docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 \
+          docker run --rm --user "$(id -u):$(id -g)" -e COMPOSER_HOME=/tmp/composer \
+            -v "$PWD/nexo-mcp":/app -w /app composer:2 \
             install --no-dev --no-scripts --no-plugins --no-interaction --no-progress
 
       - name: Levantar WordPress 6.9 + MySQL 8 + WooCommerce

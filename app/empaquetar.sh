@@ -50,7 +50,10 @@ tar -C "$PLUGIN" \
 	-cf - . | tar -C "$BUILD/nexo-mcp" -xf -
 
 echo "Instalando dependencias de producción (composer install --no-dev --no-scripts --no-plugins)…"
-docker run --rm -v "$BUILD/nexo-mcp":/app -w /app composer:2 \
+# Con el usuario actual: en Linux, archivos creados por root no se podrían
+# borrar después al limpiar la carpeta temporal.
+docker run --rm --user "$(id -u):$(id -g)" -e COMPOSER_HOME=/tmp/composer \
+	-v "$BUILD/nexo-mcp":/app -w /app composer:2 \
 	install --no-dev --no-scripts --no-plugins --no-interaction --no-progress --optimize-autoloader
 
 mkdir -p dist
