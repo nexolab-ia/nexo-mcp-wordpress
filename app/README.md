@@ -16,7 +16,7 @@ distribuye bajo **GPL-2.0-or-later** (ver `nexo-mcp/NOTICE.md`).
 | `docker-compose.yml` | WordPress 6.9 + MySQL 8 + WooCommerce con el plugin montado. Funciona con Docker Desktop y OrbStack. |
 | `docker/setup.sh` | Instalación inicial automática del WordPress de prueba. |
 | `tools/prueba_punta_a_punta.py` | Prueba real de conectar → autorizar OAuth → usar herramientas. |
-| `empaquetar.sh` | Genera `dist/nexo-mcp.zip`. |
+| `empaquetar.sh` | Genera `dist/nexo-mcp-<versión>.zip` y comprueba versión, changelog y contenido. |
 | `EQUIVALENCIAS.md` | Tabla clase original → clase nueva → estado. |
 | `shots/` | Capturas del panel. |
 
@@ -226,11 +226,20 @@ que editar una página publicada crea una copia de trabajo y que
 
 ```sh
 cd app
-./empaquetar.sh        # deja dist/nexo-mcp.zip
+./empaquetar.sh        # deja dist/nexo-mcp-<versión>.zip
 ```
 
-O comprime directamente la carpeta `nexo-mcp/` (ya trae `vendor/` de
-producción). Se instala desde **Plugins › Añadir plugin › Subir plugin**.
+El script se detiene si la versión no coincide entre la cabecera `Version:`,
+la constante `NEXO_MCP_VERSION` y el `Stable tag:` de `readme.txt`, o si
+`readme.txt` no tiene la entrada de esa versión en `== Changelog ==`. El zip
+no lleva pruebas ni configuración de desarrollo (PHPUnit, PHPCS, PHPStan), y
+el script lo revisa antes de terminar.
+
+**Publicar una versión nueva:** sube el número en los tres lugares, agrega su
+entrada al changelog de `readme.txt` y corre `./empaquetar.sh`.
+
+No conviene comprimir la carpeta `nexo-mcp/` a mano: llevaría los archivos de
+desarrollo. Se instala desde **Plugins › Añadir plugin › Subir plugin**.
 
 Requisitos del sitio: WordPress 6.9 o superior (Abilities API), PHP 8.1 o
 superior, HTTPS. WooCommerce es opcional.

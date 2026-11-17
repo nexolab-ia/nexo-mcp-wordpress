@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.0.1 =
+* Al descartar una copia de trabajo, ahora va a la papelera y se puede recuperar (antes se borraba de forma permanente).
+* Seguridad: se eliminó un método público que permitía fijar el contexto de autenticación sin un token.
+* Calidad: PHPCS (estándares de WordPress), PHPStan nivel 5 y Plugin Check; nuevas pruebas de punta a punta con Yoast SEO, ACF y Elementor.
+* Se quitó la cabecera Domain Path, que apuntaba a una carpeta inexistente.
 
 = 1.0.0 =
 * Primera versión de Nexo MCP, derivada de MCP Prisma 0.34.1.
