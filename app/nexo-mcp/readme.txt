@@ -31,7 +31,7 @@ Nexo MCP es una obra derivada del plugin «MCP Prisma» de SICS (GPL-2.0-or-late
 3. En la pestaña Conectar elige tu cliente y copia la instrucción.
 4. Autoriza la conexión en el navegador cuando el cliente te lo pida.
 
-Para instalar desde el código fuente: `composer install --no-dev --no-scripts --optimize-autoloader`.
+Para instalar desde el código fuente: `composer install --no-dev --no-scripts --no-plugins --optimize-autoloader`.
 
 = Servicio de licencias (opcional) =
 

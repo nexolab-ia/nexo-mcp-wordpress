@@ -44,7 +44,16 @@ out="$(check)"
 errors="$(printf '%s\n' "$out" | awk -F, '$3 == "ERROR" { print $4 }')"
 warnings="$(printf '%s\n' "$out" | awk -F, '$3 == "WARNING" { n++ } END { print n + 0 }')"
 
+# Sin ninguna fila de hallazgos el resultado no es confiable: la carpeta de
+# desarrollo siempre dispara al menos application_detected (ver ALLOWED).
+if [ -z "$errors" ] && [ "$warnings" -eq 0 ]; then
+	echo "FALLA: la salida de Plugin Check no trae hallazgos reconocibles:" >&2
+	printf '%s\n' "$out" | head -5 >&2
+	exit 1
+fi
+
 failed=0
+accepted=0
 while IFS= read -r code; do
 	[ -z "$code" ] && continue
 	skip=0
@@ -54,9 +63,11 @@ while IFS= read -r code; do
 	if [ "$skip" -eq 0 ]; then
 		echo "ERROR no permitido: $code" >&2
 		failed=1
+	else
+		accepted=$((accepted + 1))
 	fi
 done <<<"$errors"
 
-echo "Errores aceptados (solo directorio): $(printf '%s\n' "$errors" | grep -c . || true)"
+echo "Errores aceptados (solo directorio): $accepted"
 echo "Avisos restantes: $warnings"
 exit "$failed"

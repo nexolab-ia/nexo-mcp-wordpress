@@ -149,7 +149,7 @@ con las listas `ABILITIES` que publica el servidor.
 ```sh
 cd app
 docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 sh -c \
-  "composer install --no-scripts -q && vendor/bin/phpunit; composer install --no-dev --no-scripts -q"
+  "composer install --no-scripts --no-plugins -q && vendor/bin/phpunit; composer install --no-dev --no-scripts --no-plugins -q"
 ```
 
 (La última parte deja `vendor/` otra vez sin las dependencias de prueba.)
