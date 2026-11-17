@@ -1,0 +1,17 @@
+[package]
+name = "nexo-mcp-verificador"
+version = "1.0.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Verificador de escritorio de Nexo MCP: comprueba que un sitio WordPress con el plugin responda (endpoint MCP, descubrimiento OAuth, PKCE, registro dinámico)."
+publish = false
+
+[[bin]]
+name = "nexo-mcp-verificador"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.37"
+ureq = "2.12"
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -1,0 +1,16 @@
+# OS / editor
+.DS_Store
+
+# Build artifacts
+app/target/
+app/dist/
+app/shots/
+
+# Dependencies (rebuilt with composer install --no-scripts)
+app/nexo-mcp/vendor/
+
+# Craft/agent session data (large, local)
+agent-session.jsonl
+build-activity.log
+usage.json
+inbox/

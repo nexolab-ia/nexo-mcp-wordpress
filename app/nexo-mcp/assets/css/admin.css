@@ -1,0 +1,2405 @@
+/*
+ * Panel del conector con la identidad Nexo.
+ *
+ * Todo cuelga de .nexo-mcp-admin (la pantalla) o .nexo-mcp-secret-dialog
+ * (el diálogo, que vive fuera del contenedor) para no tocar el resto de
+ * wp-admin. Tipografía Inter local: nada se pide a servidores externos.
+ */
+
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400 600;
+	font-display: swap;
+	src: url("../fonts/inter-latin.woff2") format("woff2");
+}
+
+/* ------------------------------------------------------------------ Tokens */
+
+.nexo-mcp-admin,
+.nexo-mcp-secret-dialog {
+	--nexo-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--nexo-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+	--nexo-fg: #121212;
+	--nexo-fg-soft: #3a3a3a;
+	--nexo-bg: #fff;
+	--nexo-muted: #f5f5f5;
+	--nexo-muted-soft: #fafafa;
+	--nexo-muted-fg: #6e6e6e;
+	--nexo-muted-fg-strong: #5c5c5c;
+	--nexo-border: #ebebeb;
+	--nexo-input: #d9d9d9;
+	--nexo-ok: #047857;
+	--nexo-ok-dot: #10b981;
+	--nexo-ok-bg: #e7f7f2;
+	--nexo-ok-line: #b7eada;
+	--nexo-warn: #b45309;
+	--nexo-warn-dot: #f59e0b;
+	--nexo-warn-bg: #fef5e7;
+	--nexo-warn-soft: #fffaf3;
+	--nexo-warn-line: #fce2b6;
+	--nexo-err: #dc2626;
+	--nexo-err-text: #b91c1c;
+	--nexo-err-bg: #fce9e9;
+	--nexo-err-soft: #fdf4f4;
+	--nexo-err-line: #f5bebe;
+	--nexo-radius: 16px;
+	--nexo-radius-md: 12px;
+	--nexo-gradient: linear-gradient(90deg, #22d3ee 0%, #3b82f6 35%, #6366f1 65%, #14b8a6 100%);
+	--nexo-hover: linear-gradient(120deg, #1e3a8a 0%, #4338ca 50%, #0f766e 100%);
+	--nexo-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.08);
+	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #121212;
+}
+
+/* -------------------------------------------------------------------- Base */
+
+.nexo-mcp-admin {
+	max-width: 1200px;
+	margin: 24px 20px 48px 2px;
+	color: var(--nexo-fg);
+	font-family: var(--nexo-font);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+}
+
+.nexo-mcp-admin *,
+.nexo-mcp-admin *::before,
+.nexo-mcp-admin *::after,
+.nexo-mcp-secret-dialog *,
+.nexo-mcp-secret-dialog *::before,
+.nexo-mcp-secret-dialog *::after {
+	box-sizing: border-box;
+}
+
+.nexo-mcp-admin button,
+.nexo-mcp-admin input,
+.nexo-mcp-admin select,
+.nexo-mcp-admin textarea,
+.nexo-mcp-secret-dialog button,
+.nexo-mcp-secret-dialog input,
+.nexo-mcp-secret-dialog textarea {
+	font-family: var(--nexo-font);
+}
+
+/* Los estilos de componentes no deben ganarle al atributo hidden. */
+.nexo-mcp-admin [hidden],
+.nexo-mcp-secret-dialog [hidden] {
+	display: none !important;
+}
+
+.nexo-mcp-admin p {
+	font-size: 14px;
+}
+
+.nexo-mcp-admin code,
+.nexo-mcp-secret-dialog code {
+	font-family: var(--nexo-mono);
+}
+
+.nexo-mcp-admin a {
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-admin a:focus,
+.nexo-mcp-admin summary:focus {
+	box-shadow: none;
+	outline: none;
+}
+
+.nexo-mcp-admin a:focus-visible,
+.nexo-mcp-admin summary:focus-visible {
+	border-radius: 6px;
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-icon {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 2;
+}
+
+.nexo-mcp-muted {
+	margin: 0;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-admin .description {
+	margin: 16px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-style: normal;
+}
+
+/* ------------------------------------------------------------------ Header */
+
+.nexo-mcp-header {
+	position: relative;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 24px;
+	padding: 32px;
+	overflow: hidden;
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-fg);
+	color: #fff;
+}
+
+.nexo-mcp-header::after {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	height: 4px;
+	background: var(--nexo-gradient);
+	content: "";
+}
+
+.nexo-mcp-admin .nexo-mcp-header__brand {
+	margin: 0;
+	padding: 0;
+	line-height: 0;
+}
+
+.nexo-mcp-header__brand img {
+	display: block;
+	width: auto;
+	height: 32px;
+}
+
+.nexo-mcp-admin .nexo-mcp-header__meta {
+	margin: 0;
+	text-align: right;
+}
+
+.nexo-mcp-header__meta span {
+	display: block;
+	font-size: 10px;
+	letter-spacing: 0.18em;
+	opacity: 0.6;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-header__meta strong {
+	font-size: 18px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .wp-header-end {
+	margin: 0;
+	border: 0;
+}
+
+.nexo-mcp-admin > .notice,
+.nexo-mcp-admin > .settings-error {
+	margin: 16px 0 0;
+}
+
+/* -------------------------------------------------------------------- Tabs */
+
+.nexo-mcp-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	margin: 24px 0;
+	padding: 4px;
+	border-radius: var(--nexo-radius-md);
+	background: rgba(0, 0, 0, 0.05);
+}
+
+.nexo-mcp-admin .nexo-mcp-tab {
+	display: inline-flex;
+	align-items: center;
+	padding: 6px 12px;
+	border-radius: 9px;
+	color: var(--nexo-muted-fg-strong);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.5;
+	text-decoration: none;
+	white-space: nowrap;
+	transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nexo-mcp-admin .nexo-mcp-tab:hover {
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-admin .nexo-mcp-tab[aria-current="page"] {
+	background: var(--nexo-bg);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-admin .nexo-mcp-tab:focus-visible {
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-tabpanel {
+	display: grid;
+	gap: 24px;
+}
+
+/* ------------------------------------------------------------------- Cards */
+
+.nexo-mcp-card {
+	min-width: 0;
+	padding: 24px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+	transition: box-shadow 0.2s ease;
+}
+
+.nexo-mcp-card:hover {
+	box-shadow: var(--nexo-shadow);
+}
+
+.nexo-mcp-card__head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 20px;
+}
+
+.nexo-mcp-card__head > div {
+	min-width: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-eyebrow,
+.nexo-mcp-secret-dialog .nexo-mcp-eyebrow {
+	margin: 0 0 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	line-height: 1.4;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-admin .nexo-mcp-card__title {
+	margin: 0;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.3;
+}
+
+.nexo-mcp-admin .nexo-mcp-card__lead {
+	max-width: 68ch;
+	margin: 6px 0 0;
+	color: var(--nexo-muted-fg);
+}
+
+/* -------------------------------------------------------------------- Tags */
+
+.nexo-mcp-tag,
+.nexo-mcp-event,
+.nexo-mcp-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	border: 1px solid var(--nexo-border);
+	border-radius: 999px;
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-font);
+	font-size: 11px;
+	font-style: normal;
+	font-weight: 500;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+
+.nexo-mcp-tag--ok,
+.nexo-mcp-event--success,
+.nexo-mcp-status--online {
+	border-color: var(--nexo-ok-line);
+	background: var(--nexo-ok-bg);
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-event--limited,
+.nexo-mcp-status--warning {
+	border-color: var(--nexo-warn-line);
+	background: var(--nexo-warn-bg);
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-event--error,
+.nexo-mcp-event--denied,
+.nexo-mcp-status--offline,
+.nexo-mcp-tag--sensitive {
+	border-color: var(--nexo-err-line);
+	background: var(--nexo-err-bg);
+	color: var(--nexo-err-text);
+}
+
+/* El punto de estado. */
+.nexo-mcp-status > span {
+	width: 6px;
+	height: 6px;
+	flex: none;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.nexo-mcp-card__head > .nexo-mcp-tag {
+	flex: none;
+}
+
+/* ----------------------------------------------------------------- Botones */
+
+.nexo-mcp-admin .button,
+.nexo-mcp-secret-dialog .button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 36px;
+	height: auto;
+	margin: 0;
+	padding: 7px 14px;
+	border: 1px solid var(--nexo-input);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	box-shadow: none;
+	color: var(--nexo-fg);
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.4;
+	text-align: center;
+	text-decoration: none;
+	text-shadow: none;
+	white-space: normal;
+	vertical-align: middle;
+	cursor: pointer;
+	transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/*
+ * Reposo, foco y clic se ven igual: el core de WordPress pinta :focus y
+ * :active de azul, y un botón recién pulsado queda enfocado.
+ */
+.nexo-mcp-admin .button,
+.nexo-mcp-admin .button:focus,
+.nexo-mcp-admin .button:active,
+.nexo-mcp-secret-dialog .button,
+.nexo-mcp-secret-dialog .button:focus,
+.nexo-mcp-secret-dialog .button:active {
+	border-color: var(--nexo-input);
+	background: var(--nexo-bg);
+	box-shadow: none;
+	color: var(--nexo-fg);
+	outline: none;
+}
+
+.nexo-mcp-admin .button.button-primary,
+.nexo-mcp-admin .button.button-primary:focus,
+.nexo-mcp-admin .button.button-primary:active,
+.nexo-mcp-secret-dialog .button.button-primary,
+.nexo-mcp-secret-dialog .button.button-primary:focus,
+.nexo-mcp-secret-dialog .button.button-primary:active {
+	border-color: var(--nexo-fg);
+	background: var(--nexo-fg);
+	color: #fff;
+}
+
+.nexo-mcp-admin .button.button-link-delete,
+.nexo-mcp-admin .button.button-link-delete:focus,
+.nexo-mcp-admin .button.button-link-delete:active {
+	border-color: var(--nexo-input);
+	background: var(--nexo-bg);
+	color: var(--nexo-err-text);
+}
+
+/* El hover degradado Nexo del diseño, en tonos que mantienen el contraste AA. */
+.nexo-mcp-admin .button:hover,
+.nexo-mcp-admin .button.button-primary:hover,
+.nexo-mcp-secret-dialog .button:hover,
+.nexo-mcp-secret-dialog .button.button-primary:hover {
+	border-color: transparent;
+	background: var(--nexo-hover);
+	color: #fff;
+}
+
+.nexo-mcp-admin .button.button-link-delete:hover {
+	border-color: var(--nexo-err);
+	background: var(--nexo-err);
+	color: #fff;
+}
+
+.nexo-mcp-admin .button:focus-visible,
+.nexo-mcp-secret-dialog .button:focus-visible {
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-admin .button .nexo-mcp-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.nexo-mcp-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+/* ---------------------------------------------------------------- Callouts */
+
+.nexo-mcp-admin .nexo-mcp-callout {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin: 0;
+	padding: 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+	font-size: 13px;
+}
+
+.nexo-mcp-admin .nexo-mcp-callout--warn {
+	border-color: var(--nexo-warn-line);
+	background: var(--nexo-warn-soft);
+}
+
+.nexo-mcp-admin .nexo-mcp-callout--danger {
+	border-color: var(--nexo-err-line);
+	background: var(--nexo-err-soft);
+}
+
+.nexo-mcp-callout .nexo-mcp-icon {
+	margin-top: 2px;
+}
+
+.nexo-mcp-callout--warn .nexo-mcp-icon {
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-callout--danger .nexo-mcp-icon {
+	color: var(--nexo-err);
+}
+
+.nexo-mcp-callout__body {
+	flex: 1;
+	min-width: 0;
+}
+
+.nexo-mcp-callout__body strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-callout__body p {
+	margin: 2px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-update-banner {
+	align-items: center;
+}
+
+.nexo-mcp-update-banner .button {
+	flex: none;
+}
+
+/* ---------------------------------------------------------- Resumen: estado */
+
+.nexo-mcp-status-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 16px;
+}
+
+.nexo-mcp-status-card {
+	min-width: 0;
+	padding: 20px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+	transition: box-shadow 0.2s ease;
+}
+
+.nexo-mcp-status-card:hover {
+	box-shadow: var(--nexo-shadow);
+}
+
+.nexo-mcp-status-card__label {
+	display: block;
+	color: var(--nexo-muted-fg);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+/* En la tarjeta el estado es el dato grande, no una etiqueta. */
+.nexo-mcp-status-card .nexo-mcp-status {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--nexo-fg);
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	white-space: normal;
+}
+
+.nexo-mcp-status-card .nexo-mcp-status > span {
+	width: 8px;
+	height: 8px;
+}
+
+.nexo-mcp-status-card .nexo-mcp-status--online > span {
+	background: var(--nexo-ok-dot);
+}
+
+.nexo-mcp-status-card .nexo-mcp-status--warning > span {
+	background: var(--nexo-warn-dot);
+}
+
+.nexo-mcp-status-card .nexo-mcp-status--offline > span {
+	background: var(--nexo-err);
+}
+
+.nexo-mcp-status-card .nexo-mcp-status--neutral {
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-status-card .nexo-mcp-status--neutral > span {
+	background: rgba(110, 110, 110, 0.4);
+}
+
+.nexo-mcp-status-card small {
+	display: block;
+	margin-top: 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* --------------------------------------------------------- Resumen: tarjetas */
+
+.nexo-mcp-summary {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+	gap: 16px;
+	align-items: start;
+}
+
+.nexo-mcp-admin .nexo-mcp-rows {
+	margin: 0;
+}
+
+.nexo-mcp-rows div {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-rows div:last-child {
+	border-bottom: 0;
+}
+
+.nexo-mcp-rows dt {
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-rows dd {
+	margin: 0;
+	font-weight: 500;
+	overflow-wrap: anywhere;
+	text-align: right;
+}
+
+/* ------------------------------------------------------- Conectar: pasos */
+
+.nexo-mcp-admin .nexo-mcp-steps {
+	display: grid;
+	gap: 32px;
+	margin: 0;
+	padding: 0;
+	counter-reset: nexo-step;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li {
+	min-width: 0;
+	margin: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-step__title {
+	margin: 0 0 4px;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-step__title::before {
+	content: counter(nexo-step) ". ";
+	counter-increment: nexo-step;
+}
+
+.nexo-mcp-admin .nexo-mcp-step__hint {
+	margin: 0 0 12px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-warning {
+	margin-bottom: 24px;
+}
+
+/* ------------------------------------------------- Conectar: elegir cliente */
+
+.nexo-mcp-client-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.nexo-mcp-client-card {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	padding: 12px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.nexo-mcp-client-card:hover {
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-client-card:has(input:checked) {
+	border-color: var(--nexo-fg);
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-client-card:has(input:focus-visible) {
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-admin .nexo-mcp-client-card input[type="radio"],
+.nexo-mcp-admin .nexo-mcp-profile-card input[type="radio"] {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.nexo-mcp-client-card__mark {
+	display: grid;
+	width: 32px;
+	height: 32px;
+	flex: none;
+	place-items: center;
+	border-radius: 8px;
+	background: var(--nexo-muted);
+	color: var(--nexo-muted-fg);
+	font-size: 10px;
+	font-weight: 600;
+}
+
+.nexo-mcp-client-card__mark img {
+	display: block;
+	width: 20px;
+	height: 20px;
+	object-fit: contain;
+}
+
+.nexo-mcp-client-card__copy {
+	flex: 1;
+	min-width: 0;
+}
+
+.nexo-mcp-client-card__copy strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.3;
+}
+
+.nexo-mcp-client-card__copy span {
+	display: block;
+	color: var(--nexo-muted-fg);
+	font-size: 11px;
+	line-height: 1.4;
+}
+
+.nexo-mcp-client-card__check {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	fill: none;
+	opacity: 0;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 2;
+}
+
+.nexo-mcp-client-card:has(input:checked) .nexo-mcp-client-card__check {
+	opacity: 1;
+}
+
+/* -------------------------------------------------- Conectar: perfil de acceso */
+
+.nexo-mcp-profile-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.nexo-mcp-profile-card {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.nexo-mcp-profile-card:hover {
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-profile-card:has(input:checked) {
+	border-color: var(--nexo-fg);
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-profile-card:has(input:focus-visible) {
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-profile-card--sensitive:has(input:checked) {
+	border-color: var(--nexo-err);
+	background: var(--nexo-err-soft);
+}
+
+.nexo-mcp-profile-card:has(input:disabled) {
+	cursor: progress;
+	opacity: 0.7;
+}
+
+.nexo-mcp-profile-card__copy strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-profile-card__copy small {
+	display: block;
+	margin-top: 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.nexo-mcp-admin .nexo-mcp-profile-status {
+	margin: 8px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* ------------------------------------------------------- Conectar: receta */
+
+.nexo-mcp-oauth-recipe {
+	margin-top: 12px;
+	overflow: hidden;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+}
+
+.nexo-mcp-recipe-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 16px;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-recipe-band {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 16px;
+	background: var(--nexo-fg);
+	color: #fff;
+}
+
+.nexo-mcp-recipe-band strong {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-recipe-band p {
+	margin: 2px 0 0;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 12px;
+}
+
+/* Botón claro sobre la banda oscura (variante secondary del diseño). */
+.nexo-mcp-admin .nexo-mcp-recipe-band .button,
+.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus,
+.nexo-mcp-admin .nexo-mcp-recipe-band .button:active {
+	flex: none;
+	border-color: var(--nexo-muted);
+	background: var(--nexo-muted);
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-admin .nexo-mcp-recipe-band .button:hover {
+	border-color: transparent;
+	background: var(--nexo-hover);
+	color: #fff;
+}
+
+.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus-visible {
+	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px #fff;
+}
+
+/* Codex: la banda lleva pasos y el comando del puente. */
+.nexo-mcp-codex-native {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.nexo-mcp-codex-native__intro {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+}
+
+.nexo-mcp-codex-native__mark {
+	flex: none;
+	padding: 3px 8px;
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	border-radius: 8px;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+}
+
+.nexo-mcp-admin .nexo-mcp-codex-native__steps {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-codex-native__steps li {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0;
+}
+
+.nexo-mcp-codex-native__steps span {
+	display: grid;
+	width: 20px;
+	height: 20px;
+	flex: none;
+	place-items: center;
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	border-radius: 50%;
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-codex-native__steps p {
+	margin: 0;
+}
+
+.nexo-mcp-codex-native__steps strong {
+	display: inline;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.nexo-mcp-codex-native__actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-codex-native__actions code {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.08);
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 11px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+/* Prueba de OAuth (sólo Codex). */
+.nexo-mcp-oauth-diagnostic {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 8px 16px;
+	padding: 16px;
+	border-top: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-oauth-diagnostic strong {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-diagnostic p {
+	margin: 2px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-diagnostic__status {
+	grid-column: 1 / -1;
+	margin: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-diagnostic[data-state="running"] .nexo-mcp-oauth-diagnostic__status {
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-diagnostic[data-state="success"] .nexo-mcp-oauth-diagnostic__status {
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-diagnostic[data-state="error"] .nexo-mcp-oauth-diagnostic__status {
+	color: var(--nexo-err-text);
+}
+
+/* Configuración manual. */
+.nexo-mcp-manual-details {
+	border-top: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-manual-details > summary,
+.nexo-mcp-compat-fallback > summary {
+	padding: 12px 16px;
+	color: var(--nexo-muted-fg-strong);
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.nexo-mcp-manual-details > summary:hover,
+.nexo-mcp-compat-fallback > summary:hover {
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-manual-details__body {
+	padding: 0 16px 16px;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-hint {
+	margin: 0 0 8px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-copyfield--block {
+	display: grid;
+	justify-items: start;
+	gap: 8px;
+}
+
+.nexo-mcp-admin .nexo-mcp-copyfield--block code {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 12px 14px;
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-fg);
+	color: #f5f5f5;
+	font-size: 12px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.nexo-mcp-admin .nexo-mcp-oauth-after {
+	margin: 8px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* Guarda el texto de la instrucción que arma admin.js; nunca se ve. */
+.nexo-mcp-hidden-prompt {
+	display: none;
+}
+
+.nexo-mcp-compat-fallback {
+	margin-top: 12px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+}
+
+.nexo-mcp-compat-fallback > summary {
+	padding: 10px 12px;
+	font-size: 12px;
+}
+
+.nexo-mcp-compat-fallback > div {
+	padding: 0 12px 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-compat-fallback p {
+	margin: 0 0 8px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* -------------------------------------------------------- Accesos OAuth */
+
+.nexo-mcp-admin .nexo-mcp-empty-connections {
+	margin: 0;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-conn-list {
+	display: grid;
+	gap: 12px;
+}
+
+.nexo-mcp-conn-card {
+	padding: 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+}
+
+.nexo-mcp-conn-card__top {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.nexo-mcp-conn-main {
+	min-width: 0;
+}
+
+.nexo-mcp-conn-name {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-conn-meta {
+	display: block;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-conn-used::before {
+	content: " · ";
+}
+
+.nexo-mcp-conn-scopes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-scopes code {
+	margin: 0;
+	padding: 2px 8px;
+	border: 1px solid var(--nexo-border);
+	border-radius: 999px;
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-font);
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.5;
+}
+
+/* ------------------------------------------------------ Módulos y límites */
+
+.nexo-mcp-admin .nexo-mcp-security-note {
+	margin-bottom: 20px;
+}
+
+.nexo-mcp-toggles > * + *,
+.nexo-mcp-proxy {
+	border-top: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-toggle {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin: 0 -8px;
+	padding: 12px 8px;
+	border-radius: 10px;
+	cursor: pointer;
+}
+
+/*
+ * Opciones sensibles: las que amplían lo que la IA puede hacer. Todas llevan
+ * el mismo tinte y la etiqueta «Sensible»; el resto de las filas queda neutro.
+ */
+.nexo-mcp-toggle--sensitive {
+	background: var(--nexo-err-soft);
+}
+
+.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive {
+	margin-left: 6px;
+	vertical-align: 1px;
+}
+
+.nexo-mcp-toggle__text {
+	min-width: 0;
+}
+
+.nexo-mcp-toggle__text strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-toggle__text small {
+	display: block;
+	margin-top: 1px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+/*
+ * La casilla real queda encima del interruptor, invisible: recibe el clic y
+ * el foco, y el <i> sólo la dibuja.
+ */
+.nexo-mcp-admin .nexo-mcp-toggle input[type="checkbox"] {
+	position: absolute;
+	top: 50%;
+	right: 8px;
+	z-index: 1;
+	width: 44px;
+	height: 24px;
+	margin: -12px 0 0;
+	opacity: 0;
+	cursor: pointer;
+}
+
+.nexo-mcp-toggle i {
+	position: relative;
+	width: 44px;
+	height: 24px;
+	flex: none;
+	border-radius: 999px;
+	background: #e0e0e0;
+	transition: background-color 0.2s ease;
+}
+
+.nexo-mcp-toggle i::after {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+	content: "";
+	transition: transform 0.2s ease;
+}
+
+.nexo-mcp-toggle input:checked + i {
+	background: var(--nexo-fg);
+}
+
+.nexo-mcp-toggle input:checked + i::after {
+	transform: translateX(20px);
+}
+
+/* En su estado riesgoso, el interruptor de una opción sensible va en rojo. */
+.nexo-mcp-toggle input[data-nexo-risk="on"]:checked + i,
+.nexo-mcp-toggle input[data-nexo-risk="off"]:not(:checked) + i {
+	background: var(--nexo-err);
+}
+
+.nexo-mcp-toggle input:focus-visible + i {
+	box-shadow: var(--nexo-ring);
+}
+
+.nexo-mcp-admin .nexo-mcp-proxy-field {
+	margin: 0 0 8px;
+	padding: 4px 0 8px;
+}
+
+.nexo-mcp-proxy-field label {
+	display: block;
+	margin-bottom: 8px;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-proxy-field small {
+	display: block;
+	margin-top: 6px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-proxy-field small code {
+	padding: 1px 5px;
+	border-radius: 6px;
+	background: var(--nexo-muted);
+	font-size: 11px;
+}
+
+.nexo-mcp-settings-form > .button {
+	margin-top: 20px;
+}
+
+/* Campos de texto con el estilo del diseño. */
+.nexo-mcp-admin input[type="text"],
+.nexo-mcp-admin input[type="url"],
+.nexo-mcp-admin input[type="email"],
+.nexo-mcp-admin textarea {
+	width: 100%;
+	min-height: 40px;
+	margin: 0;
+	padding: 8px 12px;
+	border: 1px solid var(--nexo-input);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	box-shadow: none;
+	color: var(--nexo-fg);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.nexo-mcp-admin input[type="text"]:focus,
+.nexo-mcp-admin input[type="url"]:focus,
+.nexo-mcp-admin input[type="email"]:focus,
+.nexo-mcp-admin textarea:focus {
+	border-color: var(--nexo-fg);
+	box-shadow: 0 0 0 1px var(--nexo-fg);
+	outline: none;
+}
+
+.nexo-mcp-admin input::placeholder,
+.nexo-mcp-admin textarea::placeholder {
+	color: #9a9a9a;
+}
+
+/* Radios nativos de WordPress, recoloreados. */
+.nexo-mcp-admin input[type="radio"]:checked::before {
+	background-color: var(--nexo-fg);
+}
+
+.nexo-mcp-admin input[type="radio"]:focus,
+.nexo-mcp-admin input[type="checkbox"]:focus {
+	border-color: var(--nexo-fg);
+	box-shadow: 0 0 0 1px var(--nexo-fg);
+}
+
+/* ---------------------------------------- Sitio y cupos / Actualizaciones */
+
+.nexo-mcp-box {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: #fcfcfc;
+}
+
+.nexo-mcp-box > div {
+	min-width: 0;
+}
+
+.nexo-mcp-box strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-box small {
+	display: block;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-box > .nexo-mcp-status {
+	flex: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-license-offline {
+	margin-top: 16px;
+}
+
+.nexo-mcp-admin .nexo-mcp-registration__message {
+	margin: 12px 0 0;
+	font-size: 13px;
+}
+
+.nexo-mcp-admin .nexo-mcp-registration__message:empty {
+	margin: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-changelog__title {
+	margin-top: 20px;
+}
+
+.nexo-mcp-admin .nexo-mcp-changelog {
+	margin: 4px 0 0;
+	padding-left: 18px;
+	list-style: disc;
+}
+
+.nexo-mcp-admin .nexo-mcp-changelog li {
+	margin: 0 0 4px;
+	font-size: 13px;
+}
+
+/* ------------------------------------------------------------- Endpoint */
+
+.nexo-mcp-endpoint {
+	display: flex;
+	align-items: stretch;
+	gap: 8px;
+}
+
+.nexo-mcp-admin .nexo-mcp-endpoint code {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	min-width: 0;
+	min-height: 40px;
+	margin: 0;
+	padding: 8px 12px;
+	border: 1px solid var(--nexo-input);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-fg);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-endpoint .button {
+	flex: none;
+}
+
+/* ------------------------------------------------------------ Actividad */
+
+.nexo-mcp-table-wrap {
+	overflow-x: auto;
+}
+
+.nexo-mcp-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+
+.nexo-mcp-table th {
+	padding: 8px 12px 8px 0;
+	border-bottom: 1px solid var(--nexo-border);
+	color: var(--nexo-muted-fg);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-align: left;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.nexo-mcp-table td {
+	padding: 8px 12px 8px 0;
+	border-bottom: 1px solid var(--nexo-border);
+	vertical-align: middle;
+}
+
+.nexo-mcp-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+.nexo-mcp-table__date {
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.nexo-mcp-table__user {
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-table code {
+	margin: 0;
+	padding: 2px 6px;
+	border-radius: 6px;
+	background: var(--nexo-muted);
+	font-size: 12px;
+}
+
+.nexo-mcp-table__empty {
+	color: var(--nexo-muted-fg);
+}
+
+/* ---------------------------------------------------- Reportar problema */
+
+.nexo-mcp-admin .nexo-mcp-card > .notice {
+	margin: 0 0 16px;
+}
+
+.nexo-mcp-admin .nexo-mcp-report__intro {
+	margin-bottom: 16px;
+}
+
+.nexo-mcp-report__form {
+	display: grid;
+	justify-items: start;
+}
+
+.nexo-mcp-report__form > * {
+	max-width: 100%;
+}
+
+.nexo-mcp-report__form textarea {
+	min-height: 120px;
+	resize: vertical;
+}
+
+.nexo-mcp-report__kind {
+	margin: 0 0 16px;
+	padding: 0;
+	border: 0;
+}
+
+.nexo-mcp-report__kind legend {
+	margin-bottom: 8px;
+	padding: 0;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-report__kind label {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 16px 0 0;
+	font-size: 14px;
+	cursor: pointer;
+}
+
+.nexo-mcp-report__kind input[type="radio"] {
+	margin: 0;
+}
+
+.nexo-mcp-report__label {
+	margin-bottom: 8px;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-report__form textarea,
+.nexo-mcp-report__context {
+	width: 100%;
+}
+
+.nexo-mcp-report__form > .description {
+	margin-top: 4px;
+}
+
+.nexo-mcp-report__context {
+	margin-top: 16px;
+	padding: 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: #fcfcfc;
+}
+
+.nexo-mcp-report__context strong {
+	display: block;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-report__context ul {
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-report__context li {
+	margin: 0 0 2px;
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-admin .nexo-mcp-report__context .description {
+	margin-top: 8px;
+}
+
+.nexo-mcp-report__form > .button {
+	margin-top: 16px;
+}
+
+/* ------------------------------------------ Aviso de descubrimiento OAuth */
+
+.nexo-mcp-discovery-alert {
+	margin-top: 24px;
+	padding: 20px 24px;
+	border: 1px solid var(--nexo-err-line);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-err-soft);
+}
+
+.nexo-mcp-admin .nexo-mcp-discovery-alert h2 {
+	margin: 0 0 8px;
+	padding: 0;
+	color: var(--nexo-err-text);
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.nexo-mcp-admin .nexo-mcp-discovery-alert p {
+	margin: 0 0 8px;
+	color: var(--nexo-fg-soft);
+	font-size: 13px;
+}
+
+.nexo-mcp-discovery-alert__ticket {
+	margin: 12px 0 0;
+	padding: 12px 14px;
+	border-left: 3px solid var(--nexo-err);
+	border-radius: 8px;
+	background: var(--nexo-bg);
+	color: var(--nexo-fg);
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+.nexo-mcp-admin .nexo-mcp-discovery-alert__status {
+	margin: 8px 0 0;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+/* ------------------------------------------------------ Toast y crédito */
+
+.nexo-mcp-admin .nexo-mcp-toast {
+	position: fixed;
+	right: 24px;
+	bottom: 24px;
+	z-index: 100000;
+	max-width: min(380px, calc(100vw - 48px));
+	margin: 0;
+	padding: 12px 16px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+	color: var(--nexo-fg);
+	font-size: 13px;
+	font-weight: 500;
+	pointer-events: none;
+	transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Vacío sigue en el árbol de accesibilidad para que el lector anuncie. */
+.nexo-mcp-admin .nexo-mcp-toast:empty {
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+	opacity: 0;
+	transform: translateY(8px);
+}
+
+.nexo-mcp-admin .nexo-mcp-credit {
+	margin: 32px 0 0;
+	color: #8a8a8a;
+	font-size: 12px;
+	text-align: center;
+}
+
+.nexo-mcp-admin .nexo-mcp-credit a {
+	color: var(--nexo-muted-fg);
+	text-decoration: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-credit a:hover {
+	color: var(--nexo-fg);
+	text-decoration: underline;
+}
+
+/* -------------------------------------------------------------- Diálogo */
+
+.nexo-mcp-secret-dialog {
+	width: min(720px, calc(100vw - 32px));
+	max-height: calc(100vh - 48px);
+	padding: 32px;
+	overflow-y: auto;
+	border: 0;
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	color: var(--nexo-fg);
+	font-family: var(--nexo-font);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.nexo-mcp-secret-dialog::backdrop {
+	background: rgba(18, 18, 18, 0.6);
+	backdrop-filter: blur(3px);
+}
+
+.nexo-mcp-secret-dialog h2 {
+	margin: 0 0 12px;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 24px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+}
+
+.nexo-mcp-secret-dialog > p:not(.nexo-mcp-eyebrow) {
+	margin: 0 0 16px;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-secret-dialog label {
+	display: block;
+	margin-bottom: 6px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.nexo-mcp-secret-dialog > code {
+	display: block;
+	margin: 0 0 16px;
+	padding: 10px 12px;
+	border: 1px solid var(--nexo-border);
+	border-radius: 10px;
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-dialog-close {
+	position: absolute;
+	top: 14px;
+	right: 14px;
+	display: grid;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	place-items: center;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--nexo-muted-fg);
+	font-size: 22px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.nexo-mcp-dialog-close:hover,
+.nexo-mcp-dialog-close:focus-visible {
+	background: var(--nexo-muted);
+	color: var(--nexo-fg);
+	outline: none;
+}
+
+.nexo-mcp-secret-field {
+	position: relative;
+	margin: 0 0 16px;
+}
+
+.nexo-mcp-secret-dialog .nexo-mcp-secret-field input {
+	width: 100%;
+	min-height: 44px;
+	margin: 0;
+	padding: 10px 52px 10px 12px;
+	border: 1px solid var(--nexo-input);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	box-shadow: none;
+	color: var(--nexo-fg);
+	font-family: var(--nexo-mono);
+	font-size: 15px;
+	letter-spacing: 0.04em;
+}
+
+.nexo-mcp-secret-dialog .nexo-mcp-secret-field input:focus {
+	border-color: var(--nexo-fg);
+	box-shadow: 0 0 0 1px var(--nexo-fg);
+}
+
+.nexo-mcp-secret-visibility {
+	position: absolute;
+	top: 50%;
+	right: 6px;
+	display: grid;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	place-items: center;
+	transform: translateY(-50%);
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--nexo-muted-fg);
+	cursor: pointer;
+}
+
+.nexo-mcp-secret-visibility:hover,
+.nexo-mcp-secret-visibility:focus-visible {
+	background: var(--nexo-muted);
+	color: var(--nexo-fg);
+	outline: 0;
+}
+
+.nexo-mcp-eye {
+	width: 20px;
+	height: 20px;
+	fill: none;
+	stroke: currentColor;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-width: 1.7;
+}
+
+.nexo-mcp-eye--closed {
+	display: none;
+}
+
+.nexo-mcp-secret-visibility[aria-pressed="true"] .nexo-mcp-eye--open {
+	display: none;
+}
+
+.nexo-mcp-secret-visibility[aria-pressed="true"] .nexo-mcp-eye--closed {
+	display: block;
+}
+
+.nexo-mcp-secret-actions,
+.nexo-mcp-setup__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+}
+
+.nexo-mcp-secret-actions [role="status"],
+.nexo-mcp-setup__actions [role="status"] {
+	color: var(--nexo-ok);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.nexo-mcp-setup {
+	margin-top: 28px;
+	padding-top: 24px;
+	border-top: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-setup h3 {
+	margin: 0 0 8px;
+	color: var(--nexo-fg);
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.nexo-mcp-setup > p:not(.nexo-mcp-eyebrow, .nexo-mcp-setup__note) {
+	margin: 0 0 16px;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-setup-client {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin: 0 0 16px;
+	padding: 12px 14px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-setup-client span {
+	color: var(--nexo-muted-fg);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-setup-client strong {
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.nexo-mcp-secret-dialog .nexo-mcp-setup textarea {
+	width: 100%;
+	min-height: 220px;
+	margin: 0 0 16px;
+	padding: 12px;
+	border: 1px solid var(--nexo-input);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	box-shadow: none;
+	color: var(--nexo-fg);
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	resize: vertical;
+}
+
+.nexo-mcp-secret-dialog .nexo-mcp-setup textarea:focus {
+	border-color: var(--nexo-fg);
+	box-shadow: 0 0 0 1px var(--nexo-fg);
+}
+
+.nexo-mcp-setup .nexo-mcp-setup__note {
+	margin: 16px 0 0;
+	padding: 10px 12px;
+	border: 1px solid var(--nexo-warn-line);
+	border-radius: 10px;
+	background: var(--nexo-warn-soft);
+	color: var(--nexo-warn);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+/* ------------------------------------------- Confirmación de opción sensible */
+
+.nexo-mcp-confirm {
+	width: min(460px, calc(100vw - 32px));
+	max-height: calc(100vh - 48px);
+	padding: 28px;
+	overflow-y: auto;
+	border: 0;
+	border-top: 4px solid var(--nexo-err);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-confirm::backdrop {
+	background: rgba(18, 18, 18, 0.6);
+	backdrop-filter: blur(3px);
+}
+
+.nexo-mcp-admin .nexo-mcp-confirm__eyebrow {
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-admin .nexo-mcp-confirm__title {
+	margin: 0 0 8px;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.3;
+}
+
+.nexo-mcp-admin .nexo-mcp-confirm__text {
+	margin: 0 0 20px;
+	color: var(--nexo-fg-soft);
+}
+
+.nexo-mcp-confirm__label {
+	display: block;
+	margin-bottom: 6px;
+	color: var(--nexo-muted-fg-strong);
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.nexo-mcp-confirm__label strong {
+	color: var(--nexo-err-text);
+	font-weight: 600;
+}
+
+.nexo-mcp-confirm__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 20px;
+}
+
+.nexo-mcp-admin .button.nexo-mcp-confirm__accept,
+.nexo-mcp-admin .button.nexo-mcp-confirm__accept:focus,
+.nexo-mcp-admin .button.nexo-mcp-confirm__accept:active {
+	border-color: var(--nexo-err);
+	background: var(--nexo-err);
+	color: #fff;
+}
+
+.nexo-mcp-admin .button.nexo-mcp-confirm__accept:hover {
+	border-color: var(--nexo-err-text);
+	background: var(--nexo-err-text);
+	color: #fff;
+}
+
+.nexo-mcp-admin .button.nexo-mcp-confirm__accept:disabled {
+	border-color: var(--nexo-err);
+	background: var(--nexo-err);
+	color: #fff;
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+/* ------------------------------------------------ Activación de licencia */
+
+.nexo-mcp-onboarding {
+	max-width: 980px;
+}
+
+/* Avisos de otros plugins: sobre la tarjeta, nunca pegados a ella. */
+.nexo-mcp-onboarding > .notice,
+.nexo-mcp-onboarding > .settings-error {
+	margin: 0 0 16px;
+}
+
+.nexo-mcp-onboarding__sheet {
+	display: grid;
+	grid-template-columns: 300px minmax(0, 1fr);
+	overflow: hidden;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-bg);
+}
+
+.nexo-mcp-onboarding__aside {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: 32px;
+	padding: 32px;
+	background: var(--nexo-fg);
+	color: #fff;
+}
+
+.nexo-mcp-onboarding__aside::after {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	height: 4px;
+	background: var(--nexo-gradient);
+	content: "";
+}
+
+.nexo-mcp-onboarding__brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.nexo-mcp-onboarding__brand img {
+	display: block;
+	width: auto;
+	height: 28px;
+}
+
+/* Marca antigua de la vista de registro por email (sin uso hoy). */
+.nexo-mcp-onboarding__brand span {
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__product {
+	margin: 8px 0 0;
+	font-size: 10px;
+	letter-spacing: 0.18em;
+	opacity: 0.6;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__steps {
+	display: grid;
+	gap: 18px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__steps li {
+	display: flex;
+	gap: 12px;
+	margin: 0;
+	opacity: 0.55;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__steps li.is-current {
+	opacity: 1;
+}
+
+.nexo-mcp-onboarding__steps span {
+	padding-top: 2px;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.1em;
+}
+
+.nexo-mcp-onboarding__steps strong {
+	display: block;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-onboarding__steps small {
+	display: block;
+	font-size: 12px;
+	opacity: 0.75;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__version {
+	margin: 0;
+	font-size: 11px;
+	opacity: 0.5;
+}
+
+.nexo-mcp-onboarding__main {
+	min-width: 0;
+	padding: 40px;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__main h1 {
+	margin: 0 0 8px;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 28px;
+	font-weight: 600;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__lead {
+	max-width: 52ch;
+	margin: 0 0 24px;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-registration__form {
+	display: grid;
+	gap: 8px;
+	max-width: 440px;
+}
+
+.nexo-mcp-registration__form > label:not(.nexo-mcp-registration__consent) {
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nexo-mcp-admin .nexo-mcp-registration__form input[name="license_key"],
+.nexo-mcp-admin .nexo-mcp-registration__form input[name="code"] {
+	font-family: var(--nexo-mono);
+	letter-spacing: 0.06em;
+}
+
+.nexo-mcp-registration__consent {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-registration__form .button {
+	justify-self: start;
+	margin-top: 8px;
+}
+
+.nexo-mcp-admin .button.button-hero {
+	min-height: 44px;
+	padding: 10px 24px;
+	font-size: 14px;
+	line-height: 1.4;
+}
+
+.nexo-mcp-admin .nexo-mcp-onboarding__note {
+	margin: 12px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-onboarding__note a {
+	font-weight: 500;
+}
+
+.nexo-mcp-onboarding > .nexo-mcp-credit {
+	text-align: center;
+}
+
+/* ------------------------------------------------------------ Responsive */
+
+@media (max-width: 1100px) {
+	.nexo-mcp-status-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 960px) {
+	.nexo-mcp-summary {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-client-grid,
+	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+/* 782px es el corte de wp-admin: menú plegado y controles táctiles. */
+@media (max-width: 782px) {
+	.nexo-mcp-admin {
+		margin: 16px 12px 40px 0;
+	}
+
+	.nexo-mcp-header {
+		padding: 24px;
+	}
+
+	.nexo-mcp-header__brand img {
+		height: 28px;
+	}
+
+	.nexo-mcp-tabs {
+		margin: 16px 0;
+	}
+
+	.nexo-mcp-admin .nexo-mcp-tab {
+		padding: 8px 12px;
+		font-size: 13px;
+	}
+
+	.nexo-mcp-tabpanel {
+		gap: 16px;
+	}
+
+	.nexo-mcp-card {
+		padding: 20px;
+	}
+
+	.nexo-mcp-card__head {
+		flex-wrap: wrap;
+	}
+
+	.nexo-mcp-admin .nexo-mcp-card__title {
+		font-size: 18px;
+	}
+
+	.nexo-mcp-admin .button,
+	.nexo-mcp-secret-dialog .button {
+		min-height: 40px;
+		font-size: 14px;
+	}
+
+	.nexo-mcp-admin input[type="text"],
+	.nexo-mcp-admin input[type="url"],
+	.nexo-mcp-admin input[type="email"],
+	.nexo-mcp-admin textarea {
+		font-size: 16px;
+	}
+
+	.nexo-mcp-update-banner {
+		flex-wrap: wrap;
+	}
+
+	/* El texto ocupa la línea y el botón baja, alineado bajo el texto. */
+	.nexo-mcp-update-banner .nexo-mcp-callout__body {
+		flex: 1 1 calc(100% - 28px);
+	}
+
+	.nexo-mcp-update-banner .button {
+		margin-left: 28px;
+	}
+
+	.nexo-mcp-profile-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-recipe-band,
+	.nexo-mcp-codex-native__actions,
+	.nexo-mcp-endpoint {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.nexo-mcp-oauth-diagnostic {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-oauth-diagnostic .button {
+		justify-self: start;
+	}
+
+	.nexo-mcp-conn-card__top {
+		flex-wrap: wrap;
+	}
+
+	.nexo-mcp-box {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.nexo-mcp-admin .nexo-mcp-toast {
+		right: 16px;
+		bottom: 16px;
+		left: 16px;
+		max-width: none;
+	}
+
+	.nexo-mcp-secret-dialog,
+	.nexo-mcp-confirm {
+		padding: 24px 20px;
+	}
+
+	.nexo-mcp-onboarding__sheet {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-onboarding__aside {
+		padding: 24px;
+	}
+
+	.nexo-mcp-onboarding__main {
+		padding: 24px;
+	}
+}
+
+@media (max-width: 480px) {
+	.nexo-mcp-status-card {
+		padding: 16px;
+	}
+
+	.nexo-mcp-status-card .nexo-mcp-status {
+		font-size: 16px;
+	}
+
+	.nexo-mcp-client-grid,
+	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-header__meta {
+		display: none;
+	}
+
+	.nexo-mcp-confirm__actions .button {
+		flex: 1 1 0;
+	}
+}
+
+@media (max-width: 380px) {
+	.nexo-mcp-status-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.nexo-mcp-admin *,
+	.nexo-mcp-admin *::before,
+	.nexo-mcp-admin *::after,
+	.nexo-mcp-secret-dialog * {
+		transition: none !important;
+	}
+}
+
+/* ------------------------------------------- Alcances por conexión (Nexo) */
+
+.nexo-mcp-admin .nexo-mcp-conn-edit {
+	margin-top: 12px;
+	border-top: 1px solid var(--nexo-border);
+	padding-top: 10px;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-edit summary {
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--nexo-fg-soft);
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-edit__form {
+	display: grid;
+	gap: 6px;
+	margin-top: 10px;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-edit__scope {
+	display: grid;
+	grid-template-columns: auto minmax(150px, max-content) 1fr;
+	align-items: center;
+	gap: 10px;
+	font-size: 13px;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-edit__form .button {
+	justify-self: start;
+	margin-top: 6px;
+}
+
+.nexo-mcp-admin .nexo-mcp-api-missing .nexo-mcp-callout {
+	margin: 12px 0;
+}

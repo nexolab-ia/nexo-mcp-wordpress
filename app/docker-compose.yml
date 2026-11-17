@@ -1,0 +1,77 @@
+# Entorno de prueba de Nexo MCP: WordPress 6.9 + MySQL 8 + WooCommerce.
+# Compatible con Docker Desktop y OrbStack.
+#
+#   docker compose up -d          # levanta todo e instala WordPress la primera vez
+#   docker compose logs -f setup  # ver la instalación inicial
+#   docker compose down           # detener (los datos quedan en los volúmenes)
+#
+# Sitio:  http://localhost:8080        (usuario admin / clave admin)
+# MCP:    http://localhost:8080/wp-json/nexo-mcp/v1/mcp
+
+name: nexo-mcp
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: rootpass
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  wordpress:
+    image: wordpress:6.9-php8.3-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${NEXO_WP_PORT:-8080}:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      # Sólo para pruebas locales: permite el endpoint MCP sin HTTPS en localhost.
+      # NO uses estas constantes en un sitio público.
+      WORDPRESS_CONFIG_EXTRA: |
+        define( 'WP_ENVIRONMENT_TYPE', 'local' );
+        define( 'NEXO_MCP_ALLOW_INSECURE_LOCAL', true );
+        // define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );
+    volumes:
+      - wp_data:/var/www/html
+      - ./nexo-mcp:/var/www/html/wp-content/plugins/nexo-mcp
+
+  # Instalación inicial (corre una vez y termina): WordPress, enlaces
+  # permanentes, WooCommerce y Nexo MCP activados.
+  setup:
+    image: wordpress:cli-php8.3
+    user: "33:33"
+    depends_on:
+      db:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      NEXO_WP_URL: "http://localhost:${NEXO_WP_PORT:-8080}"
+      WP_CLI_CACHE_DIR: /tmp/wp-cli-cache
+    volumes:
+      - wp_data:/var/www/html
+      - ./nexo-mcp:/var/www/html/wp-content/plugins/nexo-mcp
+      - ./docker/setup.sh:/usr/local/bin/nexo-setup.sh:ro
+    entrypoint: ["sh", "/usr/local/bin/nexo-setup.sh"]
+    restart: "no"
+
+volumes:
+  db_data:
+  wp_data:
