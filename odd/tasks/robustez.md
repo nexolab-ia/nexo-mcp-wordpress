@@ -16,12 +16,13 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
   - Páginas v3 de más de 200 nodos: `replace` e `insert` se permiten si el documento resultante no supera `max(200, nodos actuales)`; sólo se rechaza lo que lo agranda por encima de ese tope.
   - `prueba_adaptadores.sh`: guardar el estado «sin variables» con un centinela explícito y abortar si la captura falla, para no borrar las variables del sitio al restaurar.
   - `prueba_punta_a_punta.py` paso 10: avisar en la salida cuando se saltea por falta de `mcp:publish`, y comprobar `isError` del `update-post` antes de leerlo.
+- S5. Avisos de la review nativa de T1 (L5): (a) las cuatro herramientas de constructor no tienen test del bloqueo (busy sin escribir, liberación, relectura dentro del bloqueo) → se cubren en T2; (b) `ElementorSectionEditorTest` baja `PostLock::$wait` sin restaurarlo en `tearDown` → T2; (c) sin renovación del bloqueo: antes de escribir, comprobar que el bloqueo sigue siendo propio (si venció y otro lo tomó, no escribir y responder busy) y registrar en el log de auditoría las tomas de bloqueos vencidos → T3.
 
 ## Tasks
 
-- [x] T1 (S2) Bloqueo por original en `WorkingCopy::obtain()` y en las escrituras de constructor; test de concurrencia. Ruta: worker + verify (Risk: item 4, concurrencia). Commit propio. Commit: —
-- [ ] T2 (S3) Herramientas de constructor viejas a la copia de trabajo. Ruta: worker (Risk: item 3, cambia el comportamiento de herramientas existentes). Commit: —
-- [ ] T3 (S4) Avisos menores. Ruta: worker. Commit: —
+- [x] T1 (S2) Bloqueo por original en `WorkingCopy::obtain()` y en las escrituras de constructor; test de concurrencia. Ruta: worker + verify (Risk: item 4, concurrencia). Commit propio. Commit: a9e0a02
+- [ ] T2 (S3, S5a, S5b) Herramientas de constructor viejas a la copia de trabajo. Ruta: worker (Risk: item 3, cambia el comportamiento de herramientas existentes). Commit: —
+- [ ] T3 (S4, S5c) Avisos menores. Ruta: worker. Commit: —
 
 ## Log
 
@@ -40,3 +41,4 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
   - RED E2E: con `PostLock::forget` anulado (equivale al código anterior) el bloque de concurrencia dio 10/13: fallan S2-a borrador («se perdió content»), S2-a por el ID de la copia («se perdió title») y S2-b (original con v1). Con la corrección: 13/13 (5×update-page 1 copia; 3×update-page borrador y por ID de copia sin pérdidas; 5×edit-elementor-section; S2-b espera 3,1 s y el original queda con v2 y la copia fusionada; S2-c vigente → «ocupado» tras ~5 s sin escribir ni crear copia, vencido y mal formado se toman, también por el ID de la copia; sin `nexo_mcp_lock_*` pendientes).
   - PHPCS sin hallazgos, PHPStan sin errores, PHPUnit 278 OK, `prueba_reglas.sh` y `prueba_adaptadores.sh` exit 0 (0 FALLA).
 - L4 (2026-11-17): verificación independiente de T1 (Risk: item 4). Ronda 1: bloqueo correcto (INSERT IGNORE con índice UNIQUE confirmado, toma de vencidos por CAS, liberación por dueño, reentrante) pero S2 incumplido: B1 (caché de `posts` vieja dentro del bloqueo revertía campos de otra edición) y B2 (merge publicaba la copia leída antes del bloqueo y la borraba). Corregidos en L3 (`PostLock::forget`, `WorkingCopy::with_lock`, relectura dentro del bloqueo). Ronda 2: S2 cumplido, sin bloqueantes; P1/P1b x4, P3, merge contra discard, reintento de `with_lock`, 10 llamadas mixtas, bloqueo ajeno/vencido/malformado. Avisos abiertos: peor caso ~15 s antes de busy si el destino cambia 3 veces; sin renovación del bloqueo (TTL 30 s); `update-field`, SEO, `restore-revision` fuera del bloqueo (fuera de S2). PHPUnit 278 OK, PHPCS/PHPStan OK, prueba_adaptadores 85 OK (Concurrencia 13/13), prueba_reglas OK.
+- L5 (2026-11-17): review nativa de a9e0a02 (resiliencia + fiabilidad) aprobada con avisos: bloqueo de herramientas de constructor sin test, `$wait` sin restaurar en un test, TTL sin renovación ni registro de tomas. Pasan a S5.
