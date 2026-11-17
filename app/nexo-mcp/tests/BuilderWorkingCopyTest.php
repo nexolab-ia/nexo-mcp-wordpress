@@ -148,8 +148,8 @@ final class BuilderWorkingCopyTest extends NexoTestCase {
 		} else {
 			$this->assertNotSame( $live, $this->raw( $copy ) );
 		}
-		// El respaldo vive en la copia (lo editado), no en el original.
-		$this->assertNotSame( '', (string) get_post_meta( $copy, BuilderBackup::META_KEY, true ) );
+		// Una edición respalda en la copia lo editado; restaurar no captura (la copia nueva es un clon).
+		$this->assertSame( 'restore' === $tool, '' === (string) get_post_meta( $copy, BuilderBackup::META_KEY, true ) );
 	}
 
 	/**
@@ -245,23 +245,53 @@ final class BuilderWorkingCopyTest extends NexoTestCase {
 		$this->assertIsArray( $this->call( 'text', array( 'id' => self::ORIGINAL, 'draft' => true ) ) );
 	}
 
-	public function test_restaurar_por_el_original_usa_el_respaldo_del_original_y_respalda_antes_la_copia(): void {
-		$old = $this->seed_backup( self::ORIGINAL );
+	public function test_restaurar_por_el_original_con_copia_deshace_la_ultima_edicion_de_la_copia(): void {
+		$this->seed_backup( self::ORIGINAL );
+		$live = $this->raw( self::ORIGINAL );
 		$this->call( 'text', array( 'id' => self::ORIGINAL ) );
-		$copy       = $this->copy_id();
-		$copy_state = $this->raw( $copy );
+		$copy   = $this->copy_id();
+		$backup = (string) get_post_meta( $copy, BuilderBackup::META_KEY, true );
 
 		$result = $this->call( 'restore', array( 'id' => self::ORIGINAL ) );
 
 		$this->assertIsArray( $result );
 		$this->assertSame( $copy, $result['id'] );
-		$this->assertSame( $old, $this->raw( $copy ) );
-		$this->assertNotSame( $copy_state, $this->raw( $copy ) );
+		$this->assertSame( self::ORIGINAL, $result['draft_of'] );
+		$this->assertSame( $live, $this->raw( $copy ), 'vuelve al estado previo a la edición de la copia' );
+		$this->assertSame( $backup, (string) get_post_meta( $copy, BuilderBackup::META_KEY, true ), 'no captura antes de escribir' );
 
-		// Lo que tenía la copia queda respaldado: restaurar por la copia lo recupera.
-		$back = $this->call( 'restore', array( 'id' => $copy ) );
-		$this->assertIsArray( $back );
-		$this->assertSame( $copy_state, $this->raw( $copy ) );
+		// Reintento: mismo estado, y el respaldo de la copia no se pierde.
+		$state = $this->snapshot();
+		$this->assertSame( $result, $this->call( 'restore', array( 'id' => self::ORIGINAL ) ) );
+		$this->assertSame( $state, $this->snapshot() );
+	}
+
+	public function test_sin_copia_el_respaldo_del_original_se_restaura_en_una_copia_nueva(): void {
+		$old      = $this->seed_backup( self::ORIGINAL );
+		$live     = $this->raw( self::ORIGINAL );
+		$orig_bak = (string) get_post_meta( self::ORIGINAL, BuilderBackup::META_KEY, true );
+
+		$result = $this->call( 'restore', array( 'id' => self::ORIGINAL ) );
+
+		$this->assertIsArray( $result );
+		$copy = $this->copy_id();
+		$this->assertGreaterThan( 0, $copy );
+		$this->assertSame( $copy, $result['id'] );
+		$this->assertSame( self::ORIGINAL, $result['draft_of'] );
+		$this->assertSame( $old, $this->raw( $copy ) );
+		$this->assertSame( $live, $this->raw( self::ORIGINAL ) );
+		$this->assertSame( $orig_bak, (string) get_post_meta( self::ORIGINAL, BuilderBackup::META_KEY, true ) );
+		$this->assertSame( '', (string) get_post_meta( $copy, BuilderBackup::META_KEY, true ), 'la copia nueva no tenía ediciones que respaldar' );
+	}
+
+	public function test_sin_copia_ni_respaldo_no_se_crea_copia(): void {
+		$state = $this->snapshot();
+
+		$result = $this->call( 'restore', array( 'id' => self::ORIGINAL ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_no_backup', $result->get_error_code() );
+		$this->assertSame( $state, $this->snapshot() );
 	}
 
 	/**

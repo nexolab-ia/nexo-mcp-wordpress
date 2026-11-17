@@ -587,12 +587,14 @@ final class BuilderGateway {
 	/**
 	 * Versión de restore_backup con el bloqueo del original en mano.
 	 *
-	 * Restaurar es una edición más. En una página publicada el respaldo del
-	 * original (el estado previo a su última edición en vivo o a su última
-	 * publicación) se restaura en la copia de trabajo, no en vivo; antes de
-	 * pisarla se respalda la copia, así la restauración también se deshace con
-	 * el id de la copia. Con el id de la copia, o con un borrador, se restaura
-	 * el respaldo propio de ese contenido, en su sitio.
+	 * Restaurar es una edición más. Con el id de la copia, de un borrador, o con
+	 * el de una página publicada que ya tiene copia, se restaura el respaldo
+	 * propio de ese contenido (la copia), en su sitio: deshace su última edición.
+	 * No se captura antes de escribir: un reintento restauraría lo recién
+	 * restaurado y perdería la edición anterior. Con una página publicada sin
+	 * copia se usa el respaldo del original y se restaura en una copia nueva,
+	 * que es un clon sin ediciones que perder, así que tampoco captura. Sin
+	 * respaldo del original no se crea la copia.
 	 *
 	 * @param \WP_Post             $post  Contenido ya resuelto.
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
@@ -607,54 +609,39 @@ final class BuilderGateway {
 		}
 
 		$adapter = $this->registry->resolve( $post );
+		$from    = 0;
+		$dest    = array(
+			'post'    => $plan['source'],
+			'created' => false,
+		);
 
-		if ( ! $plan['staged'] ) {
-			$restored = $this->backup->restore( $post );
-
-			if ( is_wp_error( $restored ) ) {
-				return $restored;
+		if ( $plan['staged'] && 0 === $plan['existing'] ) {
+			// Sin copia: el respaldo es el del original y va a una copia nueva.
+			if ( null === $adapter || ! $this->backup->exists( (int) $post->ID ) ) {
+				return new \WP_Error(
+					'nexo_mcp_builder_no_backup',
+					__( 'Este contenido no tiene un respaldo disponible.', 'nexo-mcp' )
+				);
 			}
 
-			if ( null !== $adapter ) {
-				$adapter->flush( $post );
+			$from = (int) $post->ID;
+			$dest = $this->destination( $post, $plan );
+
+			if ( is_wp_error( $dest ) ) {
+				return $dest;
 			}
-
-			return $this->with_draft_of(
-				array(
-					'id'       => $post->ID,
-					'restored' => true,
-				),
-				$post
-			);
-		}
-
-		// Sin respaldo del original no hay nada que restaurar: no se crea copia.
-		if ( null === $adapter || ! $this->backup->exists( (int) $post->ID ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_no_backup',
-				__( 'Este contenido no tiene un respaldo disponible.', 'nexo-mcp' )
-			);
-		}
-
-		$dest = $this->destination( $post, $plan );
-
-		if ( is_wp_error( $dest ) ) {
-			return $dest;
 		}
 
 		$target_post = $dest['post'];
-
-		if ( ! $this->backup->capture( $target_post, $adapter ) ) {
-			return $this->abort( $dest, $this->backup_failed() );
-		}
-
-		$restored = $this->backup->restore( $target_post, (int) $post->ID );
+		$restored    = $this->backup->restore( $target_post, $from );
 
 		if ( is_wp_error( $restored ) ) {
 			return $this->abort( $dest, $restored );
 		}
 
-		$adapter->flush( $target_post );
+		if ( null !== $adapter ) {
+			$adapter->flush( $target_post );
+		}
 
 		return $this->with_draft_of(
 			array(
