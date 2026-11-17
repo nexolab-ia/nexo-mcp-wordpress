@@ -110,7 +110,10 @@ variable_id=""
 kit_id=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
-# variables del Kit (base64 del meta crudo), para dejarlo exactamente como estaba.
+# variables del Kit, para dejarlo exactamente como estaba. Las variables van como
+# `datos:<base64 del meta crudo>` o con el centinela explícito `__sin__` (el Kit no
+# tenía el meta). Cualquier otra cosa —p. ej. vacío porque la captura falló— no es un
+# estado: nunca se interpreta como «sin variables», porque restaurar borraría las del sitio.
 exp_prev=""
 variables_prev=""
 restore() {
@@ -134,9 +137,14 @@ $repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )
 $all = $repo->all()->get();
 unset( $all["items"]["'"$class_id"'"] );
 $repo->put( $all["items"], array_values( array_diff( $all["order"], array( "'"$class_id"'" ) ) ) );
-$prev = base64_decode( "'"$variables_prev"'" );
-if ( "" === $prev ) { delete_post_meta( $kit->get_main_id(), "_elementor_global_variables" ); }
-else { update_post_meta( $kit->get_main_id(), "_elementor_global_variables", wp_slash( $prev ) ); }' >/dev/null
+$prev = "'"$variables_prev"'";
+if ( "__sin__" === $prev ) { delete_post_meta( $kit->get_main_id(), "_elementor_global_variables" ); }
+elseif ( 0 === strpos( $prev, "datos:" ) ) { update_post_meta( $kit->get_main_id(), "_elementor_global_variables", wp_slash( base64_decode( substr( $prev, 6 ) ) ) ); }
+// Sin una captura válida no se toca el meta: mejor dejar la variable de prueba que borrar las del sitio.' >/dev/null
+	case "$variables_prev" in
+		__sin__|datos:*) ;;
+		*) echo "AVISO: no hay captura válida de las variables del Kit; no se restauraron (puede quedar la variable de prueba $variable_label)." ;;
+	esac
 }
 cleanup() {
 	echo
@@ -232,7 +240,12 @@ done
 echo "Experimento atómico activo (estado previo: $(printf '%s' "$exp_prev" | tr '\n' ' '))"
 
 kit_id="$(wpr eval 'echo \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id();')"
-variables_prev="$(wpr eval 'echo base64_encode( (string) get_post_meta( \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id(), "_elementor_global_variables", true ) );')"
+variables_prev="$(wpr eval '$id = \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id(); echo metadata_exists( "post", $id, "_elementor_global_variables" ) ? "datos:" . base64_encode( (string) get_post_meta( $id, "_elementor_global_variables", true ) ) : "__sin__";')"
+# Sin una captura válida no se sigue: restaurar un estado vacío borraría las variables del sitio.
+case "$variables_prev" in
+	__sin__|datos:*) ;;
+	*) variables_prev=""; echo "FALLA: no se pudo capturar el estado de las variables del Kit; se aborta antes de crear nada."; exit 1 ;;
+esac
 class_id="g-nexo$RANDOM"
 class_label="nexo-prueba-clase-$suffix"
 variable_label="nexo-prueba-var-$suffix"

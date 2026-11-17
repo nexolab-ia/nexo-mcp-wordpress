@@ -60,6 +60,25 @@ final class ElementorTreeValidator {
 	public const META_KEYS    = array( 'breakpoint', 'state' );
 
 	/**
+	 * Breakpoints que Elementor 4.4.1 conoce: `desktop` (el de base de los estilos
+	 * atómicos, `local-style.php:18`) y los seis de `Breakpoints\Manager::get_default_config()`
+	 * (`core/breakpoints/manager.php:311-342`). Elementor deja la comprobación como
+	 * pendiente (`style-parser.php:173`, EDS-528) y un breakpoint desconocido se
+	 * guarda sin media query: el estilo se aplicaría en todas las pantallas.
+	 *
+	 * @var array<int, string>
+	 */
+	public const BREAKPOINTS = array( 'desktop', 'widescreen', 'laptop', 'tablet_extra', 'tablet', 'mobile_extra', 'mobile' );
+
+	/**
+	 * Estados de `meta.state` de Elementor 4.4.1: `Style_States::get_valid_states()`
+	 * (`styles/style-states.php:70-78`), pseudo-estados y de clase; `null` es el estado base.
+	 *
+	 * @var array<int, string|null>
+	 */
+	public const STATES = array( 'hover', 'active', 'focus', 'focus-visible', 'checked', 'e--selected', 'e--disabled', 'e--playing', 'e--paused', null );
+
+	/**
 	 * Etiquetas admitidas en `e-button`.
 	 *
 	 * @var array<int, string>
@@ -189,6 +208,13 @@ final class ElementorTreeValidator {
 	private int $base_depth = 0;
 
 	/**
+	 * Tope de nodos del documento resultante en la validación en curso.
+	 *
+	 * @var int
+	 */
+	private int $max_nodes = self::MAX_NODES;
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param array<string, array<int, string>> $allowed_settings Claves de `settings` por tipo.
@@ -226,10 +252,13 @@ final class ElementorTreeValidator {
 	 * @param string $parent_kind Clase del padre (constantes de ElementorNesting).
 	 * @param int    $base_depth  Niveles por encima de la lista (0 = raíz).
 	 * @param int    $base_nodes  Elementos del documento que no forman parte de la lista.
+	 * @param int    $max_nodes   Tope de elementos del documento resultante; 0 = {@see self::MAX_NODES}.
+	 *                            Una página v3 que ya pasa de ese tope lo sube a su propio tamaño
+	 *                            (se puede reemplazar sin agrandarla), ver {@see self::node_cap()}.
 	 *
 	 * @return true|\WP_Error
 	 */
-	public function validate( $elements, string $parent_kind = ElementorNesting::ROOT, int $base_depth = 0, int $base_nodes = 0 ) {
+	public function validate( $elements, string $parent_kind = ElementorNesting::ROOT, int $base_depth = 0, int $base_nodes = 0, int $max_nodes = 0 ) {
 		if ( ! is_array( $elements ) || array() === $elements || ! array_is_list( $elements ) ) {
 			return $this->error(
 				'nexo_mcp_elementor_tree_invalid',
@@ -259,6 +288,7 @@ final class ElementorTreeValidator {
 		$this->nodes       = $base_nodes;
 		$this->parent_kind = $parent_kind;
 		$this->base_depth  = $base_depth;
+		$this->max_nodes   = $max_nodes > 0 ? $max_nodes : self::MAX_NODES;
 
 		return $this->walk_list( $elements, 'elements', $base_depth + 1 );
 	}
@@ -304,14 +334,14 @@ final class ElementorTreeValidator {
 
 		++$this->nodes;
 
-		if ( $this->nodes > self::MAX_NODES ) {
+		if ( $this->nodes > $this->max_nodes ) {
 			return $this->error(
 				'nexo_mcp_elementor_too_many_nodes',
 				$path,
 				sprintf(
 					/* translators: %d: máximo de elementos. */
 					__( 'se supera el máximo de %d elementos.', 'nexo-mcp' ),
-					self::MAX_NODES
+					$this->max_nodes
 				)
 			);
 		}
@@ -913,6 +943,12 @@ final class ElementorTreeValidator {
 				if ( null !== $unknown ) {
 					return $unknown;
 				}
+
+				$result = $this->check_meta_values( $variant['meta'], $here . '.meta' );
+
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
 			}
 
 			if ( ! empty( $variant['custom_css'] ) ) {
@@ -940,6 +976,45 @@ final class ElementorTreeValidator {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Valida `meta.breakpoint` y `meta.state` contra la lista cerrada de Elementor 4.4.1.
+	 *
+	 * Sólo mira las claves presentes: la ausencia de `breakpoint` la rechaza la capa de
+	 * Elementor y la de `state` equivale al estado base (`null`).
+	 *
+	 * @param array<int|string, mixed> $meta Meta de la variante.
+	 * @param string                   $path Ruta de `meta`.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function check_meta_values( array $meta, string $path ) {
+		if ( array_key_exists( 'breakpoint', $meta ) && ( ! is_string( $meta['breakpoint'] ) || ! in_array( $meta['breakpoint'], self::BREAKPOINTS, true ) ) ) {
+			return $this->error(
+				'nexo_mcp_elementor_style_invalid',
+				$path . '.breakpoint',
+				sprintf(
+					/* translators: %s: lista de breakpoints. */
+					__( 'no es un breakpoint válido de Elementor 4.4.1. Admitidos: %s.', 'nexo-mcp' ),
+					implode( ', ', self::BREAKPOINTS )
+				)
+			);
+		}
+
+		if ( array_key_exists( 'state', $meta ) && ! in_array( $meta['state'], self::STATES, true ) ) {
+			return $this->error(
+				'nexo_mcp_elementor_style_invalid',
+				$path . '.state',
+				sprintf(
+					/* translators: %s: lista de estados. */
+					__( 'no es un estado válido de Elementor 4.4.1. Admitidos: %s.', 'nexo-mcp' ),
+					implode( ', ', array_map( static fn( $state ): string => $state ?? 'null', self::STATES ) )
+				)
+			);
 		}
 
 		return true;
@@ -1017,7 +1092,7 @@ final class ElementorTreeValidator {
 	 * un carácter de control (incluye saltos de línea y tabuladores), `/*`,
 	 * `!important`, o una función que carga recursos o rompe el aislamiento
 	 * (`url(`, `src(`, `expression(`, `image-set(`, `image(`, `cross-fade(`, `element(`,
-	 * `var(`; `-webkit-image-set(` cae en `image-set(`) o comillas sin cerrar. Comillas, comas, espacios,
+	 * `var(`; `-webkit-image-set(` cae en `image-set(`), comillas sin cerrar o paréntesis sin cerrar. Comillas, comas, espacios,
 	 * `#`, `%`, `.`, `-` y paréntesis de rgb()/hsl()/calc() siguen admitidos. `var(`
 	 * no hace falta: las variables globales van como `$$type` global-*-variable.
 	 * La ruta devuelta es la de la hoja (p. ej. `…props.color.value`).
@@ -1046,6 +1121,16 @@ final class ElementorTreeValidator {
 				);
 			}
 
+			// Igual con los paréntesis: uno sin cerrar (o uno de más) descuadra la
+			// declaración. Los que van entre comillas son texto y no cuentan.
+			if ( ! self::balanced_parentheses( $value ) ) {
+				return $this->error(
+					'nexo_mcp_elementor_style_value_denied',
+					$path,
+					__( 'el valor tiene paréntesis sin cerrar.', 'nexo-mcp' )
+				);
+			}
+
 			return true;
 		}
 
@@ -1066,6 +1151,46 @@ final class ElementorTreeValidator {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Tope de elementos de un documento al editarlo: `max( MAX_NODES, nodos actuales )`.
+	 *
+	 * Una página v3 puede traer más de {@see self::MAX_NODES} elementos. Reemplazar o
+	 * insertar se permite mientras el documento resultante no pase de su tamaño
+	 * actual; lo que lo agranda por encima de ese tope se rechaza.
+	 *
+	 * @param int $current Elementos que tiene el documento ahora.
+	 */
+	public static function node_cap( int $current ): int {
+		return max( self::MAX_NODES, $current );
+	}
+
+	/**
+	 * Indica si los paréntesis de un valor quedan emparejados (anidados vale), sin contar los de entre comillas.
+	 *
+	 * @param string $value Valor de texto.
+	 */
+	private static function balanced_parentheses( string $value ): bool {
+		$depth = 0;
+		$quote = '';
+
+		foreach ( str_split( $value ) as $char ) {
+			if ( '' !== $quote ) {
+				$quote = $char === $quote ? '' : $quote;
+				continue;
+			}
+
+			if ( '"' === $char || "'" === $char ) {
+				$quote = $char;
+			} elseif ( '(' === $char ) {
+				++$depth;
+			} elseif ( ')' === $char && --$depth < 0 ) {
+				return false;
+			}
+		}
+
+		return 0 === $depth;
 	}
 
 	/**

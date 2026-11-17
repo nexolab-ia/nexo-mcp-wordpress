@@ -61,6 +61,13 @@ final class WorkingCopy {
 	private const SKIP_PREFIXES = array( '_wp_trash_meta_', '_nexo_mcp_' );
 
 	/**
+	 * Claves de los bloqueos que `with_lock()` retiene ahora (la última es la más interna).
+	 *
+	 * @var array<int, int>
+	 */
+	private static array $keys = array();
+
+	/**
 	 * Purga de caché tras fusionar.
 	 *
 	 * @var CachePurger
@@ -214,7 +221,13 @@ final class WorkingCopy {
 						);
 					}
 
-					return $work();
+					self::$keys[] = $key;
+
+					try {
+						return $work();
+					} finally {
+						array_pop( self::$keys );
+					}
 				}
 			);
 
@@ -224,6 +237,47 @@ final class WorkingCopy {
 		}
 
 		return new \WP_Error( 'nexo_mcp_busy', __( 'Otra edición de este contenido está en curso. Reintentá en unos segundos.', 'nexo-mcp' ) );
+	}
+
+	/**
+	 * Comprueba, justo antes de escribir, que el bloqueo del original sigue siendo de esta llamada.
+	 *
+	 * Para las rutas que corren dentro de {@see self::with_lock()}: si el bloqueo venció y
+	 * otro lo tomó, no se escribe y se responde `nexo_mcp_busy` ({@see PostLock::verify()}).
+	 *
+	 * @param int $post_id Contenido que se va a escribir (original o copia).
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function ensure_lock( int $post_id ) {
+		// La clave que `with_lock()` retiene, no una recalculada: si el original dejó de existir
+		// a mitad de la operación, recalcularla daría otra y no se comprobaría nada.
+		$key = array() !== self::$keys ? self::$keys[ array_key_last( self::$keys ) ] : self::original_id_for( $post_id );
+
+		return PostLock::verify( $key );
+	}
+
+	/**
+	 * Error de copia que no se pudo descartar tras un fallo: puede quedar una copia viva.
+	 *
+	 * @param \WP_Post  $copy  Copia que esta llamada creó.
+	 * @param \WP_Error $error Error original, que se conserva en los datos.
+	 */
+	public static function orphan_error( \WP_Post $copy, \WP_Error $error ): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_builder_copy_orphan',
+			sprintf(
+				/* translators: 1: id de la copia, 2: error original. */
+				__( 'La edición falló y tampoco se pudo mandar a la papelera la copia de trabajo %1$d que se había creado: puede quedar una copia a medio escribir (descártala desde WordPress). Error original: %2$s', 'nexo-mcp' ),
+				(int) $copy->ID,
+				$error->get_error_message()
+			),
+			array(
+				'copy_id'          => (int) $copy->ID,
+				'original_error'   => $error->get_error_code(),
+				'original_message' => $error->get_error_message(),
+			)
+		);
 	}
 
 	/**
@@ -247,6 +301,13 @@ final class WorkingCopy {
 				$copy_id  = self::copy_of( $original );
 
 				if ( 0 === $copy_id ) {
+					// Crear la copia es la primera escritura: antes, comprobar que el bloqueo sigue siendo nuestro.
+					$held = PostLock::verify( (int) $original->ID );
+
+					if ( is_wp_error( $held ) ) {
+						return $held;
+					}
+
 					$copy_id = $this->create( $original );
 				}
 
@@ -278,7 +339,13 @@ final class WorkingCopy {
 				// comprobación de huérfana de `merge_locked()` lo rechaza.
 				$fresh = get_post( $copy->ID );
 
-				return $fresh instanceof \WP_Post ? $this->merge_locked( $fresh ) : $this->orphan();
+				if ( ! $fresh instanceof \WP_Post ) {
+					return $this->orphan();
+				}
+
+				$held = self::ensure_lock( (int) $fresh->ID );
+
+				return is_wp_error( $held ) ? $held : $this->merge_locked( $fresh );
 			},
 			false
 		);
@@ -505,7 +572,9 @@ final class WorkingCopy {
 					return new \WP_Error( 'nexo_mcp_draft_not_copy', __( 'Este contenido no es una copia de trabajo.', 'nexo-mcp' ) );
 				}
 
-				return $this->discard_locked( $fresh, $original_id );
+				$held = self::ensure_lock( (int) $fresh->ID );
+
+				return is_wp_error( $held ) ? $held : $this->discard_locked( $fresh, $original_id );
 			},
 			false
 		);

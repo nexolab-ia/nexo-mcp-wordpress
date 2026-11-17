@@ -61,8 +61,24 @@ final class WP_Test_State {
 	/** @var array<int, WP_Post> */
 	public static array $post_cache = array();
 
+	/** Si no está vacío, `wp_json_encode()` falla (devuelve false) cuando lo llama la función de ese nombre. */
+	public static string $json_fail_in = '';
+
+	/** Si es true, `wp_update_post()` devuelve un WP_Error (el guardado falla). */
+	public static bool $fail_update_post = false;
+
+	/** Si es true, `wp_trash_post()` falla (devuelve false). */
+	public static bool $fail_trash = false;
+
+	/** Se llama una sola vez, en el primer `wp_cache_delete( id, 'post_meta' )` (justo tras obtener un bloqueo). */
+	public static ?\Closure $on_forget = null;
+
 	public static function reset(): void {
-		self::$cache_posts = false;
+		self::$cache_posts      = false;
+		self::$json_fail_in     = '';
+		self::$fail_update_post = false;
+		self::$on_forget        = null;
+		self::$fail_trash       = false;
 		self::$post_cache  = array();
 		self::$options   = array();
 		self::$caps      = array();
@@ -135,7 +151,7 @@ class WP_Post {
 /**
  * Doble de $wpdb: guarda las filas de auditoría.
  */
-final class WPDB_Test_Double {
+class WPDB_Test_Double {
 	public string $prefix  = 'wp_';
 	public string $options = 'wp_options';
 
@@ -246,7 +262,16 @@ function wp_strip_all_tags( $text ) { return strip_tags( (string) $text ); }
 function absint( $value ) { return abs( (int) $value ); }
 function wp_unslash( $value ) { return $value; }
 function wp_slash( $value ) { return $value; }
-function wp_json_encode( $data, $flags = 0 ) { return json_encode( $data, $flags ); }
+function wp_json_encode( $data, $flags = 0 ) {
+	if ( '' !== WP_Test_State::$json_fail_in ) {
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 5 ) as $frame ) { // phpcs:ignore
+			if ( WP_Test_State::$json_fail_in === ( $frame['function'] ?? '' ) ) {
+				return false;
+			}
+		}
+	}
+	return json_encode( $data, $flags );
+}
 function untrailingslashit( $value ) { return rtrim( (string) $value, '/\\' ); }
 function trailingslashit( $value ) { return untrailingslashit( $value ) . '/'; }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( (string) $url, $component ); }
@@ -382,6 +407,11 @@ function delete_post_meta( $post_id, $key, $value = '' ): bool {
 	return true;
 }
 function wp_cache_delete( $key, $group = '' ): bool {
+	if ( 'post_meta' === $group && null !== WP_Test_State::$on_forget ) {
+		$hook                      = WP_Test_State::$on_forget;
+		WP_Test_State::$on_forget = null;
+		$hook();
+	}
 	if ( 'posts' === $group ) {
 		unset( WP_Test_State::$post_cache[ (int) $key ] );
 	}
@@ -389,6 +419,9 @@ function wp_cache_delete( $key, $group = '' ): bool {
 }
 function wp_update_post( $data, $wp_error = false ) {
 	$id = (int) ( $data['ID'] ?? 0 );
+	if ( WP_Test_State::$fail_update_post ) {
+		return new WP_Error( 'db_update_error', 'No se pudo actualizar.' );
+	}
 	if ( ! isset( WP_Test_State::$posts[ $id ] ) ) {
 		return new WP_Error( 'invalid_post', 'No existe.' );
 	}
@@ -413,6 +446,9 @@ function wp_insert_post( $data, $wp_error = false ) {
 	return $id;
 }
 function wp_trash_post( $post_id ) {
+	if ( WP_Test_State::$fail_trash ) {
+		return false;
+	}
 	if ( ! isset( WP_Test_State::$posts[ (int) $post_id ] ) ) {
 		return false;
 	}

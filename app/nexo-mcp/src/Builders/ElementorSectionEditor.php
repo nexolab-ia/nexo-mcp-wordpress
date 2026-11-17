@@ -207,7 +207,7 @@ final class ElementorSectionEditor {
 		}
 
 		if ( 'delete' !== $operation ) {
-			$limits = $this->check_limits( $spliced['tree'] );
+			$limits = $this->check_limits( $spliced['tree'], ElementorTreeValidator::node_cap( ElementorTree::count_nodes( $tree ) ) );
 
 			if ( is_wp_error( $limits ) ) {
 				return $limits;
@@ -245,7 +245,13 @@ final class ElementorSectionEditor {
 		}
 
 		$elements = $input['elements'] ?? null;
-		$checked  = $this->guard->validator()->validate( $elements, (string) $plan['parent_kind'], (int) $plan['base_depth'], (int) $plan['nodes_without'] );
+		$checked  = $this->guard->validator()->validate(
+			$elements,
+			(string) $plan['parent_kind'],
+			(int) $plan['base_depth'],
+			(int) $plan['nodes_without'],
+			ElementorTreeValidator::node_cap( ElementorTree::count_nodes( $tree ) )
+		);
 
 		if ( is_wp_error( $checked ) ) {
 			return $checked;
@@ -277,18 +283,19 @@ final class ElementorSectionEditor {
 	/**
 	 * Topes del documento resultante (nodos y bytes).
 	 *
-	 * @param array<int, mixed> $tree Documento resultante.
+	 * @param array<int, mixed> $tree      Documento resultante.
+	 * @param int               $max_nodes Tope de elementos: `max( 200, nodos actuales )`.
 	 *
 	 * @return true|\WP_Error
 	 */
-	private function check_limits( array $tree ) {
-		if ( ElementorTree::count_nodes( $tree ) > ElementorTreeValidator::MAX_NODES ) {
+	private function check_limits( array $tree, int $max_nodes ) {
+		if ( ElementorTree::count_nodes( $tree ) > $max_nodes ) {
 			return new \WP_Error(
 				'nexo_mcp_elementor_too_many_nodes',
 				sprintf(
 					/* translators: %d: máximo de elementos. */
 					__( 'La página resultante superaría el máximo de %d elementos; no se cambia nada.', 'nexo-mcp' ),
-					ElementorTreeValidator::MAX_NODES
+					$max_nodes
 				)
 			);
 		}
@@ -317,6 +324,14 @@ final class ElementorSectionEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function write( \WP_Post $post, bool $staged, int $existing, string $operation, array $spliced ) {
+		// Todo lo largo (validar, armar, empalmar) ya pasó: antes de la primera escritura,
+		// el bloqueo pudo vencer y otro proceso tomarlo.
+		$held = WorkingCopy::ensure_lock( (int) $post->ID );
+
+		if ( is_wp_error( $held ) ) {
+			return $held;
+		}
+
 		$target  = $post;
 		$created = false;
 
@@ -380,7 +395,11 @@ final class ElementorSectionEditor {
 	 */
 	private function abort( \WP_Post $target, bool $created, \WP_Error $error ): \WP_Error {
 		if ( $created ) {
-			$this->copies->discard( $target );
+			$discarded = $this->copies->discard( $target );
+
+			if ( is_wp_error( $discarded ) ) {
+				return WorkingCopy::orphan_error( $target, $error );
+			}
 		}
 
 		return $error;

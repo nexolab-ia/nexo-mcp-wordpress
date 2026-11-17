@@ -83,6 +83,19 @@ abstract class NexoTestCase extends TestCase {
 	}
 
 	/**
+	 * Hace que el bloqueo del contenido pase a otro dueño justo después de que esta llamada lo obtenga.
+	 *
+	 * Equivale a que venza y otro proceso lo tome mientras el trabajo corre, antes de escribir.
+	 *
+	 * @param int $id ID del contenido original (la clave del bloqueo).
+	 */
+	protected function lose_lock_after_acquiring( int $id ): void {
+		\WP_Test_State::$on_forget = static function () use ( $id ): void {
+			\WP_Test_State::$options[ 'nexo_mcp_lock_' . $id ] = 'otro-dueno|' . ( time() + 100 );
+		};
+	}
+
+	/**
 	 * Simula una conexión OAuth con los scopes dados.
 	 *
 	 * @param array<int, string> $scopes Scopes concedidos.

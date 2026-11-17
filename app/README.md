@@ -126,15 +126,27 @@ Reglas que siempre se cumplen:
   (`nexo_mcp_lock_<id>` en `wp_options`, con vencimiento de 30 s): dos
   ediciones simultáneas nunca crean dos copias ni se pisan. Si el bloqueo no
   se obtiene tras ~5 s, la herramienta responde «Otra edición de este
-  contenido está en curso. Reintentá en unos segundos.» y no escribe nada.
+  contenido está en curso. Reintentá en unos segundos.» y no escribe nada. Justo
+  antes de su primera escritura cada ruta comprueba que el bloqueo siga siendo
+  suyo (y lo renueva): si venció y otro lo tomó, no escribe y responde también
+  «ocupado». Cada toma de un bloqueo vencido queda en **Actividad**
+  (`lock-takeover`).
 - **Elementor 4 (atómicos)**: `get-page-structure` lee los elementos atómicos
   (`e-heading`, `e-paragraph`, `e-button`, `e-flexbox`…) con su texto y sus
   clases; `get-design-system` lista las clases globales, las variables y los
-  colores y tipografías del Kit; `create-elementor-page` crea una página
+  colores y tipografías del Kit (si la lectura de las clases o de las variables
+  falla, la respuesta trae `warnings: [{source, message}]` y conserva lo ya leído,
+  en vez de una lista vacía sin explicación); `create-elementor-page` crea una página
   atómica **en borrador** a partir de un árbol que arma la IA. El árbol se
   valida antes de guardar: lista cerrada de elementos, enlaces https/mailto/tel,
   imágenes sólo por ID de la biblioteca, sin CSS propio ni valores de estilo
-  que puedan escaparse de su declaración. Exige Editor V4 activo en Elementor.
+  que puedan escaparse de su declaración (comillas o paréntesis sin cerrar
+  incluidos), y `meta.breakpoint` / `meta.state` de cada variante de estilo
+  deben ser de la lista cerrada de Elementor 4.4.1 (breakpoints `desktop`,
+  `widescreen`, `laptop`, `tablet_extra`, `tablet`, `mobile_extra`, `mobile`;
+  estados `hover`, `active`, `focus`, `focus-visible`, `checked`,
+  `e--selected`, `e--disabled`, `e--playing`, `e--paused` o `null`). Exige Editor
+  V4 activo en Elementor.
   `edit-elementor-section` reconstruye una parte de una página existente (también
   v3): `replace` reemplaza un nodo (p. ej. una sección) por un árbol atómico
   nuevo, `insert` agrega uno antes, después o dentro de un nodo, y `delete`
@@ -144,7 +156,10 @@ Reglas que siempre se cumplen:
   raíz sólo contenedores atómicos, en una columna v3 sólo widgets atómicos, nada
   nuevo dentro de una sección v3 ni de un widget. Lo no tocado queda idéntico
   (se comprueba antes de guardar), guarda los ajustes ya saneados por Elementor (lo mismo que `create-elementor-page`), se respalda y se invalida el CSS de esa
-  página. Para insertar y reemplazar exige Editor V4 activo.
+  página. Para insertar y reemplazar exige Editor V4 activo. El tope es de 200
+  elementos para la página resultante; una página v3 que ya los pasa admite
+  `replace` e `insert` mientras el documento resultante no supere
+  `max(200, elementos actuales)` (se puede reemplazar sin agrandarla).
 - **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
   y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).
@@ -157,11 +172,16 @@ Reglas que siempre se cumplen:
   sólo tras validar la entrada; la respuesta trae el `id` de la copia y
   `draft_of`); revisa con `get-working-copy-diff` y publica con
   `set-content-status`. Un borrador se edita en su sitio. El respaldo se toma
-  sobre lo que se edita (la copia). `restore-builder-backup` con el id de una
-  página publicada restaura en su copia el respaldo del original (estado previo
-  a su última edición en vivo o publicación), tras respaldar la copia; con el id
-  de la copia deshace la última edición de la copia. Con «Editar lo publicado
-  directamente» las ediciones vuelven a ir en vivo salvo `draft: true`.
+  sobre lo que se edita (la copia). `restore-builder-backup` con el id de la copia,
+  o con el de una página publicada que ya tiene copia, deshace la última edición
+  de la copia (restaura el respaldo propio de la copia, sin capturar antes de
+  escribir: restaurar dos veces deja el mismo estado y no pierde nada). Sólo si la
+  página publicada no tiene copia usa el respaldo del original (estado previo a su
+  última edición en vivo o publicación) y lo restaura en una copia nueva, nunca en
+  vivo; sin respaldo del original no crea la copia. Si falla el respaldo o el
+  guardado tras crear la copia, la copia se manda a la papelera y no queda huérfana.
+  Con «Editar lo publicado directamente» las ediciones vuelven a ir en vivo salvo
+  `draft: true`.
 - Cada llamada —también las rechazadas— queda en **Actividad**, sin datos
   sensibles.
 
