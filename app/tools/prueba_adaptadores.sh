@@ -14,7 +14,11 @@
 #    estilo local y clase global), comprueba su lectura, lo guardado y el
 #    renderizado, y que cada rechazo (e-svg, widget v3, javascript:, imagen por
 #    URL, clave desconocida, valor inválido, experimento apagado) no crea nada.
-# 7. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
+# 7. Reconstruye secciones por MCP con edit-elementor-section sobre una página v3 y
+#    una atómica publicadas: cada edición cae en una copia de trabajo (el original
+#    no cambia), se revisa con get-working-copy-diff, se renderiza y se publica
+#    (fusión); y cada rechazo no crea copia ni cambia el original.
+# 8. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
 #    imagen de prueba se quitan) y restaura los ajustes y el estado del experimento.
 #
 # Uso (desde app/):  tools/prueba_adaptadores.sh
@@ -52,6 +56,17 @@ fi
 if [ "${1:-}" = "--experimentos" ]; then
 	for name in e_opt_in_v4 e_atomic_elements; do wp option update "elementor_experiment-$name" "$2" >/dev/null; done
 	wpr eval 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";'
+	exit 0
+fi
+
+# Subcomandos para el bloque de edit-elementor-section (comprobaciones fuera de MCP).
+#   --meta <id> <clave>   valor crudo de un meta del contenido (vacío si no existe)
+#   --estado <id>         estado del contenido (vacío si no existe)
+#   --render <id>         HTML que Elementor renderiza para el contenido
+if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
+if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
+if [ "${1:-}" = "--render" ]; then
+	wp eval 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$2"', true );' --user=admin
 	exit 0
 fi
 
@@ -531,6 +546,273 @@ echo $html;' --user=admin)"
 else
 	falla "create-elementor-page no devolvió una página que verificar"
 fi
+
+echo
+echo "### Reconstrucción de secciones por MCP (edit-elementor-section)"
+# Tres páginas publicadas propias (el título lleva el sufijo, así que la limpieza las barre,
+# y a sus copias): una v3 (sección > columna > widgets), una atómica y una v3 de una sola sección.
+version_elementor="$(wpr eval 'echo ELEMENTOR_VERSION;')"
+secciones_v3_titulo="Prueba secciones v3 elementor-mcp-$suffix"
+secciones_atomica_titulo="Prueba secciones atomica elementor-mcp-$suffix"
+secciones_una_titulo="Prueba secciones una raiz elementor-mcp-$suffix"
+v3_tree="$(printf '[{"id":"sec3000","elType":"section","settings":{"gap":"default"},"elements":[{"id":"col3000","elType":"column","settings":{"_column_size":100},"elements":[{"id":"hd3000","elType":"widget","widgetType":"heading","settings":{"title":"Titulo v3 %s"},"elements":[]},{"id":"tx3000","elType":"widget","widgetType":"text-editor","settings":{"editor":"<p>Texto v3</p>"},"elements":[]}]}]},{"id":"sec3001","elType":"section","settings":{"gap":"default"},"elements":[{"id":"col3001","elType":"column","settings":{"_column_size":100},"elements":[{"id":"bt3000","elType":"widget","widgetType":"button","settings":{"text":"Boton v3","link":{"url":"https://example.com/v3","is_external":"","nofollow":""}},"elements":[]}]}]}]' "$suffix")"
+una_tree='[{"id":"sec6000","elType":"section","settings":{"gap":"default"},"elements":[{"id":"col6000","elType":"column","settings":{"_column_size":100},"elements":[{"id":"hd6000","elType":"widget","widgetType":"heading","settings":{"title":"Unica raiz"},"elements":[]}]}]}]'
+secciones_v3_id="$(wp post create --post_type=page --post_status=publish --post_title="$secciones_v3_titulo" --porcelain)"
+secciones_una_id="$(wp post create --post_type=page --post_status=publish --post_title="$secciones_una_titulo" --porcelain)"
+secciones_atomica_id="$(wp post create --post_type=page --post_status=publish --post_title="$secciones_atomica_titulo" --porcelain)"
+[ -n "$secciones_v3_id" ] && [ -n "$secciones_una_id" ] && [ -n "$secciones_atomica_id" ] || { echo "FALLA: no se pudieron crear las páginas de prueba de secciones"; exit 1; }
+for par in "$secciones_v3_id|$v3_tree" "$secciones_una_id|$una_tree"; do
+	wp post meta update "${par%%|*}" _elementor_edit_mode builder >/dev/null
+	wp post meta update "${par%%|*}" _elementor_version "$version_elementor" >/dev/null
+	wp post meta update "${par%%|*}" _elementor_data "${par#*|}" >/dev/null
+done
+guardado="$(wp eval '
+$id = '"$secciones_atomica_id"';
+update_post_meta( $id, "_elementor_edit_mode", "builder" );
+$texto = function ( $t ) { return array( "\$\$type" => "escaped-html", "value" => $t ); };
+$arbol = array( array(
+	"id" => "fx4000", "elType" => "e-flexbox", "styles" => array(), "settings" => array(), "elements" => array(
+		array( "id" => "eh4000", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(), "settings" => array( "title" => $texto( "Titulo atomico base '"$suffix"'" ) ) ),
+		array( "id" => "ep4000", "elType" => "widget", "widgetType" => "e-paragraph", "styles" => array(), "elements" => array(), "settings" => array( "paragraph" => $texto( "Parrafo atomico base '"$suffix"'" ) ) ),
+	),
+) );
+$documento = \Elementor\Plugin::$instance->documents->get( $id );
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
+[ "$guardado" = "guardado" ] || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
+echo "Páginas publicadas: v3 $secciones_v3_id, atómica $secciones_atomica_id, una raíz $secciones_una_id"
+
+python3 -I - "$suffix" "$secciones_v3_id" "$secciones_atomica_id" "$secciones_una_id" <<'PY'
+import importlib.util, json, pathlib, subprocess, sys
+
+suffix, v3_id, atomica_id, una_id = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def contar():
+    return script("--contar-paginas")
+
+def crudo(id_pagina):
+    return script("--meta", id_pagina, "_elementor_data")
+
+def arbol(id_pagina):
+    return json.loads(crudo(id_pagina))
+
+def indice(nodos, salida=None):
+    salida = {} if salida is None else salida
+    for n in nodos:
+        salida[n["id"]] = n
+        indice(n.get("elements", []), salida)
+    return salida
+
+def render(id_pagina):
+    return script("--render", id_pagina)
+
+def prop(tipo, valor):
+    return {"$$type": tipo, "value": valor}
+
+def titulo(texto, tag="h2"):
+    return {"type": "e-heading", "settings": {"title": prop("escaped-html", texto), "tag": prop("string", tag)}}
+
+def caja(*hijos, tipo="e-flexbox"):
+    return {"type": tipo, "elements": list(hijos)}
+
+def editar(args):
+    _, d = cli.ok("edit-elementor-section", args)
+    return d
+
+def sin_tocar(antes, despues, ids):
+    a, b = indice(antes), indice(despues)
+    for i in ids:
+        assert i in b, f"falta el nodo {i}"
+        assert a[i] == b[i], f"el nodo {i} cambió: {a[i]} != {b[i]}"
+
+def copia_en_diff(original, copia):
+    _, d = cli.ok("get-working-copy-diff", {"id": original})
+    assert d["copy_id"] == copia and d["original_id"] == original, d
+    assert "meta" in d["changed"] and any(e["key"] == "_elementor_data" for e in d["meta"]["changed"]), d
+
+def tipos(nodos):
+    return [(n.get("widgetType") or n["elType"]) for n in nodos]
+
+# --- Página v3 -----------------------------------------------------------------
+orig_v3 = crudo(v3_id)
+orig_v3_arbol = json.loads(orig_v3)
+v3 = {}
+t_reemplazo = f"Reemplazo atomico {suffix}"
+t_columna = f"Heading en columna v3 {suffix}"
+
+def v3_reemplazar():
+    d = editar({"id": v3_id, "operation": "replace", "node_id": "sec3000", "elements": [caja(titulo(t_reemplazo, "h1"))]})
+    v3.update(d)
+    assert d["draft_of"] == v3_id and d["id"] != v3_id, d
+    assert d["operation"] == "replace" and len(d["node_ids"]) == 2, d
+    assert d["removed"] == ["sec3000", "col3000", "hd3000", "tx3000"], d["removed"]
+    assert crudo(v3_id) == orig_v3, "el original cambió"
+    assert script("--estado", v3_id) == "publish" and script("--estado", d["id"]) == "draft"
+    copia = arbol(d["id"])
+    assert [n["id"] for n in copia][1:] == ["sec3001"] and copia[0]["elType"] == "e-flexbox", tipos(copia)
+    assert copia[0]["id"] == d["node_ids"][0] and copia[0]["elements"][0]["widgetType"] == "e-heading"
+    sin_tocar(orig_v3_arbol, copia, ["sec3001", "col3001", "bt3000"])
+
+def v3_diff_y_render():
+    copia_en_diff(v3_id, v3["id"])
+    _, e = cli.ok("get-page-structure", {"id": v3["id"]})
+    h = next(n for n in e["nodes"] if n["type"] == "e-heading")
+    assert h["text"] == t_reemplazo, h
+    html = render(v3["id"])
+    assert t_reemplazo in html and "Boton v3" in html, "la copia no renderiza lo nuevo y lo v3 intacto"
+    assert f"Titulo v3 {suffix}" not in html, "la sección reemplazada sigue renderizando"
+
+def v3_insertar_en_columna():
+    antes = arbol(v3["id"])
+    d = editar({"id": v3_id, "operation": "insert", "node_id": "col3001", "position": "inside", "elements": [titulo(t_columna)]})
+    assert d["id"] == v3["id"] and d["draft_of"] == v3_id, "debía reutilizar la copia"
+    assert crudo(v3_id) == orig_v3, "el original cambió"
+    despues = arbol(d["id"])
+    columna = indice(despues)["col3001"]["elements"]
+    assert [n["id"] for n in columna] == ["bt3000", d["node_ids"][0]], [n["id"] for n in columna]
+    assert columna[1]["widgetType"] == "e-heading"
+    sin_tocar(antes, despues, [n["id"] for n in antes if n["id"] != "sec3001"] + ["bt3000"])
+    html = render(d["id"])
+    assert t_columna in html and t_reemplazo in html and "Boton v3" in html, "la copia no renderiza el heading dentro de la columna v3"
+
+def v3_publicar():
+    copia_id = v3["id"]
+    datos_copia = crudo(copia_id)
+    _, m = cli.ok("set-content-status", {"id": copia_id, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (v3_id, copia_id), m
+    assert json.loads(crudo(v3_id)) == json.loads(datos_copia), "el original no trae el árbol de la copia"
+    assert script("--estado", v3_id) == "publish" and script("--estado", copia_id) == "", "la copia debía desaparecer"
+    html = render(v3_id)
+    assert t_reemplazo in html and t_columna in html, "el original publicado no renderiza lo nuevo"
+
+comprobar("v3: reemplazar una sección por un e-flexbox va a la copia y no toca el original", v3_reemplazar)
+comprobar("v3: get-working-copy-diff nombra la copia; la copia renderiza lo nuevo y lo v3 intacto", v3_diff_y_render)
+comprobar("v3: insertar un e-heading en una columna v3 (misma copia, nodos v3 idénticos, renderiza)", v3_insertar_en_columna)
+comprobar("v3: publicar la copia la fusiona en el original", v3_publicar)
+
+# --- Página atómica ------------------------------------------------------------
+orig_at = crudo(atomica_id)
+orig_at_arbol = json.loads(orig_at)
+at = {}
+t_antes, t_despues, t_dentro = f"Antes {suffix}", f"Despues {suffix}", f"Dentro {suffix}"
+
+def at_antes_y_despues():
+    d = editar({"id": atomica_id, "operation": "insert", "node_id": "fx4000", "position": "before", "elements": [caja(titulo(t_antes))]})
+    at.update(d)
+    assert d["draft_of"] == atomica_id and "removed" not in d, d
+    d2 = editar({"id": atomica_id, "operation": "insert", "node_id": "fx4000", "position": "after", "elements": [caja(titulo(t_despues), tipo="e-div-block")]})
+    assert d2["id"] == d["id"], "debía reutilizar la copia"
+    assert crudo(atomica_id) == orig_at, "el original cambió"
+    copia = arbol(d["id"])
+    assert [n["id"] for n in copia] == [d["node_ids"][0], "fx4000", d2["node_ids"][0]], [n["id"] for n in copia]
+    assert tipos(copia) == ["e-flexbox", "e-flexbox", "e-div-block"], tipos(copia)
+    sin_tocar(orig_at_arbol, copia, ["fx4000", "eh4000", "ep4000"])
+
+def at_dentro():
+    boton = {"type": "e-button", "settings": {"text": prop("escaped-html", t_dentro)}}
+    d = editar({"id": atomica_id, "operation": "insert", "node_id": "fx4000", "position": "inside", "elements": [boton]})
+    assert d["id"] == at["id"]
+    hijos = indice(arbol(d["id"]))["fx4000"]["elements"]
+    assert [n["id"] for n in hijos] == ["eh4000", "ep4000", d["node_ids"][0]] and hijos[2]["widgetType"] == "e-button", [n["id"] for n in hijos]
+    assert crudo(atomica_id) == orig_at, "el original cambió"
+
+def at_borrar():
+    d = editar({"id": at["id"], "operation": "delete", "node_id": "ep4000"})
+    assert d["id"] == at["id"] and d["draft_of"] == atomica_id and d["removed"] == ["ep4000"] and "node_ids" not in d, d
+    copia = arbol(d["id"])
+    assert "ep4000" not in indice(copia) and "eh4000" in indice(copia)
+    assert "ep4000" in indice(json.loads(crudo(atomica_id))), "el original perdió el nodo"
+    sin_tocar(orig_at_arbol, copia, ["eh4000"])
+
+def at_diff_render_y_publicar():
+    copia_en_diff(atomica_id, at["id"])
+    html = render(at["id"])
+    for t in (t_antes, t_despues, t_dentro, f"Titulo atomico base {suffix}"):
+        assert t in html, f"la copia no renderiza «{t}»"
+    assert f"Parrafo atomico base {suffix}" not in html, "el párrafo borrado sigue renderizando"
+    datos_copia = crudo(at["id"])
+    _, m = cli.ok("set-content-status", {"id": at["id"], "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (atomica_id, at["id"]), m
+    assert json.loads(crudo(atomica_id)) == json.loads(datos_copia) and script("--estado", at["id"]) == ""
+    html = render(atomica_id)
+    assert t_antes in html and t_despues in html and t_dentro in html and f"Parrafo atomico base {suffix}" not in html, "el original publicado no renderiza la edición"
+
+comprobar("atómica: insertar antes y después (raíz) en la copia, original intacto", at_antes_y_despues)
+comprobar("atómica: insertar dentro de un contenedor (al final)", at_dentro)
+comprobar("atómica: borrar un nodo en la copia (el original lo conserva)", at_borrar)
+comprobar("atómica: diff, renderizado de la copia y publicación (fusión)", at_diff_render_y_publicar)
+
+# --- Saneado: edit-elementor-section guarda lo mismo que create-elementor-page ---
+def saneado():
+    carga = {"type": "e-heading", "settings": {
+        "title": prop("escaped-html", "<script>alert(1)</script><img src=x onerror=alert(2)><b>t</b>"),
+        "_cssid": prop("string", 'a"><script>alert(1)</script>')}}
+    d = editar({"id": atomica_id, "operation": "insert", "node_id": "fx4000", "position": "inside", "elements": [carga]})
+    editado = indice(arbol(d["id"]))[d["node_ids"][0]]["settings"]
+    _, c = cli.ok("create-elementor-page", {"title": f"Saneado elementor-mcp-{suffix}", "elements": [caja(carga)]})
+    creado = next(n for n in indice(arbol(c["id"])).values() if n.get("widgetType") == "e-heading")["settings"]
+    crudo_copia = crudo(d["id"])
+    assert "<script" not in crudo_copia and "onerror" not in crudo_copia, "la copia guardó texto sin sanear"
+    assert "<script" not in editado["_cssid"]["value"], editado["_cssid"]
+    assert editado["title"] == creado["title"], f"título: {editado['title']!r} != {creado['title']!r}"
+    assert editado["_cssid"] == creado["_cssid"], f"_cssid: {editado['_cssid']!r} != {creado['_cssid']!r}"
+
+comprobar("saneado: lo guardado por edit-elementor-section es lo que guarda create-elementor-page", saneado)
+
+# --- Rechazos: nada se escribe, no nace ninguna copia ---------------------------
+def rechazo(nombre, id_pagina, args, esperado):
+    def fn():
+        antes, datos, estado = contar(), crudo(id_pagina), script("--estado", id_pagina)
+        es_error, msg, _ = cli.call("edit-elementor-section", {"id": id_pagina, **args})
+        assert es_error, "debía rechazarse"
+        assert msg.startswith(esperado), f"mensaje: {msg[:300]!r}"
+        assert contar() == antes, "cambió la cantidad de páginas (¿se creó una copia?)"
+        assert crudo(id_pagina) == datos, "cambió el original"
+        assert script("--estado", id_pagina) == estado
+        assert script("--meta", id_pagina, "_nexo_mcp_draft") == "", "el original quedó enlazado a una copia"
+    comprobar(f"rechazo: {nombre}", fn)
+
+rechazo("widget suelto en la raíz", v3_id, {"operation": "replace", "node_id": "sec3001", "elements": [titulo("x")]},
+        "elements[0].type: en la raíz de la página sólo se admiten contenedores atómicos")
+rechazo("contenedor atómico dentro de una columna v3", v3_id, {"operation": "insert", "node_id": "col3001", "position": "inside", "elements": [caja(titulo("x"))]},
+        "elements[0].type: una columna de Elementor 3 descarta en silencio los contenedores atómicos")
+rechazo("insertar dentro de una sección v3", v3_id, {"operation": "insert", "node_id": "sec3001", "position": "inside", "elements": [titulo("x")]},
+        "elements[0].type: una sección de Elementor 3 sólo admite columnas")
+rechazo("dentro de un widget", v3_id, {"operation": "insert", "node_id": "bt3000", "position": "inside", "elements": [titulo("x")]},
+        "elements[0].type: un widget no admite hijos")
+rechazo("borrar la última raíz", una_id, {"operation": "delete", "node_id": "sec6000"},
+        "Ese es el único elemento de la raíz")
+rechazo("subárbol inválido (propiedad desconocida)", v3_id, {"operation": "replace", "node_id": "sec3001",
+        "elements": [caja({"type": "e-heading", "settings": {"titel": prop("escaped-html", "x")}})]},
+        "elements[0].elements[0].settings.titel: la propiedad «titel» no existe en «e-heading».")
+rechazo("tipo vedado (e-svg)", v3_id, {"operation": "replace", "node_id": "sec3001", "elements": [caja({"type": "e-svg"})]},
+        "elements[0].elements[0].type: el tipo «e-svg» no está permitido")
+rechazo("nodo inexistente", v3_id, {"operation": "delete", "node_id": "no-existe"},
+        "El elemento indicado no existe en esta página.")
+rechazo("delete con elements", v3_id, {"operation": "delete", "node_id": "sec3001", "elements": [caja(titulo("x"))]},
+        "delete no recibe «elements»")
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de edit-elementor-section OK.")
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "la prueba de edit-elementor-section tuvo comprobaciones fallidas"
 
 echo
 echo "### Verificación con wp-cli"

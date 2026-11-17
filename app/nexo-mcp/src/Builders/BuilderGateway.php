@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Support\Settings;
+use NexoDev\NexoMCP\WordPress\WorkingCopy;
+
 /**
  * Punto único de entrada del módulo de constructores.
  *
@@ -38,14 +41,23 @@ final class BuilderGateway {
 	private BuilderBackup $backup;
 
 	/**
+	 * Configuración: la necesita la edición de secciones para decidir la copia de trabajo.
+	 *
+	 * @var Settings
+	 */
+	private Settings $settings;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * @param BuilderRegistry|null $registry Registro de adaptadores.
 	 * @param BuilderBackup|null   $backup   Gestor de respaldos.
+	 * @param Settings|null        $settings Configuración operativa.
 	 */
-	public function __construct( ?BuilderRegistry $registry = null, ?BuilderBackup $backup = null ) {
+	public function __construct( ?BuilderRegistry $registry = null, ?BuilderBackup $backup = null, ?Settings $settings = null ) {
 		$this->registry = $registry ?? new BuilderRegistry();
 		$this->backup   = $backup ?? new BuilderBackup();
+		$this->settings = $settings ?? new Settings();
 	}
 
 	/**
@@ -131,6 +143,52 @@ final class BuilderGateway {
 	 */
 	public function create_elementor_page( array $input ) {
 		return ( new ElementorPageCreator() )->create( $input );
+	}
+
+	/**
+	 * Reemplaza, inserta o borra un nodo de una página de Elementor.
+	 *
+	 * Lo nuevo es siempre atómico y el cambio va a la copia de trabajo de las
+	 * páginas publicadas. Ver {@see ElementorSectionEditor}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function edit_elementor_section( array $input ) {
+		$post = $this->resolve_post( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		// Editar la copia es editar el original: el permiso se pide sobre el original.
+		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
+			return new \WP_Error(
+				'nexo_mcp_builder_forbidden',
+				__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
+			);
+		}
+
+		$editor = new ElementorSectionEditor(
+			$this->settings,
+			new ElementorAdapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new ElementorSchemaGuard(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'operation' => isset( $input['operation'] ) && is_string( $input['operation'] ) ? $input['operation'] : '',
+				'node_id'   => isset( $input['node_id'] ) && is_string( $input['node_id'] ) ? sanitize_text_field( $input['node_id'] ) : '',
+				'position'  => isset( $input['position'] ) && is_string( $input['position'] ) ? $input['position'] : '',
+				'elements'  => $input['elements'] ?? null,
+				'draft'     => $input['draft'] ?? false,
+			)
+		);
 	}
 
 	/**
