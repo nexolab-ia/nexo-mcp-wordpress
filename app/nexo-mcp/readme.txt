@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,11 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.2.0 =
+* Elementor 4 (widgets atómicos): `get-page-structure` muestra el texto y las clases de los elementos atómicos.
+* Nueva herramienta `get-design-system`: clases globales, variables, colores y tipografía del Kit de Elementor, y si Editor V4 está activo.
+* Nueva herramienta `create-elementor-page`: crea una página atómica de Elementor en borrador a partir de un árbol de elementos. Lista cerrada de elementos (`e-flexbox`, `e-div-block`, `e-heading`, `e-paragraph`, `e-button`, `e-image`, `e-divider`), enlaces sólo https/mailto/tel, imágenes sólo por ID de la biblioteca, sin CSS propio; cualquier error indica la ruta del elemento y no crea nada. Nunca publica.
 
 = 1.1.0 =
 * Nueva herramienta `get-working-copy-diff`: compara una copia de trabajo con su original antes de publicarla o descartarla. Muestra el título y el extracto antes y después, un diff del contenido por líneas (como `git diff`, con tope de tamaño), los metadatos cambiados, agregados o quitados, las categorías y etiquetas agregadas o quitadas, y si el original cambió desde que se creó la copia (en ese caso publicarla se rechazaría). Acepta el ID del original o el de la copia y exige poder editar el original.

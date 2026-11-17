@@ -112,6 +112,10 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Clase nueva | Para qué |
 |---|---|
 | `NexoDev\NexoMCP\Authorization\IrreversibleActions` | Exige `confirmation` exacta (`DELETE`, `RESTORE`) en el servidor antes de ejecutar acciones irreversibles, y lo audita. |
+| `NexoDev\NexoMCP\Builders\ElementorDesignSystem` | Lee el sistema de diseño de Elementor 4 (clases globales, variables, colores y tipografía del Kit) para `get-design-system`. |
+| `NexoDev\NexoMCP\Builders\ElementorTreeValidator` | Valida en PHP puro el árbol atómico que recibe `create-elementor-page` (tipos, límites, enlaces, imágenes, clases y valores de estilo). |
+| `NexoDev\NexoMCP\Builders\ElementorTreeBuilder` | Convierte el árbol validado al formato de `_elementor_data` con ids generados por el plugin. |
+| `NexoDev\NexoMCP\Builders\ElementorPageCreator` | Crea la página en borrador con los validadores y el guardado de documentos de Elementor; deshace el borrador si algo falla. |
 | `NexoDev\NexoMCP\Support\LineDiff` | Diff unificado por líneas en PHP puro; lo usa la herramienta nueva `get-working-copy-diff` (comparar una copia de trabajo con su original). |
 
 ## Otros archivos
