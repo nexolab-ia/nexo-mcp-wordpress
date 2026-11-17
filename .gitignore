@@ -17,3 +17,6 @@ inbox/
 
 # PHPUnit local cache
 .phpunit.cache/
+
+# Python bytecode cache
+__pycache__/
