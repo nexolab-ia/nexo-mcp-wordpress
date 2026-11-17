@@ -175,6 +175,20 @@ final class ElementorTreeValidator {
 	private int $nodes = 0;
 
 	/**
+	 * Clase del padre de la lista que se valida (constantes de ElementorNesting).
+	 *
+	 * @var string
+	 */
+	private string $parent_kind = ElementorNesting::ROOT;
+
+	/**
+	 * Niveles que ya hay por encima de la lista que se valida.
+	 *
+	 * @var int
+	 */
+	private int $base_depth = 0;
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param array<string, array<int, string>> $allowed_settings Claves de `settings` por tipo.
@@ -201,11 +215,21 @@ final class ElementorTreeValidator {
 	/**
 	 * Valida el árbol completo.
 	 *
-	 * @param mixed $elements Lista de nodos recibida del cliente.
+	 * Por omisión la lista cuelga de la raíz de una página nueva, donde sólo caben
+	 * contenedores atómicos. Al editar una sección de una página existente la lista
+	 * cuelga de otro padre: `$parent_kind` fija qué tipos admite el primer nivel,
+	 * `$base_depth` los niveles que ya hay encima y `$base_nodes` los elementos que
+	 * el documento conserva, de modo que los topes valgan para el documento
+	 * resultante y no sólo para el subárbol.
+	 *
+	 * @param mixed  $elements    Lista de nodos recibida del cliente.
+	 * @param string $parent_kind Clase del padre (constantes de ElementorNesting).
+	 * @param int    $base_depth  Niveles por encima de la lista (0 = raíz).
+	 * @param int    $base_nodes  Elementos del documento que no forman parte de la lista.
 	 *
 	 * @return true|\WP_Error
 	 */
-	public function validate( $elements ) {
+	public function validate( $elements, string $parent_kind = ElementorNesting::ROOT, int $base_depth = 0, int $base_nodes = 0 ) {
 		if ( ! is_array( $elements ) || array() === $elements || ! array_is_list( $elements ) ) {
 			return $this->error(
 				'nexo_mcp_elementor_tree_invalid',
@@ -232,9 +256,11 @@ final class ElementorTreeValidator {
 			);
 		}
 
-		$this->nodes = 0;
+		$this->nodes       = $base_nodes;
+		$this->parent_kind = $parent_kind;
+		$this->base_depth  = $base_depth;
 
-		return $this->walk_list( $elements, 'elements', 1 );
+		return $this->walk_list( $elements, 'elements', $base_depth + 1 );
 	}
 
 	/**
@@ -326,6 +352,16 @@ final class ElementorTreeValidator {
 					$type
 				)
 			);
+		}
+
+		// Sólo el primer nivel de la lista cuelga del padre indicado; los hijos
+		// del subárbol nuevo se rigen por su propio contenedor.
+		if ( $depth === $this->base_depth + 1 ) {
+			$nesting = ElementorNesting::reason( $this->parent_kind, $type );
+
+			if ( null !== $nesting ) {
+				return $this->error( 'nexo_mcp_elementor_nesting_denied', $path . '.type', $nesting );
+			}
 		}
 
 		$children = $node['elements'] ?? null;

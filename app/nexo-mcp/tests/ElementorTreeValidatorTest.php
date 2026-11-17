@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Tests;
 
+use NexoDev\NexoMCP\Builders\ElementorNesting;
 use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
 use PHPUnit\Framework\TestCase;
 
@@ -40,10 +41,12 @@ final class ElementorTreeValidatorTest extends TestCase {
 	}
 
 	/**
+	 * Validador real, con la regla de raíz por omisión.
+	 *
 	 * @param array<int, string> $global_classes Ids de clases globales existentes.
 	 * @param array<int, int>    $images         Ids de adjuntos que existen.
 	 */
-	private function validator( array $global_classes = array( 'g-hero' ), array $images = array( 7 ) ): ElementorTreeValidator {
+	private function real_validator( array $global_classes = array( 'g-hero' ), array $images = array( 7 ) ): ElementorTreeValidator {
 		return new ElementorTreeValidator(
 			$this->allowed(),
 			$global_classes,
@@ -54,6 +57,35 @@ final class ElementorTreeValidatorTest extends TestCase {
 			},
 			array( 'gap', 'color', 'content', 'clip-path', 'width', 'padding', 'background', 'font-family', 'aspect-ratio', 'flex-direction', 'border-color' )
 		);
+	}
+
+	/**
+	 * Validador para las reglas de nodo, estilo y valor.
+	 *
+	 * Valida como hijos de un contenedor (salvo que la prueba indique otro padre)
+	 * para que la regla de raíz, que se prueba aparte, no tape las reglas que cada
+	 * prueba quiere comprobar con un widget suelto.
+	 *
+	 * @param array<int, string> $global_classes Ids de clases globales existentes.
+	 * @param array<int, int>    $images         Ids de adjuntos que existen.
+	 */
+	private function validator( array $global_classes = array( 'g-hero' ), array $images = array( 7 ) ): object {
+		return new class( $this->real_validator( $global_classes, $images ) ) {
+
+			private ElementorTreeValidator $inner;
+
+			public function __construct( ElementorTreeValidator $inner ) {
+				$this->inner = $inner;
+			}
+
+			/**
+			 * @param mixed $elements Lista de nodos.
+			 * @return true|\WP_Error
+			 */
+			public function validate( $elements, string $parent_kind = ElementorNesting::CONTAINER, int $base_depth = 0, int $base_nodes = 0 ) {
+				return $this->inner->validate( $elements, $parent_kind, $base_depth, $base_nodes );
+			}
+		};
 	}
 
 	/**
@@ -796,19 +828,19 @@ final class ElementorTreeValidatorTest extends TestCase {
 		$validator = new ElementorTreeValidator( $this->allowed(), array(), null, array( 'color', 'font-size' ) );
 
 		$this->assertRejected(
-			$validator->validate( array( $this->styled( $props ) ) ),
+			$validator->validate( array( $this->styled( $props ) ), ElementorNesting::CONTAINER ),
 			'nexo_mcp_elementor_style_prop_unknown',
 			'elements[0].styles.caja.variants[0].props.colour',
 			'elements[0].styles.caja.variants[0].props.colour: la propiedad de estilo «colour» no existe en el esquema de estilos de Elementor.'
 		);
 
 		unset( $props['colour'] );
-		$this->assertTrue( $validator->validate( array( $this->styled( $props ) ) ) );
+		$this->assertTrue( $validator->validate( array( $this->styled( $props ) ), ElementorNesting::CONTAINER ) );
 	}
 
 	public function test_sin_lista_de_propiedades_de_estilo_no_se_admite_ninguna(): void {
 		$validator = new ElementorTreeValidator( $this->allowed() );
-		$result    = $validator->validate( array( $this->styled( array( 'color' => $this->prop( 'color', 'red' ) ) ) ) );
+		$result    = $validator->validate( array( $this->styled( array( 'color' => $this->prop( 'color', 'red' ) ) ) ), ElementorNesting::CONTAINER );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_elementor_style_prop_unknown', $result->get_error_code() );
@@ -830,5 +862,69 @@ final class ElementorTreeValidatorTest extends TestCase {
 			$node['settings']['tag'] = $this->prop( 'string', $tag );
 			$this->assertTrue( $this->validator()->validate( array( $node ) ), $tag );
 		}
+	}
+
+	public function test_un_widget_en_la_raiz_se_rechaza(): void {
+		$result = $this->real_validator()->validate( array( $this->heading() ) );
+
+		$this->assertRejected(
+			$result,
+			'nexo_mcp_elementor_nesting_denied',
+			'elements[0].type',
+			'elements[0].type: en la raíz de la página sólo se admiten contenedores atómicos (e-flexbox, e-div-block); «e-heading» va dentro de uno.'
+		);
+	}
+
+	public function test_la_regla_de_raiz_mira_cada_nodo_de_la_raiz(): void {
+		$result = $this->real_validator()->validate( array( $this->box( array( $this->heading() ) ), $this->heading() ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_nesting_denied', $result->get_error_code() );
+		$this->assertSame( array( 'path' => 'elements[1].type' ), $result->get_error_data() );
+	}
+
+	public function test_el_padre_indicado_cambia_la_regla_de_la_primera_lista(): void {
+		$validator = $this->real_validator();
+
+		$this->assertTrue( $validator->validate( array( $this->heading() ), ElementorNesting::COLUMN ) );
+		$this->assertTrue( $validator->validate( array( $this->heading(), $this->box( array() ) ), ElementorNesting::CONTAINER ) );
+
+		$denied = $validator->validate( array( $this->box( array() ) ), ElementorNesting::COLUMN );
+		$this->assertInstanceOf( \WP_Error::class, $denied );
+		$this->assertSame( 'nexo_mcp_elementor_nesting_denied', $denied->get_error_code() );
+
+		$this->assertInstanceOf( \WP_Error::class, $validator->validate( array( $this->heading() ), ElementorNesting::SECTION ) );
+		$this->assertInstanceOf( \WP_Error::class, $validator->validate( array( $this->heading() ), ElementorNesting::WIDGET ) );
+	}
+
+	public function test_los_hijos_del_subarbol_nuevo_no_vuelven_a_pasar_por_la_regla_del_padre(): void {
+		// Un contenedor atómico dentro de un contenedor atómico es válido aunque la lista cuelgue de una columna v3.
+		$this->assertTrue( $this->real_validator()->validate( array( $this->heading() ), ElementorNesting::COLUMN ) );
+		$this->assertTrue( $this->real_validator()->validate( array( $this->box( array( $this->box( array( $this->heading() ) ) ) ) ) ) );
+	}
+
+	public function test_la_profundidad_base_cuenta_desde_donde_cuelga_la_lista(): void {
+		$nest = $this->heading();
+
+		for ( $i = 0; $i < 4; $i++ ) {
+			$nest = $this->box( array( $nest ) );
+		}
+		// Cinco niveles propios: con base 5 llegan a 10 (válido); con base 6, a 11.
+		$this->assertTrue( $this->real_validator()->validate( array( $nest ), ElementorNesting::ROOT, 5 ) );
+
+		$result = $this->real_validator()->validate( array( $nest ), ElementorNesting::ROOT, 6 );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_too_deep', $result->get_error_code() );
+	}
+
+	public function test_el_tope_de_nodos_cuenta_los_que_ya_tiene_el_documento(): void {
+		$items = array_fill( 0, 5, $this->heading() );
+		$tree  = array( $this->box( $items ) );
+
+		$this->assertTrue( $this->real_validator()->validate( $tree, ElementorNesting::ROOT, 0, 194 ) );
+
+		$result = $this->real_validator()->validate( $tree, ElementorNesting::ROOT, 0, 195 );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_too_many_nodes', $result->get_error_code() );
 	}
 }
