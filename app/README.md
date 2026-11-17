@@ -120,6 +120,14 @@ Reglas que siempre se cumplen:
   Antes de publicarla, `get-working-copy-diff` muestra qué cambió respecto al
   original (título, extracto, diff del contenido, metadatos, términos) y si
   el original cambió desde que se creó la copia.
+- **Elementor 4 (atómicos)**: `get-page-structure` lee los elementos atómicos
+  (`e-heading`, `e-paragraph`, `e-button`, `e-flexbox`…) con su texto y sus
+  clases; `get-design-system` lista las clases globales, las variables y los
+  colores y tipografías del Kit; `create-elementor-page` crea una página
+  atómica **en borrador** a partir de un árbol que arma la IA. El árbol se
+  valida antes de guardar: lista cerrada de elementos, enlaces https/mailto/tel,
+  imágenes sólo por ID de la biblioteca, sin CSS propio ni valores de estilo
+  que puedan escaparse de su declaración. Exige Editor V4 activo en Elementor.
 - **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
   y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).

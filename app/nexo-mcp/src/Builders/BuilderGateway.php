@@ -123,6 +123,17 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Crea una página de Elementor 4 en borrador a partir de un árbol atómico.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_elementor_page( array $input ) {
+		return ( new ElementorPageCreator() )->create( $input );
+	}
+
+	/**
 	 * Reemplaza el texto de un nodo del constructor.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.

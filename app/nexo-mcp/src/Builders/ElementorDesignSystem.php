@@ -45,7 +45,7 @@ final class ElementorDesignSystem {
 	/**
 	 * Instancia de Elementor, o null si no está cargado.
 	 */
-	private function plugin(): ?object {
+	public function plugin(): ?object {
 		if ( ! class_exists( '\Elementor\Plugin' ) ) {
 			return null;
 		}
@@ -58,7 +58,7 @@ final class ElementorDesignSystem {
 	/**
 	 * Indica si los elementos atómicos están activos.
 	 */
-	private function atomic_enabled(): bool {
+	public function atomic_enabled(): bool {
 		$plugin = $this->plugin();
 
 		if ( null === $plugin || ! isset( $plugin->experiments ) || ! is_object( $plugin->experiments ) ) {
@@ -66,6 +66,18 @@ final class ElementorDesignSystem {
 		}
 
 		return (bool) $plugin->experiments->is_feature_active( 'e_atomic_elements' );
+	}
+
+	/**
+	 * Ids de las clases globales existentes.
+	 *
+	 * @return array<int, string>
+	 */
+	public function global_class_ids(): array {
+		return array_map(
+			static fn( array $entry ): string => $entry['id'],
+			$this->classes( $this->kit() )
+		);
 	}
 
 	/**

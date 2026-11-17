@@ -60,6 +60,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/delete-product',
 		'nexo-mcp/get-page-structure',
 		'nexo-mcp/get-design-system',
+		'nexo-mcp/create-elementor-page',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -269,6 +270,17 @@ final class ExtendedAbilityRegistrar {
 			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
+			'create-elementor-page',
+			'Crear página de Elementor 4 (borrador)',
+			$this->elementor_page_description(),
+			'write',
+			$this->elementor_page_schema(),
+			fn( array $input ) => $this->builders->create_elementor_page( $input ),
+			// Crea contenido nuevo, así que no hay un post al que atar la capacidad:
+			// se pide `edit_pages` como en la creación de páginas. Nunca publica.
+			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
 			'update-node-text',
 			'Editar texto del constructor',
 			'Reemplaza el texto de un elemento sin alterar la estructura de la página.',
@@ -325,6 +337,98 @@ final class ExtendedAbilityRegistrar {
 				'edit_post',
 				(int) ( $input['id'] ?? 0 )
 			)
+		);
+	}
+
+	/**
+	 * Descripción de create-elementor-page: lo que un cliente de IA necesita para armar un árbol válido.
+	 */
+	private function elementor_page_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea una página de Elementor 4 (elementos atómicos) como borrador y nunca la publica: se revisa y se publica después. Requiere el Editor V4 activo (get-design-system devuelve atomic_enabled). Antes de armar el árbol llama a nexo-mcp-get-design-system para reutilizar clases globales (se referencian por su id) y a nexo-mcp-list-media para ids de imágenes.',
+				'',
+				'ÁRBOL (elements): lista de nodos {type, settings?, styles?, elements?}. Los ids de elemento los genera el plugin (los que mandes se ignoran). Máximo 200 elementos, 10 niveles y 3 MB. Cualquier error indica la ruta, p. ej. elements[0].elements[1].settings.title, y no crea nada.',
+				'TIPOS (lista cerrada): contenedores e-flexbox y e-div-block (los únicos con hijos en «elements»); widgets e-heading, e-paragraph, e-button, e-image, e-divider. Se rechazan e-svg, los widgets de Elementor 3 (heading, text-editor, html…) y cualquier otro tipo.',
+				'',
+				'PROPIEDADES (settings): cada una es {"$$type": tipo, "value": valor}. Props principales por tipo:',
+				'- e-flexbox / e-div-block: classes, tag (div, header, section, article, aside, footer, main, nav), link.',
+				'- e-heading: title (escaped-html), tag (h1-h6, span), link, classes.',
+				'- e-paragraph: paragraph (escaped-html), tag (p, span), link, classes.',
+				'- e-button: text (escaped-html), link, tag (button, a, span o div), classes.',
+				'- e-image: image, link, classes.',
+				'- e-divider: classes.',
+				'Todas admiten además _cssid (string). No se admiten attributes ni propiedades desconocidas.',
+				'FORMAS: texto {"$$type":"escaped-html","value":"Hola"} (admite b, strong, em, a, br…); cadena {"$$type":"string","value":"h2"}; booleano {"$$type":"boolean","value":true}; clases {"$$type":"classes","value":["g-ab12","mi-estilo"]}.',
+				'TEXTO ENRIQUECIDO: los enlaces dentro de un escaped-html (<a href>) siguen los protocolos normales de kses de WordPress, no la regla estricta de «link»; para enlaces de importancia usa la propiedad link.',
+				'ENLACE (link): {"$$type":"link","value":{"destination":{"$$type":"url","value":"https://ejemplo.com"},"isTargetBlank":{"$$type":"boolean","value":true}}}. Sólo https://, mailto: o tel: (o una ruta que empiece por «/»); nunca javascript: ni data:.',
+				'IMAGEN (e-image): sólo por id de la biblioteca de medios, nunca por URL: {"$$type":"image","value":{"src":{"$$type":"image-src","value":{"id":{"$$type":"image-attachment-id","value":123},"url":null}},"size":{"$$type":"string","value":"full"}}}.',
+				'',
+				'ESTILOS: «styles» es un mapa id → estilo local del nodo: {"hero":{"id":"hero","type":"class","label":"hero","variants":[{"meta":{"breakpoint":"desktop","state":null},"props":{"gap":{"$$type":"size","value":{"size":16,"unit":"px"}},"color":{"$$type":"color","value":"#112233"}}}]}}. Un estilo sólo admite id, type, label y variants; cada variante sólo meta (breakpoint, state) y props. Los valores de texto de los props (color, content, aspect-ratio…) no pueden llevar ; { } < > \\ @, saltos de línea, /*, url(), image-set(), var() ni !important (los colores como #112233 o rgba(0,0,0,.5) sí; tampoco comillas sin cerrar). Sólo se admiten propiedades de estilo del esquema de Elementor (color, font-size, font-family, gap, padding, flex-direction…) y las claves conocidas dentro de cada una; una desconocida se rechaza con su ruta. font-family lleva UNA sola familia, p. ej. {"$$type":"font-family","value":"Open Sans"} (Elementor la envuelve entre comillas). Los ids y nombres de clase cumplen /^[a-z][a-z-_0-9]*$/i. Un estilo local se aplica listándolo en las classes del MISMO nodo; una clase global existente se puede listar en cualquier nodo. No hay CSS personalizado ni HTML.',
+				'',
+				'EJEMPLO: [{"type":"e-flexbox","settings":{"classes":{"$$type":"classes","value":["hero"]}},"styles":{"hero":{"id":"hero","type":"class","label":"hero","variants":[{"meta":{"breakpoint":"desktop","state":null},"props":{"gap":{"$$type":"size","value":{"size":16,"unit":"px"}}}}]}},"elements":[{"type":"e-heading","settings":{"title":{"$$type":"escaped-html","value":"Bienvenidos"},"tag":{"$$type":"string","value":"h1"}}},{"type":"e-button","settings":{"text":{"$$type":"escaped-html","value":"Contacto"},"link":{"$$type":"link","value":{"destination":{"$$type":"url","value":"https://ejemplo.com/contacto"}}}}}]}]',
+				'',
+				'SALIDA: id, status («draft»), preview_url, edit_url (editor de Elementor) y nodes (elementos guardados). Para revisar: nexo-mcp-get-page-structure.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-elementor-page.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function elementor_page_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'title'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'elements' => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Árbol atómico: lista de nodos {type, settings, styles, elements}. Ver la descripción de la herramienta.',
+					'items'       => array(
+						'type'                 => 'object',
+						'properties'           => array(
+							// Sin `enum`: la lista cerrada la aplica el validador del plugin, que
+							// responde con la ruta del nodo y los tipos admitidos; un rechazo del
+							// esquema diría sólo «no es uno de…» sin decir dónde.
+							'type'     => array(
+								'type'        => 'string',
+								'description' => 'e-flexbox, e-div-block, e-heading, e-paragraph, e-button, e-image o e-divider.',
+							),
+							'settings' => array(
+								'type'                 => 'object',
+								'description'          => 'Propiedades {"$$type": tipo, "value": valor}.',
+								'additionalProperties' => true,
+							),
+							'styles'   => array(
+								'type'                 => 'object',
+								'description'          => 'Estilos locales: id → {id, type: "class", label, variants}.',
+								'additionalProperties' => true,
+							),
+							'elements' => array(
+								'type'        => 'array',
+								'description' => 'Hijos; sólo en e-flexbox y e-div-block.',
+							),
+						),
+						'required'             => array( 'type' ),
+						'additionalProperties' => true,
+					),
+				),
+				'slug'     => array(
+					'type'      => 'string',
+					'maxLength' => 200,
+				),
+			),
+			'required'             => array( 'title', 'elements' ),
+			'additionalProperties' => false,
 		);
 	}
 
