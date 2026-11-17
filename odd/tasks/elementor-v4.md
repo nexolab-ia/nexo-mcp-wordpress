@@ -33,7 +33,7 @@ clases/variables/estilos globales, F5 migrar v3 → v4, F6 datos dinámicos, F7 
 
 - [x] T1 (S6) Extraer el código de Elementor 4.4.1 del docker y mapear: widgets atómicos y sus esquemas de props, estilos, clases globales, variables, Kit, guardado de documentos y regeneración de CSS, experimento V4. Ruta: explore. Commit: —
 - [x] T2 (S2, S6, S7) F1: lectura de nodos atómicos en `get-page-structure` y herramienta de sistema de diseño. Ruta: worker (context backstop). Commit: ddf738f
-- [x] T3 (S1, S3-S6, S8) F2: crear página atómica en borrador con validación. Ruta: worker (context backstop) + verify (Risk: item 2, inyección de contenido). Commit en slice propio. Commit: —
+- [x] T3 (S1, S3-S6, S8) F2: crear página atómica en borrador con validación. Ruta: worker (context backstop) + verify (Risk: item 2, inyección de contenido). Commit en slice propio. Commit: 6a4724f
 
 ## Log
 
