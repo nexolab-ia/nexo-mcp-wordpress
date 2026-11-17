@@ -65,6 +65,17 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 	);
 
 	/**
+	 * Prop de texto de cada elemento atómico de Elementor 4.
+	 *
+	 * @var array<string, string>
+	 */
+	private const ATOMIC_TEXT_PROP = array(
+		'e-heading'   => 'title',
+		'e-paragraph' => 'paragraph',
+		'e-button'    => 'text',
+	);
+
+	/**
 	 * Entrega el identificador del constructor.
 	 */
 	public function slug(): string {
@@ -221,7 +232,13 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 				continue;
 			}
 
-			if ( 'widget' === ( $element['elType'] ?? '' ) ) {
+			$atomic = $this->atomic_type( $element );
+
+			if ( '' !== $atomic ) {
+				if ( '' !== (string) ( $element['id'] ?? '' ) ) {
+					$nodes[] = $this->atomic_node( $element, $atomic );
+				}
+			} elseif ( 'widget' === ( $element['elType'] ?? '' ) ) {
 				$node = $this->to_node( $element );
 
 				if ( null !== $node ) {
@@ -237,6 +254,63 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 				$this->walk( $element['elements'], $nodes );
 			}
 		}
+	}
+
+	/**
+	 * Tipo atómico (`e-*`) de un elemento, o cadena vacía si no lo es.
+	 *
+	 * @param array<string, mixed> $element Elemento del árbol.
+	 */
+	private function atomic_type( array $element ): string {
+		$el_type = (string) ( $element['elType'] ?? '' );
+		$type    = 'widget' === $el_type ? (string) ( $element['widgetType'] ?? '' ) : $el_type;
+
+		return str_starts_with( $type, 'e-' ) ? $type : '';
+	}
+
+	/**
+	 * Convierte un elemento atómico en nodo de sólo lectura.
+	 *
+	 * @param array<string, mixed> $element Elemento atómico.
+	 * @param string               $type    Tipo `e-*`.
+	 */
+	private function atomic_node( array $element, string $type ): BuilderNode {
+		$settings = isset( $element['settings'] ) && is_array( $element['settings'] )
+			? $element['settings']
+			: array();
+
+		$text = null;
+		$prop = self::ATOMIC_TEXT_PROP[ $type ] ?? '';
+
+		if ( '' !== $prop && isset( $settings[ $prop ] ) && is_array( $settings[ $prop ] ) ) {
+			$value = $settings[ $prop ]['value'] ?? null;
+
+			if ( is_string( $value ) ) {
+				$text = $value;
+			} elseif ( 'html-v3' === ( $settings[ $prop ]['$$type'] ?? '' ) && is_array( $value ) ) {
+				$content = $value['content']['value'] ?? null;
+				$text    = is_string( $content ) ? $content : null;
+			}
+		}
+
+		$classes = array();
+		$list    = isset( $settings['classes'] ) && is_array( $settings['classes'] )
+			? ( $settings['classes']['value'] ?? null )
+			: null;
+
+		if ( is_array( $list ) && array_is_list( $list ) && array() === array_filter( $list, static fn( $c ): bool => ! is_string( $c ) ) ) {
+			$classes = $list;
+		}
+
+		return new BuilderNode(
+			(string) $element['id'],
+			$type,
+			$text,
+			false,
+			__( 'Elemento atómico de Elementor 4: por ahora sólo lectura.', 'nexo-mcp' ),
+			array(),
+			$classes
+		);
 	}
 
 	/**

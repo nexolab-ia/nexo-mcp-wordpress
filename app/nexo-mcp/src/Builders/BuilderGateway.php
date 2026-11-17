@@ -114,6 +114,15 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lee el sistema de diseño de Elementor: clases, variables, colores y tipografía.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_design_system() {
+		return ( new ElementorDesignSystem() )->read();
+	}
+
+	/**
 	 * Reemplaza el texto de un nodo del constructor.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
