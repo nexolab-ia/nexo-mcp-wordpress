@@ -278,10 +278,13 @@ final class WorkingCopy {
 	}
 
 	/**
-	 * Borra la copia de forma permanente y limpia el enlace del original.
+	 * Manda la copia a la papelera y limpia el enlace del original.
 	 *
-	 * Es permanente porque la copia no es contenido real: mandarla a la
-	 * papelera sólo dejaría un borrador duplicado dando vueltas.
+	 * Nunca se borra de forma permanente: una equivocación del cliente MCP no
+	 * debe ser irreversible, y desde la papelera la persona puede recuperar la
+	 * edición descartada. El original queda sin copia, así que la próxima
+	 * edición arma una nueva; si se restaura esta desde la papelera, `merge()`
+	 * la rechaza como huérfana.
 	 *
 	 * @param \WP_Post $copy Copia de trabajo.
 	 * @return array<string, mixed>|\WP_Error
@@ -293,8 +296,8 @@ final class WorkingCopy {
 			return new \WP_Error( 'nexo_mcp_draft_not_copy', __( 'Este contenido no es una copia de trabajo.', 'nexo-mcp' ) );
 		}
 
-		if ( ! wp_delete_post( $copy->ID, true ) ) {
-			return new \WP_Error( 'nexo_mcp_draft_delete_failed', __( 'WordPress no pudo borrar la copia.', 'nexo-mcp' ) );
+		if ( ! wp_trash_post( $copy->ID ) ) {
+			return new \WP_Error( 'nexo_mcp_draft_trash_failed', __( 'WordPress no pudo enviar la copia a la papelera.', 'nexo-mcp' ) );
 		}
 
 		// Sólo si todavía apunta a esta copia: otra más nueva no se desengancha.
@@ -305,6 +308,8 @@ final class WorkingCopy {
 		return array(
 			'id'        => (int) $copy->ID,
 			'discarded' => true,
+			'status'    => (string) get_post_status( $copy->ID ),
+			'message'   => __( 'La copia está en la papelera y puede restaurarse desde WordPress.', 'nexo-mcp' ),
 		);
 	}
 

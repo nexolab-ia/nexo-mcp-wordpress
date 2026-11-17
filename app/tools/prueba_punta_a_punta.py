@@ -73,7 +73,14 @@ def main() -> int:
     parser.add_argument("--user", default="admin")
     parser.add_argument("--password", default="admin")
     parser.add_argument("--scope", default="")
+    parser.add_argument("--titulo", default="", help="Título del post de prueba (por defecto, uno único)")
+    parser.add_argument(
+        "--solo-lectura",
+        action="store_true",
+        help="El sitio está en «Solo revisar»: exige que toda escritura se rechace con su causa",
+    )
     args = parser.parse_args()
+    title = args.titulo or f"Escrito por la IA {secrets.token_hex(3)}"
 
     base = args.base.rstrip("/")
     endpoint = f"{base}/wp-json/nexo-mcp/v1/mcp"
@@ -214,12 +221,57 @@ def main() -> int:
         print(f"{name}: {text[:300]}")
         return result
 
-    tool = lambda short: next(n for n in names if n.endswith(short))  # noqa: E731
+    prefix = names[0].split("-")[0] + "-mcp-"
+    # Las herramientas de escritura pueden no listarse en «Solo revisar»: se
+    # llaman por su nombre igual, porque el rechazo es lo que se prueba.
+    tool = lambda short: next((n for n in names if n.endswith(short)), prefix + short)  # noqa: E731
     info = call(tool("get-site-info"), {}, 3)
     assert not info.get("isError"), "get-site-info falló"
     call(tool("list-pages"), {"per_page": 3}, 4)
-    write = call(tool("create-post"), {"title": "Escrito por la IA"}, 5)
+    created = []
+    try:
+        return run_writes(args, token, call, tool, title, created)
+    finally:
+        cleanup(call, tool, created)
+
+
+def text_of(result):
+    return json.dumps(result, ensure_ascii=False)
+
+
+def cleanup(call, tool, created):
+    """Limpia lo que creó la prueba.
+
+    Todo va a la papelera y se puede restaurar desde WordPress: los posts
+    nuevos y también las copias de trabajo descartadas.
+    """
+    if not created:
+        return
+    step("Limpieza")
+    for rid, post_id in enumerate(created, start=50):
+        result = call(tool("set-content-status"), {"id": post_id, "status": "trash"}, rid)
+        if result.get("isError"):
+            print(f"AVISO: no se pudo limpiar el contenido {post_id}")
+
+
+def run_writes(args, token, call, tool, title, created):
+    write = call(tool("create-post"), {"title": title}, 5)
+    if not write.get("isError"):
+        created.append(json.loads(write["content"][0]["text"])["id"])
     granted = token.get("scope", "").split()
+
+    if args.solo_lectura:
+        step("Modo «Solo revisar»: la escritura se rechaza")
+        assert write.get("isError"), "En «Solo revisar» create-post debe rechazarse"
+        assert "Solo revisar" in text_of(write), "El rechazo debe explicar que el sitio está en «Solo revisar»"
+        page = json.loads(call(tool("list-pages"), {"per_page": 1}, 6)["content"][0]["text"])["result"][0]
+        edit = call(tool("update-page"), {"id": page["id"], "title": page["title"] + " (no debe guardarse)"}, 7)
+        assert edit.get("isError"), "En «Solo revisar» update-page debe rechazarse"
+        assert "Solo revisar" in text_of(edit), "El rechazo de update-page debe explicar que el sitio está en «Solo revisar»"
+        after = json.loads(call(tool("get-page"), {"id": page["id"]}, 8)["content"][0]["text"])
+        assert after["title"] == page["title"], "Un rechazo no debe cambiar la página"
+        print(f"\nOK: «Solo revisar» rechaza create-post y update-page; la página {page['id']} no cambió.")
+        return 0
 
     if "mcp:write" not in granted:
         assert write.get("isError"), "Una conexión sin mcp:write no debería poder escribir"
@@ -232,12 +284,25 @@ def main() -> int:
         staged = call(tool("update-page"), {"id": page["id"], "title": page["title"] + " (editado por IA)"}, 7)
         staged_data = json.loads(staged["content"][0]["text"])
         assert staged_data.get("draft_of") == page["id"], "La edición debería ir a una copia de trabajo"
+        created.append(staged_data["id"])
+        print(f"copia de trabajo: {staged_data['id']}")
         original = json.loads(call(tool("get-page"), {"id": page["id"]}, 8)["content"][0]["text"])
         assert original["title"] == page["title"], "El original publicado no debe cambiar"
         print(f"La página publicada {page['id']} sigue igual; el cambio quedó en el borrador {staged_data['id']}.")
         step("8. Acción irreversible sin confirmación")
         result = call(tool("restore-revision"), {"id": page["id"]}, 9)
         assert result.get("isError") or "error" in json.dumps(result), "restore-revision sin confirmación debe rechazarse"
+        step("9. Acción irreversible con confirmación inválida")
+        before = json.loads(call(tool("get-page"), {"id": page["id"]}, 10)["content"][0]["text"])
+        for rid, word in enumerate(("restore", "NOPE", "RESTORE ", ""), start=11):
+            result = call(tool("restore-revision"), {"id": page["id"], "confirmation": word}, rid)
+            assert result.get("isError"), f"restore-revision con confirmation={word!r} debe rechazarse"
+            assert "RESTORE" in text_of(result), (
+                f"El rechazo con confirmation={word!r} debe pedir la palabra exacta RESTORE"
+            )
+        after = json.loads(call(tool("get-page"), {"id": page["id"]}, 20)["content"][0]["text"])
+        assert after == before, "Una confirmación inválida no debe cambiar la página"
+        print(f"La página {page['id']} no cambió tras 4 confirmaciones inválidas.")
     print("\nOK: conectar → autorizar OAuth → usar herramientas funciona de punta a punta.")
     return 0
 
