@@ -21,7 +21,7 @@ eliminar el verificador Rust y publicar el repo privado en GitHub.
 - [x] T4 (S2, S4) Plugin Check: corregir errores reales; documentar exclusiones propias del directorio. Ruta: worker. Commit: —
 - [x] T5 (S5) empaquetar.sh: versión coherente, zip limpio, CHANGELOG. Ruta: inline. Commit: —
 - [x] T6 (S1) Workflow de GitHub Actions: PHPUnit, PHPCS, PHPStan, e2e en docker, artefacto .zip. Ruta: inline. Commit: —
-- [ ] T7 (S7) Crear repo privado nexolab-ia/nexo-mcp-wordpress, push, CI en verde. Ruta: inline. Commit: —
+- [x] T7 (S7) Crear repo privado nexolab-ia/nexo-mcp-wordpress, push, CI en verde. Ruta: inline. Commit: —
 
 ## Log
 
@@ -35,3 +35,4 @@ eliminar el verificador Rust y publicar el repo privado en GitHub.
 - L8 (2026-11-16): T5. empaquetar.sh valida que Version:, NEXO_MCP_VERSION y Stable tag coincidan y que haya entrada en el changelog de readme.txt (ambos rechazos probados en una copia temporal, exit 1). Genera dist/nexo-mcp-<versión>.zip sin tests ni .dist/.neon y revisa su contenido. Versión subida a 1.0.1 con el changelog de esta sesión (el changelog vive en readme.txt, estándar de WordPress). Zip 1.0.1: 494 archivos, exit 0.
 - L9 (2026-11-16): T6. .github/workflows/ci.yml con 3 jobs: quality (PHPUnit en PHP 8.1 y 8.3; PHPCS y PHPStan en 8.3), e2e (docker compose en el runner: prueba_reglas.sh, prueba_adaptadores.sh, plugin_check.sh) y package (empaquetar.sh y el zip como artefacto). plugin_check.sh ahora instala Plugin Check si falta y falla ante una salida vacía. actionlint exit 0. Que corra de verdad se comprueba en T7.
 - L10 (2026-11-16): T7. Repo privado https://github.com/nexolab-ia/nexo-mcp-wordpress creado y main subido. Primer CI (run 44003173731): quality 8.1/8.3 OK; e2e FALLA (un WordPress recién instalado arranca en «Solo revisar» y prueba_reglas.sh suponía modo edición: no se creaba nada y la limpieza no encontraba el post); package FALLA (Composer en docker como root en Linux, rm de la carpeta temporal denegado). Arreglos: prueba_reglas.sh fija los ajustes de cada modo y los restaura al salir (reproducido en local partiendo de read_only=true: exit 0); empaquetar.sh y el CI corren Composer con --user.
+- L11 (2026-11-16): T7 cerrada. Revisión nativa del rango 9f7cce1..dc25f0c (resilience, reliability): aprobada y cerrada (lineage review-bd830ec135115bec). Push dc25f0c. CI run 44003803847 en verde: PHPUnit OK 56 en PHP 8.1 y 8.3, PHPCS y PHPStan OK, reglas OK, adaptadores 10/10, Plugin Check 7 errores aceptados y 42 avisos, zip nexo-mcp-1.0.1 (494 archivos) subido como artefacto.
