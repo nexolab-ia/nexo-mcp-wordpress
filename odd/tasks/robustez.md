@@ -23,7 +23,7 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
 
 - [x] T1 (S2) Bloqueo por original en `WorkingCopy::obtain()` y en las escrituras de constructor; test de concurrencia. Ruta: worker + verify (Risk: item 4, concurrencia). Commit propio. Commit: a9e0a02
 - [x] T2 (S3, S5a, S5b) Herramientas de constructor viejas a la copia de trabajo. Ruta: worker (Risk: item 3, cambia el comportamiento de herramientas existentes). Commit: 221e8f8
-- [x] T3 (S4, S5c, S6) Avisos menores. Ruta: worker. Commit: —
+- [x] T3 (S4, S5c, S6) Avisos menores. Ruta: worker. Commit: 0ac0841
 
 ## Log
 
@@ -67,3 +67,4 @@ las herramientas de constructor que escriben en vivo y los avisos menores. Rama 
   - W3: `WorkingCopy::with_lock` apila la clave que retiene y `ensure_lock()` usa esa (la recalculada sólo fuera de `with_lock`): si el original desaparece a mitad de la operación ya no se omite la comprobación.
   - RED (antes del arreglo): 4 fallos (editar tras restaurar, capturar dos veces el mismo estado, copia no descartable, `ensure_lock` con el original borrado). Añadidos además `test_verify_con_el_bloqueo_propio_ya_vencido_y_no_tomado_lo_renueva` (ya pasaba: pinta la regresión del verificador) y un test del mismo aviso W2 en el editor de secciones (sin RED previo, se escribió junto al código).
   - Tras el último cambio: PHPUnit 385 pruebas, 1767 aserciones OK; PHPCS 0; PHPStan sin errores (`--no-dev` restaurado); `prueba_adaptadores.sh` exit 0 (92 OK, 0 FALLA); `prueba_reglas.sh` exit 0.
+- L10 (2026-11-17): versión 1.2.1 con su changelog en readme.txt; empaquetar.sh OK (506 archivos). Entrega: un PR desde `fix/robustez` (T1 con commit propio, a9e0a02).

@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,15 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.2.1 =
+* Fix: dos ediciones simultáneas sobre una página publicada ya no crean dos copias de trabajo ni pierden una edición. Las escrituras que leen y reescriben un contenido (copia de trabajo, `update-page`/`update-post`, `edit-elementor-section`, herramientas de constructor, publicar y descartar una copia) corren bajo un bloqueo por original con vencimiento, releen el contenido dentro del bloqueo y comprueban que el bloqueo sigue siendo suyo antes de escribir. Si está ocupado responden «Otra edición de este contenido está en curso» sin escribir; las tomas de bloqueos vencidos quedan en Actividad.
+* Cambio: `update-node-text`, `update-node-attribute`, `edit-structure` y `restore-builder-backup` ya no escriben en vivo sobre una página publicada: editan su copia de trabajo (revísala con `get-working-copy-diff` y publícala con `set-content-status`); un borrador se edita en su sitio. La respuesta agrega `id` y `draft_of`.
+* Cambio: `restore-builder-backup` sobre una página publicada que ya tiene copia deshace la última edición de la copia; restaurar dos veces deja el mismo estado. Sin copia, restaura el respaldo del original en una copia nueva.
+* Fix: `get-design-system` informa `warnings` si falla la lectura de clases globales o variables, en vez de devolver una lista vacía como si no hubiera nada.
+* Fix: los valores de estilo con paréntesis sin cerrar se rechazan, y `meta.breakpoint` y `meta.state` se validan contra las listas cerradas de Elementor 4.4.1.
+* Fix: las páginas v3 de más de 200 elementos aceptan `replace` e `insert` mientras el resultado no supere `max(200, elementos actuales)`.
+* Fix: si falla la vuelta atrás de una edición y la copia recién creada no puede descartarse, el error lo dice (`nexo_mcp_builder_copy_orphan`) en lugar de callarlo.
 
 = 1.2.0 =
 * Elementor 4 (widgets atómicos): `get-page-structure` muestra el texto y las clases de los elementos atómicos.
