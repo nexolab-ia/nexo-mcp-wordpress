@@ -539,7 +539,7 @@ final class BuilderGateway {
 		$owner = isset( $parts[1] ) ? (int) $parts[1] : 0;
 
 		/** Ventana de vigencia del bloqueo de edición de WordPress. */
-		$window = (int) apply_filters( 'wp_check_post_lock_window', 150 );
+		$window = (int) apply_filters( 'wp_check_post_lock_window', 150 ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Filtro del núcleo de WordPress.
 
 		if ( 0 < $owner && get_current_user_id() !== $owner && $window > ( time() - $time ) ) {
 			return new \WP_Error(

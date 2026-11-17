@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<ruleset name="Nexo MCP" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/PHPCSStandards/PHP_CodeSniffer/master/phpcs.xsd">
+	<description>Estándares de código de Nexo MCP: WordPress + PHPCompatibilityWP.</description>
+
+	<!-- No se ejecutan plugins de Composer: se registran los estándares a mano (rutas relativas a este archivo). -->
+	<config name="installed_paths" value="vendor/wp-coding-standards/wpcs,vendor/phpcsstandards/phpcsutils,vendor/phpcsstandards/phpcsextra,vendor/phpcompatibility/php-compatibility,vendor/phpcompatibility/phpcompatibility-wp,vendor/phpcompatibility/phpcompatibility-paragonie"/>
+
+	<file>src</file>
+	<file>nexo-mcp.php</file>
+	<file>uninstall.php</file>
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/tests/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="ps"/>
+
+	<rule ref="WordPress"/>
+	<rule ref="PHPCompatibilityWP"/>
+	<config name="testVersion" value="8.1-"/>
+	<config name="minimum_wp_version" value="6.9"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="nexo-mcp"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="nexo_mcp"/>
+				<element value="NexoDev\NexoMCP"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- Las vistas se incluyen (require) dentro de un método, así que sus variables son locales; el sniff las toma por globales. -->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound">
+		<exclude-pattern>*/src/Admin/views/*</exclude-pattern>
+	</rule>
+
+	<!-- El autocargador PSR-4 exige un archivo por clase con el nombre exacto de la clase (Clase.php), no class-*.php en minúsculas. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude name="WordPress.Files.FileName"/>
+	</rule>
+</ruleset>

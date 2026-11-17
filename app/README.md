@@ -154,6 +154,19 @@ docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 sh -c \
 
 (La última parte deja `vendor/` otra vez sin las dependencias de prueba.)
 
+**Calidad de código (PHPCS)**: estándar WordPress + PHPCompatibilityWP
+(PHP 8.1+), configurado en `nexo-mcp/phpcs.xml.dist`. Sale con 0 si no hay
+hallazgos.
+
+```sh
+cd app
+docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 sh -c \
+  "composer install --no-scripts --no-plugins -q && vendor/bin/phpcs; composer install --no-dev --no-scripts --no-plugins -q"
+```
+
+Para corregir automáticamente el formato, usar `vendor/bin/phpcbf` en lugar
+de `vendor/bin/phpcs` (también existen `composer lint` y `composer lint:fix`).
+
 **Punta a punta** (con el WordPress de prueba levantado):
 
 ```sh

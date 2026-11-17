@@ -62,12 +62,12 @@ final class KnownCacheProviders {
 				'LiteSpeed Cache',
 				static fn(): bool => defined( 'LSCWP_V' ) || class_exists( '\LiteSpeed\Core' ),
 				static function ( int $post_id ): bool {
-					do_action( 'litespeed_purge_post', $post_id );
+					do_action( 'litespeed_purge_post', $post_id ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hook de LiteSpeed Cache.
 
 					return true;
 				},
 				static function (): bool {
-					do_action( 'litespeed_purge_all' );
+					do_action( 'litespeed_purge_all' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Hook de LiteSpeed Cache.
 
 					return true;
 				}

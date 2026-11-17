@@ -224,7 +224,14 @@ final class OAuthConnectionsController {
 		$back = add_query_arg( 'tab', 'accesos', admin_url( 'admin.php?page=' . AdminPage::PAGE_SLUG ) );
 
 		if ( '' === $client_id || 0 === $user_id ) {
-			set_transient( self::SCOPES_NOTICE . get_current_user_id(), array( 'type' => 'error', 'message' => __( 'Conexión no identificada.', 'nexo-mcp' ) ), MINUTE_IN_SECONDS );
+			set_transient(
+				self::SCOPES_NOTICE . get_current_user_id(),
+				array(
+					'type'    => 'error',
+					'message' => __( 'Conexión no identificada.', 'nexo-mcp' ),
+				),
+				MINUTE_IN_SECONDS
+			);
 			wp_safe_redirect( $back );
 			exit;
 		}

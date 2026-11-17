@@ -92,7 +92,7 @@ final class Installer {
 	/**
 	 * Actualiza el nombre visible de un rol que ya existe.
 	 *
-	 * add_role() no toca un rol creado, así que los sitios que instalaron una
+	 * La función add_role() no toca un rol creado, así que los sitios que instalaron una
 	 * versión anterior seguirían mostrando el nombre viejo. Solo cambia la
 	 * etiqueta: el identificador y las capacidades quedan iguales.
 	 *

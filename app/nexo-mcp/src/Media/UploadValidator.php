@@ -256,7 +256,7 @@ final class UploadValidator {
 
 			if ( false !== $finfo ) {
 				$tipo = finfo_file( $finfo, $ruta );
-				finfo_close( $finfo );
+				// Desde PHP 8.0 finfo es un objeto que se libera solo; finfo_close() está obsoleta.
 
 				if ( is_string( $tipo ) && '' !== $tipo ) {
 					return $tipo;
