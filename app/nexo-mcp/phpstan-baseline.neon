@@ -1,0 +1,259 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Constant NEXO_MCP_PATH not found\.$#'
+			identifier: constant.notFound
+			count: 2
+			path: src/Admin/AdminPage.php
+
+		-
+			message: '#^Call to function is_array\(\) with array\<string, mixed\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Admin/LicenseController.php
+
+		-
+			message: '#^Offset ''logo'' does not exist on array\{name\: string, mark\: ''\+''\|''AG''\|''CU''\|''GM''\|''WS'', oauth\: true, kind\: ''file'', intro\: string, code\: string, after\: string\}\|array\{name\: string, mark\: ''CL''\|''VS'', oauth\: true, kind\: ''command'', intro\: string, code\: non\-falsy\-string, after\: string\}\|array\{name\: string, mark\: ''CX'', oauth\: true, kind\: ''bridge'', codex_bridge\: true, intro\: string, code\: non\-falsy\-string, native_code\: non\-falsy\-string, \.\.\.\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Offset ''logo'' on array\{name\: string, mark\: ''\+''\|''AG''\|''CU''\|''GM''\|''WS'', oauth\: true, kind\: ''file'', intro\: string, code\: string, after\: string\}\|array\{name\: string, mark\: ''CL''\|''VS'', oauth\: true, kind\: ''command'', intro\: string, code\: non\-falsy\-string, after\: string\}\|array\{name\: string, mark\: ''CX'', oauth\: true, kind\: ''bridge'', codex_bridge\: true, intro\: string, code\: non\-falsy\-string, native_code\: non\-falsy\-string, \.\.\.\} in empty\(\) does not exist\.$#'
+			identifier: empty.offset
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Ternary operator condition is always true\.$#'
+			identifier: ternary.alwaysTrue
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$api_configured might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$license_grace_days might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$license_offline might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$license_plan_label might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$license_sites_label might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$report_builders might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$report_max_length might not be defined\.$#'
+			identifier: variable.undefined
+			count: 2
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$report_min_length might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$report_notice might not be defined\.$#'
+			identifier: variable.undefined
+			count: 2
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$update might not be defined\.$#'
+			identifier: variable.undefined
+			count: 8
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$update_available might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$update_changelog might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Variable \$updates_url might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/Admin/views/dashboard.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 2
+			path: src/Authentication/ApplicationPasswordManager.php
+
+		-
+			message: '#^Offset ''name'' on array\{uuid\: string, app_id\: string, name\: string, password\: string, created\: int, last_used\: int\|null, last_ip\: string\|null\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: src/Authentication/ApplicationPasswordManager.php
+
+		-
+			message: '#^Offset 0 on non\-empty\-list\<string\> in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Builders/BuilderGateway.php
+
+		-
+			message: '#^Call to function is_array\(\) with array\<int, string\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Builders/EditableAttributes.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''\\\\Swift_Performance…'' and ''clear_all_cache'' will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 2
+			path: src/Cache/KnownCacheProviders.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ''\\\\Swift_Performance…'' and ''clear_cache_by_url'' will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: src/Cache/KnownCacheProviders.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 4
+			path: src/Fields/AcfProvider.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/MCP/CodexInitializedCompatibility.php
+
+		-
+			message: '#^Offset 0 on array\{0\: int, 1\: int, 2\: int, 3\: string, mime\: string, channels\?\: int, bits\?\: int\} in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Media/UploadValidator.php
+
+		-
+			message: '#^Offset 1 on array\{0\: int, 1\: int, 2\: int, 3\: string, mime\: string, channels\?\: int, bits\?\: int\} in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Media/UploadValidator.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/OAuth/BearerTokenGuard.php
+
+		-
+			message: '#^Instanceof between WP_REST_Request and WP_REST_Request will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 2
+			path: src/OAuth/BearerTokenGuard.php
+
+		-
+			message: '#^Instanceof between WP_REST_Response and WP_REST_Response will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/OAuth/BearerTokenGuard.php
+
+		-
+			message: '#^Offset ''mcp\:maintenance''\|''mcp\:seo'' on array\{''mcp\:content''\: ''content_tools…'', ''mcp\:seo''\: ''seo_tools_enabled'', ''mcp\:appearance''\: ''appearance_tools…'', ''mcp\:maintenance''\: ''maintenance_tools…'', ''mcp\:commerce''\: ''woocommerce_tools…'', ''mcp\:builders''\: ''builders_tools…'', ''mcp\:builder_attrs''\: ''builders_tools…'', ''mcp\:publish''\: ''publishing_enabled'', \.\.\.\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/OAuth/ScopeMap.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between '''' and ''maintenance_tools…''\|''seo_tools_enabled'' will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/OAuth/ScopeMap.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/OAuth/TokenController.php
+
+		-
+			message: '#^If condition is always false\.$#'
+			identifier: if.alwaysFalse
+			count: 1
+			path: src/Support/Requirements.php
+
+		-
+			message: '#^Access to an undefined property WP_Post\:\:\$menu_item_parent\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/WordPress/AppearanceGateway.php
+
+		-
+			message: '#^Access to an undefined property WP_Post\:\:\$object_id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/WordPress/AppearanceGateway.php
+
+		-
+			message: '#^Access to an undefined property WP_Post\:\:\$title\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/WordPress/AppearanceGateway.php
+
+		-
+			message: '#^Access to an undefined property WP_Post\:\:\$type\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/WordPress/AppearanceGateway.php
+
+		-
+			message: '#^Access to an undefined property WP_Post\:\:\$url\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/WordPress/AppearanceGateway.php
+
+		-
+			message: '#^Instanceof between WP_Theme and WP_Theme will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 3
+			path: src/WordPress/MaintenanceGateway.php
+
+		-
+			message: '#^Negated boolean expression is always true\.$#'
+			identifier: booleanNot.alwaysTrue
+			count: 1
+			path: src/WordPress/MaintenanceGateway.php
+
+		-
+			message: '#^Result of \|\| is always true\.$#'
+			identifier: booleanOr.alwaysTrue
+			count: 1
+			path: src/WordPress/MaintenanceGateway.php

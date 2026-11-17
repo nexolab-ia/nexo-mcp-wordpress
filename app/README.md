@@ -167,6 +167,23 @@ docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 sh -c \
 Para corregir automáticamente el formato, usar `vendor/bin/phpcbf` en lugar
 de `vendor/bin/phpcs` (también existen `composer lint` y `composer lint:fix`).
 
+**Análisis estático (PHPStan)**: nivel 5 con las extensiones de WordPress y
+los stubs de WooCommerce y ACF, configurado en `nexo-mcp/phpstan.neon.dist`.
+Sale con 0 si no hay hallazgos nuevos.
+
+```sh
+cd app
+docker run --rm -v "$PWD/nexo-mcp":/app -w /app php:8.3-cli sh -c \
+  "php -d memory_limit=1G vendor/bin/phpstan analyse"
+```
+
+(Requiere las dependencias de desarrollo en `vendor/`, como en PHPCS; también
+existe `composer analyse`.) `nexo-mcp/phpstan-baseline.neon` es el baseline: los
+hallazgos de nivel 1 a 5 que ya existían quedan congelados ahí. El código nuevo
+debe pasar el nivel 5 sin añadir entradas al baseline; sólo se regenera
+(`phpstan analyse --generate-baseline`) al corregir hallazgos antiguos, para
+reducirlo.
+
 **Punta a punta** (con el WordPress de prueba levantado):
 
 ```sh
