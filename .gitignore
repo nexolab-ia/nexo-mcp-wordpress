@@ -2,9 +2,7 @@
 .DS_Store
 
 # Build artifacts
-app/target/
 app/dist/
-app/shots/
 
 # Dependencies (rebuilt with composer install --no-scripts)
 app/nexo-mcp/vendor/
@@ -20,3 +18,14 @@ inbox/
 
 # Python bytecode cache
 __pycache__/
+
+# Local only: reference plugin, craft artifacts and backups (not published)
+/referencia-original/
+/investigation.cany/
+/checks/
+/capture/
+/craft.json
+/feed.json
+/ejecutar.sh
+/prompt-recrear.md
+/.respaldo/

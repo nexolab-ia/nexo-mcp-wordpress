@@ -1,6 +1,6 @@
 # Tabla de equivalencias
 
-Clase del plugin original (MCP Prisma 0.34.1, `referencia-original/src`) → clase nueva de Nexo MCP (`nexo-mcp/src`) → estado.
+Clase del plugin original (MCP Prisma 0.34.1, `referencia-original/src`, que no se incluye en este repositorio) → clase nueva de Nexo MCP (`nexo-mcp/src`) → estado.
 
 Estados: **completa** = portada con la misma funcionalidad (y, cuando se indica, ampliada); **parcial** = portada con un cambio de comportamiento pedido; **pendiente** = falta; **no portada** = se omitió a propósito.
 

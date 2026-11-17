@@ -1,0 +1,31 @@
+# Bloque 1: calidad y entrega
+
+CI en GitHub Actions, análisis estático (PHPStan, PHPCS, Plugin Check), release limpio del .zip,
+eliminar el verificador Rust y publicar el repo privado en GitHub.
+
+## Specs
+
+- S1. Bloque 1 tal como se propuso: «CI en GitHub Actions: correr PHPUnit y la prueba de punta a punta (`prueba_reglas.sh` y `prueba_adaptadores.sh`) contra el docker en cada push. Hoy todo se corre a mano.»
+- S2. «Análisis estático: PHPStan, PHPCS con los estándares de WordPress y el Plugin Check oficial de wordpress.org.»
+- S3. PHPStan: «Nivel 5 con baseline (Recomendado)»: «Corrijo los 7 de nivel 0 (suelen ser errores reales). Los demás quedan congelados en un baseline y el CI exige nivel 5 al código nuevo.»
+- S4. wordpress.org: «No, se distribuye por .zip»: «Corrijo los errores reales (seguridad, escapado y acceso directo a archivos) y dejo documentados como excluidos los propios del directorio.»
+- S5. «Release: que `empaquetar.sh` genere un `.zip` limpio, con versionado y changelog.»
+- S6. Verificador: «Sí, eliminarlo»: «Lo borro del repo y del disco. Queda en el historial de git (commit base).» Nota: con S7 el historial se reescribe, así que no queda en el historial publicado.
+- S7. GitHub: «crea el repo en github para subirlo». Visibilidad: «Privado (Recomendado)». Nombre: «nexo-mcp-wordpress». Contenido: «Solo el plugin y su tooling (Recomendado)»: «Saco del repo referencia-original/ y los artefactos del craft (siguen en tu disco, ignorados por git). El historial se reescribe antes del primer push para que no queden en él.»
+
+## Tasks
+
+- [x] T1 (S6, S7 contenido) Respaldo del repo (git bundle), quitar del historial referencia-original/ y artefactos del craft, ignorarlos; eliminar verificador Rust (app/src, Cargo.*, app/target, app/shots). Ruta: inline. Commit: —
+- [ ] T2 (S2) PHPCS: phpcs.xml.dist (WordPress + PHPCompatibilityWP 8.1+, excluir sniffs de nombre de archivo por PSR-4), dev deps en composer.json, phpcbf + arreglos. Ruta: worker. Commit: —
+- [ ] T3 (S2, S3) PHPStan nivel 5 + baseline; corregir los errores de nivel 0. Ruta: worker. Commit: —
+- [ ] T4 (S2, S4) Plugin Check: corregir errores reales; documentar exclusiones propias del directorio. Ruta: worker. Commit: —
+- [ ] T5 (S5) empaquetar.sh: versión coherente, zip limpio, CHANGELOG. Ruta: inline. Commit: —
+- [ ] T6 (S1) Workflow de GitHub Actions: PHPUnit, PHPCS, PHPStan, e2e en docker, artefacto .zip. Ruta: inline. Commit: —
+- [ ] T7 (S7) Crear repo privado nexolab-ia/nexo-mcp-wordpress, push, CI en verde. Ruta: inline. Commit: —
+
+## Log
+
+- L1 (2026-11-16): «Realicemos el bloque 1»
+- L2 (2026-11-16): respuestas: PHPStan «Nivel 5 con baseline (Recomendado)»; wordpress.org «No, se distribuye por .zip»; GitHub «crea el repo en github para subirlo»; verificador «Sí, eliminarlo»; visibilidad «Privado (Recomendado)»; nombre «nexo-mcp-wordpress»; contenido «Solo el plugin y su tooling (Recomendado)».
+- L3 (2026-11-16): medición inicial. PHPStan (src, con stubs WP+WooCommerce): nivel 0 = 7, 3 = 77, 5 = 104, 6 = 114, 8 = 177. PHPCS WordPress: 258 (187 por nombres de archivo PSR-4, 68 alineación auto-corregible, 2 otros). PHPCompatibilityWP 8.1+: 0. Plugin Check 2.2.0: 9 errores (application_detected, plugin_updater_detected, readme no en inglés x2, outdated_tested_upto_header, missing_direct_file_access_protection, OutputNotEscaped, parse_url, strip_tags) y 119 avisos (muchos en tests/bootstrap.php; 17 UnescapedDBParameter).
+- L4 (2026-11-16): T1. Respaldo `.respaldo/antes-de-limpiar-historial.bundle` (verificado, HEAD 2ded9ad). `git filter-branch --index-filter` quitó referencia-original/ y los artefactos del craft de los 7 commits (.git 2,8M -> 528K). Incidente: al reponer el árbol, filter-branch borró del disco esos archivos; se restauraron exactos desde el bundle (413 archivos; el árbol estaba limpio antes). Ahora están en .gitignore. Verificador Rust eliminado (app/src, Cargo.*, app/target, app/shots).
