@@ -113,6 +113,9 @@ class WP_Post {
 	public string $post_excerpt = '';
 	public string $post_name = '';
 	public string $post_modified_gmt = '2026-01-01 00:00:00';
+	public int $post_author = 0;
+	public int $menu_order = 0;
+	public int $post_parent = 0;
 
 	public function __construct( array $data = array() ) {
 		foreach ( $data as $key => $value ) {
@@ -308,6 +311,24 @@ function wp_update_post( $data, $wp_error = false ) {
 		}
 	}
 	return $id;
+}
+
+function wp_insert_post( $data, $wp_error = false ) {
+	$id = max( array_merge( array( 0 ), array_keys( WP_Test_State::$posts ) ) ) + 1;
+	WP_Test_State::$posts[ $id ] = new WP_Post( array_merge( array( 'post_type' => 'post', 'post_status' => 'draft' ), $data, array( 'ID' => $id ) ) );
+	return $id;
+}
+function wp_trash_post( $post_id ) {
+	if ( ! isset( WP_Test_State::$posts[ (int) $post_id ] ) ) {
+		return false;
+	}
+	WP_Test_State::$posts[ (int) $post_id ]->post_status = 'trash';
+	return WP_Test_State::$posts[ (int) $post_id ];
+}
+function wp_delete_post( $post_id, $force = false ) {
+	$post = WP_Test_State::$posts[ (int) $post_id ] ?? false;
+	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ] );
+	return $post;
 }
 
 // ---------------------------------------------------------------- Abilities

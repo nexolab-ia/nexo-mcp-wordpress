@@ -61,6 +61,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/get-page-structure',
 		'nexo-mcp/get-design-system',
 		'nexo-mcp/create-elementor-page',
+		'nexo-mcp/edit-elementor-section',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -183,7 +184,7 @@ final class ExtendedAbilityRegistrar {
 		$this->appearance  = $appearance;
 		$this->maintenance = $maintenance;
 		$this->products    = $products;
-		$this->builders    = $builders ?? new BuilderGateway();
+		$this->builders    = $builders ?? new BuilderGateway( null, null, $settings );
 		$this->fields      = $fields ?? new FieldGateway();
 		$this->explainer   = new DenialExplainer( $settings );
 	}
@@ -281,6 +282,22 @@ final class ExtendedAbilityRegistrar {
 			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
+			'edit-elementor-section',
+			'Reconstruir sección de Elementor 4',
+			$this->elementor_section_description(),
+			'write',
+			$this->elementor_section_schema(),
+			fn( array $input ) => $this->builders->edit_elementor_section( $input ),
+			// Escribe en la copia de trabajo del original: el permiso se pide sobre el
+			// original aunque la llamada traiga el id de la copia. Nunca publica.
+			fn( array $input ) => $this->module_write(
+				'builders_tools_enabled',
+				Capabilities::BUILDERS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			)
+		);
+		$this->ability(
 			'update-node-text',
 			'Editar texto del constructor',
 			'Reemplaza el texto de un elemento sin alterar la estructura de la página.',
@@ -350,7 +367,7 @@ final class ExtendedAbilityRegistrar {
 				'Crea una página de Elementor 4 (elementos atómicos) como borrador y nunca la publica: se revisa y se publica después. Requiere el Editor V4 activo (get-design-system devuelve atomic_enabled). Antes de armar el árbol llama a nexo-mcp-get-design-system para reutilizar clases globales (se referencian por su id) y a nexo-mcp-list-media para ids de imágenes.',
 				'',
 				'ÁRBOL (elements): lista de nodos {type, settings?, styles?, elements?}. Los ids de elemento los genera el plugin (los que mandes se ignoran). Máximo 200 elementos, 10 niveles y 3 MB. Cualquier error indica la ruta, p. ej. elements[0].elements[1].settings.title, y no crea nada.',
-				'TIPOS (lista cerrada): contenedores e-flexbox y e-div-block (los únicos con hijos en «elements»); widgets e-heading, e-paragraph, e-button, e-image, e-divider. Se rechazan e-svg, los widgets de Elementor 3 (heading, text-editor, html…) y cualquier otro tipo.',
+				'TIPOS (lista cerrada): contenedores e-flexbox y e-div-block (los únicos con hijos en «elements»); widgets e-heading, e-paragraph, e-button, e-image, e-divider. En la raíz sólo van contenedores: un widget suelto en la raíz se rechaza (va dentro de un contenedor). Se rechazan e-svg, los widgets de Elementor 3 (heading, text-editor, html…) y cualquier otro tipo.',
 				'',
 				'PROPIEDADES (settings): cada una es {"$$type": tipo, "value": valor}. Props principales por tipo:',
 				'- e-flexbox / e-div-block: classes, tag (div, header, section, article, aside, footer, main, nav), link.',
@@ -371,6 +388,76 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id, status («draft»), preview_url, edit_url (editor de Elementor) y nodes (elementos guardados). Para revisar: nexo-mcp-get-page-structure.',
 			)
+		);
+	}
+
+	/**
+	 * Descripción de edit-elementor-section.
+	 */
+	private function elementor_section_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Reconstruye una parte de una página de Elementor con elementos atómicos de la versión 4: reemplaza un nodo (típicamente una sección) por un árbol atómico nuevo, inserta uno antes/después/dentro de un nodo, o quita un nodo. Sirve en cualquier página de Elementor, también v3: se puede pasar de a una sección. Lo nuevo es siempre atómico. Nunca publica.',
+				'',
+				'DESTINO: si la página está publicada (programada o privada) el cambio va a su copia de trabajo (se crea o se reutiliza), no al original; la salida trae draft_of y preview_url. Revisa con nexo-mcp-get-working-copy-diff y la vista previa, y publica con nexo-mcp-set-content-status (publish fusiona la copia). Si es un borrador, se edita el borrador. Puedes pasar el id del original o el de su copia.',
+				'',
+				'ENTRADA: id (página o su copia), operation (replace | insert | delete), node_id (nodo de referencia: usa nexo-mcp-get-page-structure para ver los ids), position (sólo insert: before | after | inside; inside agrega al final de un contenedor), elements (árbol atómico nuevo; obligatorio en replace e insert, prohibido en delete), draft (opcional).',
+				'',
+				'ÁRBOL NUEVO: igual que en nexo-mcp-create-elementor-page (mismos tipos, props, estilos, límites y mismas validaciones; los ids de elemento los genera el plugin y nunca chocan con los de la página). Antes de armarlo, llama a nexo-mcp-get-design-system. Los topes de 200 elementos, 10 niveles y 3 MB valen para la página resultante completa.',
+				'',
+				'REGLAS DE ANIDADO (se rechaza con el motivo y no se escribe nada): en la raíz sólo contenedores atómicos (e-flexbox, e-div-block), nunca un widget suelto; dentro de una columna v3 sólo widgets atómicos (un contenedor atómico ahí Elementor lo descarta en silencio); dentro de una sección v3 nada nuevo (sólo admite columnas), así que para cambiarla usa replace sobre la sección; dentro de un contenedor v3 o atómico, cualquier tipo permitido; dentro de un widget, nada. insert con before/after usa las reglas del padre del nodo de referencia; inside, las del propio nodo; replace, las del padre del nodo reemplazado. delete no puede dejar la página sin elementos en la raíz.',
+				'',
+				'EJEMPLOS: reemplazar la sección «abc1234» por un contenedor atómico: {"id":12,"operation":"replace","node_id":"abc1234","elements":[{"type":"e-flexbox","elements":[{"type":"e-heading","settings":{"title":{"$$type":"escaped-html","value":"Hola"}}}]}]}. Insertar un heading en una columna v3: {"id":12,"operation":"insert","node_id":"col5678","position":"inside","elements":[{"type":"e-heading","settings":{"title":{"$$type":"escaped-html","value":"Hola"}}}]}. Quitar un nodo: {"id":12,"operation":"delete","node_id":"abc1234"}.',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, node_ids (ids creados, en insert y replace) y removed (ids quitados, en replace y delete). Requiere el Editor V4 activo para replace e insert. Los nodos que no se tocan quedan idénticos; se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de edit-elementor-section.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function elementor_section_schema(): array {
+		$elements = $this->elementor_page_schema()['properties']['elements'];
+
+		// A diferencia de la creación, al borrar no se envía y el vacío lo decide el validador.
+		unset( $elements['minItems'] );
+		$elements['description'] = 'Árbol atómico nuevo: lista de nodos {type, settings, styles, elements}. Obligatorio en replace e insert; prohibido en delete.';
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'        => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Elementor o su copia de trabajo.',
+				),
+				'operation' => array(
+					'type' => 'string',
+					'enum' => array( 'replace', 'insert', 'delete' ),
+				),
+				'node_id'   => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Id del nodo de referencia (ver get-page-structure).',
+				),
+				'position'  => array(
+					'type'        => 'string',
+					'enum'        => array( 'before', 'after', 'inside' ),
+					'description' => 'Sólo con insert.',
+				),
+				'elements'  => $elements,
+				'draft'     => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'operation', 'node_id' ),
+			'additionalProperties' => false,
 		);
 	}
 

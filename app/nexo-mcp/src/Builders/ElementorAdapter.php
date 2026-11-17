@@ -202,6 +202,45 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 	}
 
 	/**
+	 * Entrega el documento guardado, decodificado, o null si no se puede leer.
+	 *
+	 * @param \WP_Post $post Contenido leído.
+	 *
+	 * @return array<int, mixed>|null
+	 */
+	public function tree( \WP_Post $post ): ?array {
+		return $this->decode( $post );
+	}
+
+	/**
+	 * Invalida el CSS y la caché de elementos de una sola página.
+	 *
+	 * A diferencia de {@see self::flush()}, que vacía la caché de todo el sitio,
+	 * esto borra sólo lo de este contenido (`Post_CSS::delete()` y la caché de
+	 * elementos), que Elementor regenera en el siguiente render. Si esta versión no
+	 * tiene la clase del CSS por página, recurre a `flush()`.
+	 *
+	 * @param \WP_Post $post Contenido modificado.
+	 */
+	public function invalidate_post( \WP_Post $post ): void {
+		delete_post_meta( $post->ID, '_elementor_element_cache' );
+
+		$css = '\\Elementor\\Core\\Files\\CSS\\Post';
+
+		if ( class_exists( $css ) ) {
+			$file = $css::create( (int) $post->ID );
+
+			if ( is_object( $file ) && method_exists( $file, 'delete' ) ) {
+				$file->delete();
+
+				return;
+			}
+		}
+
+		$this->flush( $post );
+	}
+
+	/**
 	 * Decodifica el documento guardado.
 	 *
 	 * @param \WP_Post $post Contenido leído.
@@ -654,8 +693,8 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 			);
 		}
 
-		$source = $this->locate( $tree, $node_id );
-		$anchor = '' === $target ? $source : $this->locate( $tree, $target );
+		$source = ElementorTree::locate( $tree, $node_id );
+		$anchor = '' === $target ? $source : ElementorTree::locate( $tree, $target );
 
 		if ( null === $source || null === $anchor ) {
 			return new \WP_Error(
@@ -693,19 +732,19 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 			);
 		}
 
-		$taken    = $this->collect_ids( $tree );
+		$taken    = ElementorTree::collect_ids( $tree );
 		$distinct = count( $taken );
 		$clone    = $this->renew_ids( $element, $taken );
 		$total    = $this->count_nodes( $tree );
 
-		$siblings = &$this->children_at( $tree, $anchor['parent_path'] );
+		$siblings = &ElementorTree::children_at( $tree, $anchor['parent_path'] );
 		array_splice( $siblings, $anchor['index'] + ( 'before' === $position ? 0 : 1 ), 0, array( $clone ) );
 		unset( $siblings );
 
 		// La página debe quedar con los mismos elementos más la copia, y cada
 		// elemento copiado con un identificador que no exista: Elementor se
 		// confunde si se repiten.
-		if ( $this->count_nodes( $tree ) !== $total + $size || count( $this->collect_ids( $tree ) ) !== $distinct + $size ) {
+		if ( $this->count_nodes( $tree ) !== $total + $size || count( ElementorTree::collect_ids( $tree ) ) !== $distinct + $size ) {
 			return new \WP_Error(
 				'nexo_mcp_builder_structure_changed',
 				__( 'La copia alteró la estructura del documento y fue descartada.', 'nexo-mcp' )
@@ -746,43 +785,6 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 	}
 
 	/**
-	 * Localiza un elemento y el lugar que ocupa.
-	 *
-	 * @param array<int, mixed> $elements Elementos del nivel actual.
-	 * @param string            $id       Identificador buscado.
-	 * @param array<int, int>   $path     Posiciones hasta el padre.
-	 * @param string            $owner    Tipo del padre, o `root`.
-	 *
-	 * @return array{element: array<string, mixed>, parent: string, parent_path: array<int, int>, index: int}|null
-	 */
-	private function locate( array $elements, string $id, array $path = array(), string $owner = 'root' ): ?array {
-		foreach ( $elements as $index => $element ) {
-			if ( ! is_array( $element ) ) {
-				continue;
-			}
-
-			if ( (string) ( $element['id'] ?? '' ) === $id ) {
-				return array(
-					'element'     => $element,
-					'parent'      => $owner,
-					'parent_path' => $path,
-					'index'       => (int) $index,
-				);
-			}
-
-			if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
-				$found = $this->locate( $element['elements'], $id, array_merge( $path, array( (int) $index ) ), (string) ( $element['elType'] ?? '' ) );
-
-				if ( null !== $found ) {
-					return $found;
-				}
-			}
-		}
-
-		return null;
-	}
-
-	/**
 	 * Indica si la copia puede vivir bajo el padre de la referencia.
 	 *
 	 * Se exige el mismo tipo de padre que el original: una sección en la raíz
@@ -799,24 +801,6 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 		}
 
 		return 'widget' === $type && in_array( $destination, array( 'column', 'container' ), true );
-	}
-
-	/**
-	 * Devuelve por referencia la lista de hijos en una posición del árbol.
-	 *
-	 * @param array<int, mixed> $tree Documento completo.
-	 * @param array<int, int>   $path Posiciones hasta el padre; vacío, la raíz.
-	 *
-	 * @return array<int, mixed>
-	 */
-	private function &children_at( array &$tree, array $path ): array {
-		$level = &$tree;
-
-		foreach ( $path as $index ) {
-			$level = &$level[ $index ]['elements'];
-		}
-
-		return $level;
 	}
 
 	/**
@@ -840,31 +824,6 @@ final class ElementorAdapter implements BuilderAdapter, StructureAdapter {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Reúne los identificadores usados en el documento.
-	 *
-	 * @param array<int, mixed> $elements Elementos del nivel actual.
-	 *
-	 * @return array<string, true>
-	 */
-	private function collect_ids( array $elements ): array {
-		$ids = array();
-
-		foreach ( $elements as $element ) {
-			if ( ! is_array( $element ) ) {
-				continue;
-			}
-
-			$ids[ (string) ( $element['id'] ?? '' ) ] = true;
-
-			if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
-				$ids += $this->collect_ids( $element['elements'] );
-			}
-		}
-
-		return $ids;
 	}
 
 	/**

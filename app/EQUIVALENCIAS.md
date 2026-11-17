@@ -31,13 +31,13 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Builders | `SICS\MCPConnector\Builders\AttributeValue` | `NexoDev\NexoMCP\Builders\AttributeValue` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderAdapter` | `NexoDev\NexoMCP\Builders\BuilderAdapter` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderBackup` | `NexoDev\NexoMCP\Builders\BuilderBackup` | completa |  |
-| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa |  |
+| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa | Ampliada: recibe `Settings` (para la copia de trabajo) y `edit_elementor_section()`. |
 | Builders | `SICS\MCPConnector\Builders\BuilderNode` | `NexoDev\NexoMCP\Builders\BuilderNode` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderRegistry` | `NexoDev\NexoMCP\Builders\BuilderRegistry` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\DiviAdapter` | `NexoDev\NexoMCP\Builders\DiviAdapter` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\EditableAttributes` | `NexoDev\NexoMCP\Builders\EditableAttributes` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\EditableTypes` | `NexoDev\NexoMCP\Builders\EditableTypes` | completa |  |
-| Builders | `SICS\MCPConnector\Builders\ElementorAdapter` | `NexoDev\NexoMCP\Builders\ElementorAdapter` | completa |  |
+| Builders | `SICS\MCPConnector\Builders\ElementorAdapter` | `NexoDev\NexoMCP\Builders\ElementorAdapter` | completa | Ampliada: `tree()` público e `invalidate_post()` (CSS y caché de una sola página); localizar/ids/hijos pasaron a `ElementorTree` sin cambiar el duplicado de elementos. |
 | Builders | `SICS\MCPConnector\Builders\FlatsomeAdapter` | `NexoDev\NexoMCP\Builders\FlatsomeAdapter` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\ForeignBuilderDetector` | `NexoDev\NexoMCP\Builders\ForeignBuilderDetector` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\GutenbergAdapter` | `NexoDev\NexoMCP\Builders\GutenbergAdapter` | completa |  |
@@ -59,7 +59,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Licensing | `SICS\MCPConnector\Licensing\LicenseClient` | `NexoDev\NexoMCP\Licensing\LicenseClient` | completa | Misma estructura; sólo opera con NEXO_MCP_API_URL configurada. |
 | MCP | `SICS\MCPConnector\MCP\AbilityRegistrar` | `NexoDev\NexoMCP\MCP\AbilityRegistrar` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\CodexInitializedCompatibility` | `NexoDev\NexoMCP\MCP\CodexInitializedCompatibility` | completa |  |
-| MCP | `SICS\MCPConnector\MCP\ExtendedAbilityRegistrar` | `NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar` | completa | Ampliada: confirmación DELETE/RESTORE verificada en el servidor. |
+| MCP | `SICS\MCPConnector\MCP\ExtendedAbilityRegistrar` | `NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar` | completa | Ampliada: confirmación DELETE/RESTORE verificada en el servidor; herramientas de Elementor 4 (`get-design-system`, `create-elementor-page`, `edit-elementor-section`). |
 | MCP | `SICS\MCPConnector\MCP\ServerRegistrar` | `NexoDev\NexoMCP\MCP\ServerRegistrar` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\ToolExecutor` | `NexoDev\NexoMCP\MCP\ToolExecutor` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\TransportGuard` | `NexoDev\NexoMCP\MCP\TransportGuard` | completa |  |
@@ -113,9 +113,14 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 |---|---|
 | `NexoDev\NexoMCP\Authorization\IrreversibleActions` | Exige `confirmation` exacta (`DELETE`, `RESTORE`) en el servidor antes de ejecutar acciones irreversibles, y lo audita. |
 | `NexoDev\NexoMCP\Builders\ElementorDesignSystem` | Lee el sistema de diseño de Elementor 4 (clases globales, variables, colores y tipografía del Kit) para `get-design-system`. |
-| `NexoDev\NexoMCP\Builders\ElementorTreeValidator` | Valida en PHP puro el árbol atómico que recibe `create-elementor-page` (tipos, límites, enlaces, imágenes, clases y valores de estilo). |
+| `NexoDev\NexoMCP\Builders\ElementorTreeValidator` | Valida en PHP puro el árbol atómico que recibe `create-elementor-page` (tipos, límites, enlaces, imágenes, clases, valores de estilo y regla de raíz). Valida también un subárbol que cuelga de un padre existente (`edit-elementor-section`). |
 | `NexoDev\NexoMCP\Builders\ElementorTreeBuilder` | Convierte el árbol validado al formato de `_elementor_data` con ids generados por el plugin. |
 | `NexoDev\NexoMCP\Builders\ElementorPageCreator` | Crea la página en borrador con los validadores y el guardado de documentos de Elementor; deshace el borrador si algo falla. |
+| `NexoDev\NexoMCP\Builders\ElementorSchemaGuard` | Requisitos de Elementor 4 y validación con `Props_Parser`/`Style_Parser`; compartida por `create-elementor-page` y `edit-elementor-section`. |
+| `NexoDev\NexoMCP\Builders\ElementorNesting` | Reglas de anidado de los elementos atómicos nuevos (raíz, columna, sección, contenedor, widget) en PHP puro. |
+| `NexoDev\NexoMCP\Builders\ElementorTree` | Ayudantes puros sobre el árbol decodificado (localizar, listar ids, contar, recortar); los usan el duplicado de elementos y `edit-elementor-section`. |
+| `NexoDev\NexoMCP\Builders\ElementorSectionSplicer` | Planifica y aplica `replace`/`insert`/`delete` sobre el árbol decodificado y comprueba que lo no tocado quede idéntico y que los ids no choquen. |
+| `NexoDev\NexoMCP\Builders\ElementorSectionEditor` | Orquesta `edit-elementor-section`: valida, crea o reutiliza la copia de trabajo, respalda y guarda con `save_tree` (nunca con `Document::save`). |
 | `NexoDev\NexoMCP\Support\LineDiff` | Diff unificado por líneas en PHP puro; lo usa la herramienta nueva `get-working-copy-diff` (comparar una copia de trabajo con su original). |
 
 ## Otros archivos

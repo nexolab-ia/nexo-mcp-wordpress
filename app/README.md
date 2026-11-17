@@ -128,6 +128,16 @@ Reglas que siempre se cumplen:
   valida antes de guardar: lista cerrada de elementos, enlaces https/mailto/tel,
   imágenes sólo por ID de la biblioteca, sin CSS propio ni valores de estilo
   que puedan escaparse de su declaración. Exige Editor V4 activo en Elementor.
+  `edit-elementor-section` reconstruye una parte de una página existente (también
+  v3): `replace` reemplaza un nodo (p. ej. una sección) por un árbol atómico
+  nuevo, `insert` agrega uno antes, después o dentro de un nodo, y `delete`
+  quita un nodo. Si la página está publicada el cambio va a su **copia de
+  trabajo** (revisa con `get-working-copy-diff` y publica con
+  `set-content-status`); nunca publica. Respeta el anidado de Elementor: en la
+  raíz sólo contenedores atómicos, en una columna v3 sólo widgets atómicos, nada
+  nuevo dentro de una sección v3 ni de un widget. Lo no tocado queda idéntico
+  (se comprueba antes de guardar), guarda los ajustes ya saneados por Elementor (lo mismo que `create-elementor-page`), se respalda y se invalida el CSS de esa
+  página. Para insertar y reemplazar exige Editor V4 activo.
 - **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
   y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).
