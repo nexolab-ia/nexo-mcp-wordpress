@@ -123,4 +123,4 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | `assets/images/logo-prisma-white.png` | `assets/images/logo-nexo.svg` (logo propio) | reemplazada |
 | Logos de clientes (Claude, Cursor, etc.) | Iniciales en texto (CL, CU, VS…) | reemplazada |
 | `composer.json` | `composer.json` con `wordpress/mcp-adapter` ^0.5 y `wordpress/php-mcp-schema` ^0.1 | completa |
-| — | `tests/` (51 pruebas PHPUnit), `phpunit.xml.dist`, `NOTICE.md` | nueva |
+| — | `tests/` (56 pruebas PHPUnit), `phpunit.xml.dist`, `NOTICE.md` | nueva |

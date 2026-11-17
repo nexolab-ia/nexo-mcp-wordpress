@@ -139,10 +139,12 @@ define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );
 
 ## 5. Pruebas
 
-**Reglas de permisos (PHPUnit, 51 pruebas)**: sólo lectura, módulos
+**Reglas de permisos (PHPUnit, 56 pruebas)**: sólo lectura, módulos
 desactivados, alcances por conexión, acciones irreversibles con
-confirmación, edición de publicado → borrador, y que un rechazo no borre el
-respaldo de deshacer.
+confirmación, edición de publicado → borrador, que un rechazo no borre el
+respaldo de deshacer, que ningún código pueda fijar el contexto de
+autenticación sin un token, y que las herramientas registradas coincidan
+con las listas `ABILITIES` que publica el servidor.
 
 ```sh
 cd app
