@@ -23,6 +23,11 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 
 	private FakeSchemaGuard $guard;
 
+	protected function tearDown(): void {
+		\NexoDev\NexoMCP\Support\PostLock::$wait = 5.0;
+		parent::tearDown();
+	}
+
 	protected function setUp(): void {
 		parent::setUp();
 

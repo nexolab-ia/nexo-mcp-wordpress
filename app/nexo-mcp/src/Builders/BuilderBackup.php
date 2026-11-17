@@ -88,11 +88,12 @@ final class BuilderBackup {
 	 * Restaura el último estado guardado.
 	 *
 	 * @param \WP_Post $post Contenido restaurado.
+	 * @param int      $from  Contenido cuyo respaldo se usa; por omisión, el propio.
 	 *
 	 * @return true|\WP_Error
 	 */
-	public function restore( \WP_Post $post ) {
-		$snapshot = $this->read( $post->ID );
+	public function restore( \WP_Post $post, int $from = 0 ) {
+		$snapshot = $this->read( $from > 0 ? $from : $post->ID );
 
 		if ( null === $snapshot ) {
 			return new \WP_Error(

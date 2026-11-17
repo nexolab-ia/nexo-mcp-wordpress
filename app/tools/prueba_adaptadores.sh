@@ -22,6 +22,9 @@
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
 #    respondió «ocupado», y que ninguna edición con éxito se perdió.
+# 8b. update-node-text, update-node-attribute, edit-structure y restore-builder-backup:
+#    sobre una publicada → copia de trabajo (original intacto, diff, publicar fusiona,
+#    restaurar en la copia); sobre un borrador → en su sitio; un rechazo no crea copia.
 # 9. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
 #    imagen de prueba se quitan) y restaura los ajustes y el estado del experimento.
 #
@@ -1075,6 +1078,173 @@ print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de concurrencia OK.
 sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "la prueba de concurrencia tuvo comprobaciones fallidas"
+
+echo
+echo "### Herramientas de constructor viejas: página publicada → copia de trabajo, borrador → en su sitio"
+# Una página publicada por herramienta (cada una arranca sin copia) y un borrador para las cuatro.
+# El título lleva el sufijo: la limpieza barre las páginas y sus copias.
+viejas_tree="$(printf '[{"id":"sec7000","elType":"section","settings":{"gap":"default"},"elements":[{"id":"col7000","elType":"column","settings":{"_column_size":100},"elements":[{"id":"hd7000","elType":"widget","widgetType":"heading","settings":{"title":"Titulo viejas %s"},"elements":[]},{"id":"tx7000","elType":"widget","widgetType":"text-editor","settings":{"editor":"<p>Texto viejas</p>"},"elements":[]},{"id":"bt7000","elType":"widget","widgetType":"button","settings":{"text":"Boton viejas","link":{"url":"https://example.com/viejas","is_external":"","nofollow":""}},"elements":[]}]}]}]' "$suffix")"
+viejas_ids=""
+for tipo in texto atributo estructura restaurar vacia borrador; do
+	if [ "$tipo" = "borrador" ]; then estado=draft; else estado=publish; fi
+	id="$(wp post create --post_type=page --post_status=$estado --post_title="Prueba viejas $tipo elementor-mcp-$suffix" --porcelain)"
+	[ -n "$id" ] || { echo "FALLA: no se pudo crear la página de prueba ($tipo)"; exit 1; }
+	wp post meta update "$id" _elementor_edit_mode builder >/dev/null
+	wp post meta update "$id" _elementor_version "$version_elementor" >/dev/null
+	wp post meta update "$id" _elementor_data "$viejas_tree" >/dev/null
+	viejas_ids="$viejas_ids $id"
+done
+echo "Páginas (texto, atributo, estructura, restaurar, sin respaldo, borrador):$viejas_ids"
+
+python3 -I - "$suffix" $viejas_ids <<'PY'
+import importlib.util, json, pathlib, subprocess, sys
+
+suffix = sys.argv[1]
+p_texto, p_attr, p_estr, p_rest, p_vacia, p_borr = (int(x) for x in sys.argv[2:8])
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def crudo(i):
+    return script("--meta", i, "_elementor_data")
+
+def copias(i):
+    return script("--copias", i).split()
+
+def nodos(i, salida=None, items=None):
+    salida = {} if salida is None else salida
+    for n in (json.loads(crudo(i)) if items is None else items):
+        salida[n["id"]] = n
+        nodos(i, salida, n.get("elements", []))
+    return salida
+
+def diff_nombra(original, copia):
+    _, d = cli.ok("get-working-copy-diff", {"id": original})
+    assert d["copy_id"] == copia and d["original_id"] == original, d
+    assert any(e["key"] == "_elementor_data" for e in d["meta"]["changed"]), d
+
+def publicar(original, copia):
+    antes = json.loads(crudo(copia))
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (original, copia), m
+    assert json.loads(crudo(original)) == antes, "el original no trae el árbol de la copia"
+    assert script("--estado", copia) == "", "la copia debía desaparecer"
+
+URL = f"https://example.com/viejas-{suffix}"
+TEXTO = f"Texto de la copia {suffix}"
+
+def en_copia(pagina, herramienta, args, cambio):
+    """Primera edición de una publicada: crea la copia, el original queda igual, la copia cambia."""
+    original = crudo(pagina)
+    d = cli.ok(herramienta, {"id": pagina, **args})[1]
+    assert d["draft_of"] == pagina and d["id"] != pagina, d
+    copia = d["id"]
+    assert copias(pagina) == [str(copia)], copias(pagina)
+    assert crudo(pagina) == original, "el original cambió"
+    assert script("--estado", pagina) == "publish" and script("--estado", copia) == "draft"
+    assert crudo(copia) != original, "la copia no cambió"
+    cambio(nodos(copia), d)
+    diff_nombra(pagina, copia)
+    # Volver a llamar por el id de la copia sigue en la copia, sin crear otra.
+    again = cli.ok(herramienta, {"id": copia, **args})[1]
+    assert again["id"] == copia and again["draft_of"] == pagina and copias(pagina) == [str(copia)], again
+    assert crudo(pagina) == original
+    return copia, d
+
+def texto_publicada():
+    def cambio(n, d):
+        assert n["hd7000"]["settings"]["title"] == TEXTO, n["hd7000"]
+    copia, _ = en_copia(p_texto, "update-node-text", {"node_id": "hd7000", "text": TEXTO}, cambio)
+    publicar(p_texto, copia)
+    assert nodos(p_texto)["hd7000"]["settings"]["title"] == TEXTO
+comprobar("update-node-text en publicada: copia, original intacto, diff, por id de la copia, publicar fusiona", texto_publicada)
+
+def attr_publicada():
+    def cambio(n, d):
+        assert n["bt7000"]["settings"]["link"]["url"] == URL, n["bt7000"]
+    copia, _ = en_copia(p_attr, "update-node-attribute", {"node_id": "bt7000", "attribute": "link", "value": URL}, cambio)
+    publicar(p_attr, copia)
+    assert nodos(p_attr)["bt7000"]["settings"]["link"]["url"] == URL
+comprobar("update-node-attribute en publicada: copia, original intacto, diff, por id de la copia, publicar fusiona", attr_publicada)
+
+def estr_publicada():
+    def cambio(n, d):
+        assert len(d["created"]) == 1 and d["created"][0]["id"] in n and d["created"][0]["id"] != "hd7000", d
+    copia, d = en_copia(p_estr, "edit-structure", {"node_id": "hd7000"}, cambio)
+    publicar(p_estr, copia)
+    assert len([k for k, v in nodos(p_estr).items() if v.get("widgetType") == "heading"]) >= 2
+comprobar("edit-structure en publicada: copia, original intacto, diff, por id de la copia, publicar fusiona", estr_publicada)
+
+def restaurar_publicada():
+    # Una edición publicada deja el respaldo del original (estado previo a la fusión).
+    inicial = crudo(p_rest)
+    d = cli.ok("update-node-text", {"id": p_rest, "node_id": "hd7000", "text": TEXTO})[1]
+    publicar(p_rest, d["id"])
+    editado = crudo(p_rest)
+    assert editado != inicial
+    # Restaurar sobre la publicada es una edición más: va a la copia.
+    r = cli.ok("restore-builder-backup", {"id": p_rest})[1]
+    assert r["restored"] is True and r["draft_of"] == p_rest and r["id"] != p_rest, r
+    assert crudo(p_rest) == editado, "el original cambió"
+    assert json.loads(crudo(r["id"])) == json.loads(inicial), "la copia no trae el estado respaldado"
+    assert copias(p_rest) == [str(r["id"])]
+    diff_nombra(p_rest, r["id"])
+    # Por el id de la copia se deshace la restauración (lo que tenía la copia quedó respaldado).
+    r2 = cli.ok("restore-builder-backup", {"id": r["id"]})[1]
+    assert r2["id"] == r["id"] and json.loads(crudo(r["id"])) == json.loads(editado), r2
+    publicar(p_rest, r["id"])
+comprobar("restore-builder-backup en publicada: restaura en la copia, original intacto, por la copia se deshace", restaurar_publicada)
+
+def borrador_en_su_sitio():
+    for herramienta, args, claves in (
+        ("update-node-text", {"node_id": "hd7000", "text": TEXTO}, {"id", "builder", "node_id", "updated", "backup"}),
+        ("update-node-attribute", {"node_id": "bt7000", "attribute": "link", "value": URL}, {"id", "builder", "node_id", "attribute", "updated", "backup"}),
+        ("edit-structure", {"node_id": "tx7000"}, {"id", "created", "backup"}),
+        ("restore-builder-backup", {}, {"id", "restored"}),
+    ):
+        antes = crudo(p_borr)
+        d = cli.ok(herramienta, {"id": p_borr, **args})[1]
+        assert d["id"] == p_borr and "draft_of" not in d and set(d) == claves, d
+        assert copias(p_borr) == [] and crudo(p_borr) != antes, herramienta
+        assert script("--estado", p_borr) == "draft"
+comprobar("las cuatro herramientas sobre un borrador editan en su sitio, sin copia y con los campos de siempre", borrador_en_su_sitio)
+
+def rechazos():
+    for herramienta, args, nota in (
+        ("update-node-text", {"node_id": "no-existe", "text": "x"}, "nodo inexistente"),
+        ("update-node-attribute", {"node_id": "no-existe", "attribute": "link", "value": URL}, "nodo inexistente"),
+        ("update-node-attribute", {"node_id": "hd7000", "attribute": "alt", "value": "x"}, "atributo no admitido"),
+        ("update-node-attribute", {"node_id": "bt7000", "attribute": "link", "value": "javascript:alert(1)"}, "valor inválido"),
+        ("edit-structure", {"node_id": "no-existe"}, "nodo inexistente"),
+        ("edit-structure", {"node_id": "hd7000", "target": "sec7000"}, "destino que no cabe"),
+        ("restore-builder-backup", {}, "sin respaldo"),
+    ):
+        antes, paginas = crudo(p_vacia), script("--contar-paginas")
+        error, texto, _ = cli.call(herramienta, {"id": p_vacia, **args})
+        assert error, f"{herramienta} ({nota}) debía rechazarse: {texto[:200]}"
+        assert copias(p_vacia) == [] and script("--contar-paginas") == paginas and crudo(p_vacia) == antes, f"{herramienta} ({nota}) dejó rastro"
+    assert script("--meta", p_vacia, "_nexo_mcp_builder_backup") == "", "un rechazo no debe crear respaldo"
+comprobar("cada rechazo (nodo, atributo, valor, destino, sin respaldo) no crea copia ni cambia nada", rechazos)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de las herramientas de constructor OK.")
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "las herramientas de constructor sobre publicadas/borradores tuvieron comprobaciones fallidas"
 
 echo
 echo "### Verificación con wp-cli"
