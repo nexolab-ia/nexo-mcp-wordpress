@@ -69,7 +69,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Media | `SICS\MCPConnector\Media\UploadValidator` | `NexoDev\NexoMCP\Media\UploadValidator` | completa |  |
 | Media | `SICS\MCPConnector\Media\ValidatedUpload` | `NexoDev\NexoMCP\Media\ValidatedUpload` | completa |  |
 | OAuth | `SICS\MCPConnector\OAuth\AuthorizationController` | `NexoDev\NexoMCP\OAuth\AuthorizationController` | completa |  |
-| OAuth | `SICS\MCPConnector\OAuth\BearerTokenGuard` | `NexoDev\NexoMCP\OAuth\BearerTokenGuard` | completa | Ampliada: assume_context() para pruebas. |
+| OAuth | `SICS\MCPConnector\OAuth\BearerTokenGuard` | `NexoDev\NexoMCP\OAuth\BearerTokenGuard` | completa | Sin API pública para fijar el contexto de autenticación: las pruebas lo fijan por reflexión. |
 | OAuth | `SICS\MCPConnector\OAuth\ClientRegistry` | `NexoDev\NexoMCP\OAuth\ClientRegistry` | completa |  |
 | OAuth | `SICS\MCPConnector\OAuth\DiscoveryController` | `NexoDev\NexoMCP\OAuth\DiscoveryController` | completa |  |
 | OAuth | `SICS\MCPConnector\OAuth\PersonalTokenIssuer` | `NexoDev\NexoMCP\OAuth\PersonalTokenIssuer` | completa |  |

@@ -29,6 +29,11 @@ final class BearerTokenGuard {
 	/**
 	 * Scopes del token en curso.
 	 *
+	 * El contexto de autenticación (este campo, `$authenticated` y `$failure`)
+	 * sólo lo fija `authenticate()` al validar un token real. No hay API pública
+	 * para escribirlo: cualquier código cargado en WordPress podría llamarla y
+	 * declararse conectado con todos los scopes.
+	 *
 	 * @var array<int, string>
 	 */
 	private static array $scopes = array();
@@ -133,23 +138,6 @@ final class BearerTokenGuard {
 	 */
 	public static function scopes(): array {
 		return self::$scopes;
-	}
-
-	/**
-	 * Fija el contexto de autenticación sin pasar por un token real.
-	 *
-	 * Uso exclusivo de las pruebas automatizadas y de herramientas internas:
-	 * no hay ruta pública que lo invoque.
-	 *
-	 * @internal
-	 *
-	 * @param bool               $authenticated Si la solicitud llegó con token.
-	 * @param array<int, string> $scopes        Scopes concedidos.
-	 */
-	public static function assume_context( bool $authenticated, array $scopes = array() ): void {
-		self::$authenticated = $authenticated;
-		self::$scopes        = $scopes;
-		self::$failure       = '';
 	}
 
 	/**

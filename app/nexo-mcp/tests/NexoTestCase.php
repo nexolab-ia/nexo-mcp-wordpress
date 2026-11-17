@@ -22,12 +22,12 @@ abstract class NexoTestCase extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		\WP_Test_State::reset();
-		BearerTokenGuard::assume_context( false );
+		$this->bearer_context( false );
 		$this->grant_admin();
 	}
 
 	protected function tearDown(): void {
-		BearerTokenGuard::assume_context( false );
+		$this->bearer_context( false );
 		parent::tearDown();
 	}
 
@@ -88,6 +88,27 @@ abstract class NexoTestCase extends TestCase {
 	 * @param array<int, string> $scopes Scopes concedidos.
 	 */
 	protected function connect_with_scopes( array $scopes ): void {
-		BearerTokenGuard::assume_context( true, $scopes );
+		$this->bearer_context( true, $scopes );
+	}
+
+	/**
+	 * Fija el contexto de autenticación del guardia sin un token real.
+	 *
+	 * Se hace por reflexión a propósito: el plugin no expone ninguna API para
+	 * escribir este contexto (ver BearerTokenGuardTest).
+	 *
+	 * @param bool               $authenticated Si la solicitud llegó con token.
+	 * @param array<int, string> $scopes        Scopes concedidos.
+	 */
+	private function bearer_context( bool $authenticated, array $scopes = array() ): void {
+		$values = array(
+			'authenticated' => $authenticated,
+			'scopes'        => $scopes,
+			'failure'       => '',
+		);
+
+		foreach ( $values as $property => $value ) {
+			( new \ReflectionProperty( BearerTokenGuard::class, $property ) )->setValue( null, $value );
+		}
 	}
 }
