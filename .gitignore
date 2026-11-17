@@ -14,3 +14,6 @@ agent-session.jsonl
 build-activity.log
 usage.json
 inbox/
+
+# PHPUnit local cache
+.phpunit.cache/
