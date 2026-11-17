@@ -65,6 +65,13 @@ final class BuilderNode {
 	public array $attributes;
 
 	/**
+	 * Clases aplicadas al elemento (sólo elementos atómicos de Elementor 4).
+	 *
+	 * @var array<int, string>
+	 */
+	public array $classes;
+
+	/**
 	 * Construye un nodo normalizado.
 	 *
 	 * @param string               $id         Identificador.
@@ -73,6 +80,7 @@ final class BuilderNode {
 	 * @param bool                 $editable   Si admite edición.
 	 * @param string               $reason     Motivo del bloqueo.
 	 * @param array<string, mixed> $attributes Atributos editables.
+	 * @param array<int, string>   $classes    Clases aplicadas.
 	 */
 	public function __construct(
 		string $id,
@@ -80,7 +88,8 @@ final class BuilderNode {
 		?string $text,
 		bool $editable = true,
 		string $reason = '',
-		array $attributes = array()
+		array $attributes = array(),
+		array $classes = array()
 	) {
 		$this->id         = $id;
 		$this->type       = $type;
@@ -88,6 +97,7 @@ final class BuilderNode {
 		$this->editable   = $editable;
 		$this->reason     = $reason;
 		$this->attributes = $attributes;
+		$this->classes    = $classes;
 	}
 
 	/**
@@ -136,6 +146,11 @@ final class BuilderNode {
 		// con un `attributes: {}` en cada uno es ruido en el contexto del cliente.
 		if ( array() !== $this->attributes ) {
 			$data['attributes'] = $this->attributes;
+		}
+
+		// Igual: sólo viaja si el elemento tiene clases aplicadas.
+		if ( array() !== $this->classes ) {
+			$data['classes'] = $this->classes;
 		}
 
 		return $data;

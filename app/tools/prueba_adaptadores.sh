@@ -7,7 +7,11 @@
 # 3. Corre tools/prueba_adaptadores.py (OAuth real + herramientas MCP).
 # 4. Comprueba con wp-cli que los valores quedaron guardados donde los lee el
 #    plugin real: metadatos de Yoast, valor de ACF y `_elementor_data`.
-# 5. Limpia lo que creó (a la papelera, recuperable) y restaura los ajustes.
+# 5. Elementor 4: activa el experimento atómico, crea con los repositorios de
+#    Elementor una clase global, una variable y una página con un árbol atómico, y
+#    comprueba por MCP get-design-system y la lectura atómica de get-page-structure.
+# 6. Limpia lo que creó (páginas a la papelera, recuperable; clase y variable
+#    se quitan) y restaura los ajustes y el estado del experimento.
 #
 # Uso (desde app/):  tools/prueba_adaptadores.sh
 set -uo pipefail
@@ -43,8 +47,39 @@ original="$(wp option get nexo_mcp_settings --format=json)"
 [ -n "$original" ] || { echo "FALLA: no se pudieron leer los ajustes"; exit 1; }
 page_id=""
 group_ids=""
+atomic_page_id=""
+class_id=""
+variable_id=""
+kit_id=""
+exp_names="e_opt_in_v4 e_atomic_elements"
+# Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
+# variables del Kit (base64 del meta crudo), para dejarlo exactamente como estaba.
+exp_prev=""
+variables_prev=""
 restore() {
 	wp option update nexo_mcp_settings "$original" --format=json >/dev/null && echo "Ajustes restaurados."
+}
+restore_experiments() {
+	local name prev
+	for name in $exp_names; do
+		prev="$(printf '%s\n' "$exp_prev" | sed -n "s/^$name=//p")"
+		[ -n "$prev" ] || continue
+		if [ "$prev" = "__sin__" ]; then wp option delete "elementor_experiment-$name" >/dev/null || true
+		else wp option update "elementor_experiment-$name" "$prev" >/dev/null; fi
+	done
+	echo "Experimentos de Elementor restaurados."
+}
+remove_design_fixtures() {
+	[ -n "$class_id$variable_id" ] || return 0
+	wp eval '
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
+$all = $repo->all()->get();
+unset( $all["items"]["'"$class_id"'"] );
+$repo->put( $all["items"], array_values( array_diff( $all["order"], array( "'"$class_id"'" ) ) ) );
+$prev = base64_decode( "'"$variables_prev"'" );
+if ( "" === $prev ) { delete_post_meta( $kit->get_main_id(), "_elementor_global_variables" ); }
+else { update_post_meta( $kit->get_main_id(), "_elementor_global_variables", wp_slash( $prev ) ); }' >/dev/null
 }
 cleanup() {
 	echo
@@ -53,7 +88,7 @@ cleanup() {
 	# wp_trash_post() guarda el estado anterior, así que se restaura tal como
 	# estaba. `wp post delete` no sirve: rechaza la papelera para tipos que no
 	# son post/page, como los grupos y campos de ACF.
-	for id in $page_id $group_ids; do
+	for id in $page_id $atomic_page_id $group_ids; do
 		wp eval "wp_trash_post( $id );" >/dev/null
 		if [ "$(wpr post get "$id" --field=post_status)" = "trash" ]; then
 			echo "Papelera: $id"
@@ -61,6 +96,13 @@ cleanup() {
 			echo "FALLA: $id no quedó en la papelera"; fallidas=$((fallidas + 1))
 		fi
 	done
+	remove_design_fixtures
+	if [ -n "$class_id" ] && wpr eval 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );' | grep -q "$class_id"; then
+		echo "FALLA: la clase global $class_id sigue ahí"; fallidas=$((fallidas + 1))
+	elif [ -n "$class_id" ]; then
+		echo "Clase global y variable quitadas."
+	fi
+	restore_experiments || fallidas=$((fallidas + 1))
 	restore || { echo "FALLA: no se pudieron restaurar los ajustes"; fallidas=$((fallidas + 1)); }
 	[ "$fallidas" -eq 0 ]
 }
@@ -110,11 +152,121 @@ echo implode( " ", $ids );')"
 [ -n "$group_ids" ] || { echo "FALLA: no se pudo crear el grupo ACF"; exit 1; }
 echo "Grupo de campos ACF (ids): $group_ids"
 
+# --- Elementor 4 atómico ---------------------------------------------------
+# Se fuerza el experimento «activo» (aunque ya lo estuviera por defecto) y al
+# salir se deja como estaba. La clase, la variable y el árbol se crean con las
+# APIs PHP de Elementor: nunca se escribe a mano su meta.
+for name in $exp_names; do
+	prev="$(wp eval "echo get_option( 'elementor_experiment-$name', '__sin__' );")"
+	exp_prev="$exp_prev$name=$prev"$'\n'
+	wp option update "elementor_experiment-$name" active >/dev/null
+done
+[ "$(wpr eval 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";')" = "si" ] \
+	|| { echo "FALLA: no se pudo activar el experimento atómico"; exit 1; }
+echo "Experimento atómico activo (estado previo: $(printf '%s' "$exp_prev" | tr '\n' ' '))"
+
+kit_id="$(wpr eval 'echo \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id();')"
+variables_prev="$(wpr eval 'echo base64_encode( (string) get_post_meta( \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id(), "_elementor_global_variables", true ) );')"
+class_id="g-nexo$RANDOM"
+class_label="nexo-prueba-clase-$suffix"
+variable_label="nexo-prueba-var-$suffix"
+variable_id="$(wp eval '
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
+$all = $repo->all()->get();
+$all["items"]["'"$class_id"'"] = array( "id" => "'"$class_id"'", "type" => "class", "label" => "'"$class_label"'", "variants" => array() );
+$all["order"][] = "'"$class_id"'";
+$repo->put( $all["items"], $all["order"] );
+$variables = new \Elementor\Modules\Variables\Storage\Variables_Repository( $kit );
+$coleccion = $variables->load();
+$variable = \Elementor\Modules\Variables\Storage\Entities\Variable::create_new( array(
+	"id" => $coleccion->next_id(), "type" => "global-color-variable", "label" => "'"$variable_label"'",
+	"value" => "#ff0000", "order" => $coleccion->get_next_order(),
+) );
+$variable->validate();
+$coleccion->add_variable( $variable );
+$variables->save( $coleccion );
+echo $variable->id();')"
+[ -n "$variable_id" ] || { echo "FALLA: no se pudo crear la variable"; exit 1; }
+echo "Clase global: $class_id ($class_label); variable: $variable_id ($variable_label); Kit: $kit_id"
+
+atomic_heading="Título atómico $suffix"
+atomic_page_id="$(wp post create --post_type=page --post_status=draft --post_title="Prueba atómica $suffix" --porcelain)"
+[ -n "$atomic_page_id" ] || { echo "FALLA: no se pudo crear la página atómica"; exit 1; }
+guardado="$(wp eval '
+$id = '"$atomic_page_id"';
+update_post_meta( $id, "_elementor_edit_mode", "builder" );
+$arbol = array( array(
+	"id" => "bbbb0000", "elType" => "e-flexbox", "styles" => array(), "elements" => array(
+		array(
+			"id" => "bbbb0001", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(),
+			"settings" => array(
+				"title"   => array( "\$\$type" => "escaped-html", "value" => "'"$atomic_heading"'" ),
+				"classes" => array( "\$\$type" => "classes", "value" => array( "'"$class_id"'" ) ),
+			),
+		),
+	),
+	"settings" => array( "classes" => array( "\$\$type" => "classes", "value" => array( "'"$class_id"'" ) ) ),
+) );
+$documento = \Elementor\Plugin::$instance->documents->get( $id );
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
+[ "$guardado" = "guardado" ] || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
+echo "Página atómica borrador: $atomic_page_id"
+
 echo
 echo "### Prueba por MCP"
 python3 -I tools/prueba_adaptadores.py --verificar-enlace tools/prueba_adaptadores.sh --pagina "$page_id" --campo "$campo" --valor-campo "$valor_campo" \
 	--titulo-seo "$titulo_seo" --descripcion-seo "$descripcion_seo" --texto "$texto" --enlace "$enlace"
 [ $? -eq 0 ] || falla "la prueba por MCP tuvo comprobaciones fallidas (ver el resumen)"
+
+echo
+echo "### Prueba atómica por MCP (get-design-system, get-page-structure)"
+python3 -I - "$atomic_page_id" "$class_id" "$class_label" "$variable_id" "$variable_label" "$atomic_heading" "$kit_id" <<'PY'
+import importlib.util, json, pathlib, sys
+
+pagina, clase, etiqueta, variable, etiqueta_var, titulo, kit = sys.argv[1:8]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+
+def comprobar(nombre, fn):
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def sistema():
+    _, d = cli.ok("get-design-system", {})
+    assert d.get("atomic_enabled") is True, f"atomic_enabled: {d.get('atomic_enabled')!r}"
+    assert d.get("kit_id") == int(kit), f"kit_id: {d.get('kit_id')!r}"
+    assert {"id": clase, "label": etiqueta} in d["classes"], f"clases: {d['classes']}"
+    var = next((v for v in d["variables"] if v["id"] == variable), None)
+    assert var and var["label"] == etiqueta_var and var["value"] == "#ff0000", f"variables: {d['variables']}"
+    assert var["type"] == "global-color-variable", var
+    assert d["colors"] and {"id", "title", "color"} <= set(d["colors"][0]), f"colores: {d['colors'][:1]}"
+    assert d["typography"] and {"id", "title"} <= set(d["typography"][0]), f"tipografía: {d['typography'][:1]}"
+
+def estructura():
+    _, d = cli.ok("get-page-structure", {"id": int(pagina)})
+    assert d.get("builder") == "elementor", f"builder: {d.get('builder')!r}"
+    nodos = {n["id"]: n for n in d["nodes"]}
+    h, caja = nodos.get("bbbb0001"), nodos.get("bbbb0000")
+    assert h and h["type"] == "e-heading", f"nodos: {list(nodos)}"
+    assert h.get("text") == titulo, f"texto: {h.get('text')!r}"
+    assert h.get("classes") == [clase], f"clases del heading: {h.get('classes')!r}"
+    assert h.get("editable") is False and "sólo lectura" in h.get("reason", ""), h
+    assert caja and caja["type"] == "e-flexbox" and caja.get("classes") == [clase], caja
+
+comprobar("get-design-system: clase, variable, atomic_enabled, Kit", sistema)
+comprobar("get-page-structure: e-heading con texto y clases", estructura)
+print(f"\n{2 - len(fallas)}/2 comprobaciones atómicas OK.")
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "la prueba atómica por MCP tuvo comprobaciones fallidas"
 
 echo
 echo "### Verificación con wp-cli"

@@ -59,6 +59,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/upsert-product',
 		'nexo-mcp/delete-product',
 		'nexo-mcp/get-page-structure',
+		'nexo-mcp/get-design-system',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -257,6 +258,15 @@ final class ExtendedAbilityRegistrar {
 				'edit_post',
 				(int) ( $input['id'] ?? 0 )
 			)
+		);
+		$this->ability(
+			'get-design-system',
+			'Obtener sistema de diseño de Elementor',
+			'Lista el sistema de diseño de Elementor: si los elementos atómicos (v4) están activos, y las clases globales, variables, colores y tipografía del Kit activo. Úsalo antes de armar o leer páginas atómicas para reutilizar lo que ya existe.',
+			'read',
+			$this->empty_schema(),
+			fn() => $this->builders->get_design_system(),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
 			'update-node-text',
