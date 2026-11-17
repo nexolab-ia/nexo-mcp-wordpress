@@ -13,6 +13,7 @@ use NexoDev\NexoMCP\Media\UploadThrottle;
 use NexoDev\NexoMCP\Media\UploadTicket;
 use NexoDev\NexoMCP\Media\UploadValidator;
 use NexoDev\NexoMCP\Media\ValidatedUpload;
+use NexoDev\NexoMCP\Support\LineDiff;
 use NexoDev\NexoMCP\Support\Settings;
 
 /**
@@ -21,6 +22,18 @@ use NexoDev\NexoMCP\Support\Settings;
 final class ContentAdminGateway {
 
 	private const ALLOWED_TAXONOMIES = array( 'category', 'post_tag', 'product_cat', 'product_tag' );
+
+	/**
+	 * Tope del diff de contenido de una copia de trabajo, en bytes.
+	 *
+	 * Un diff mayor llega cortado y marcado con `content_diff_truncated`.
+	 */
+	public const DIFF_MAX_BYTES = 20000;
+
+	/**
+	 * Largo máximo, en caracteres, de un valor de meta que se muestra completo.
+	 */
+	private const META_SHORT_CHARS = 200;
 
 	/**
 	 * Tope para la carga en base64: 2 MB.
@@ -546,6 +559,227 @@ final class ContentAdminGateway {
 			'status' => (string) get_post_status( $post_id ),
 			'link'   => (string) get_permalink( $post_id ),
 		);
+	}
+
+	/**
+	 * Compara una copia de trabajo con su original.
+	 *
+	 * Acepta el ID de cualquiera de los dos. «Antes» es el original y «después»
+	 * la copia; la meta y los términos son los mismos que la fusión copiaría.
+	 *
+	 * @param int $id Original o copia.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_working_copy_diff( int $id ) {
+		$post = get_post( $id );
+
+		if ( ! $post instanceof \WP_Post ) {
+			return new \WP_Error( 'nexo_mcp_content_not_found', __( 'No se encontró el contenido.', 'nexo-mcp' ) );
+		}
+
+		if ( WorkingCopy::original_of( $post ) > 0 ) {
+			$copy     = $post;
+			$original = $this->copies->live_original( $copy );
+
+			if ( null === $original ) {
+				return new \WP_Error(
+					'nexo_mcp_draft_orphan',
+					__( 'La página original ya no existe, está en la papelera o tiene otra copia. Descarta esta copia.', 'nexo-mcp' )
+				);
+			}
+		} else {
+			$original = $post;
+			$copy     = get_post( WorkingCopy::copy_of( $original ) );
+
+			if ( ! $copy instanceof \WP_Post ) {
+				return new \WP_Error( 'nexo_mcp_draft_none', __( 'Este contenido no tiene copia de trabajo ni es una.', 'nexo-mcp' ) );
+			}
+		}
+
+		// Leer una copia exige poder editar el original: es un borrador suyo.
+		if ( ! current_user_can( 'edit_post', $original->ID ) ) {
+			return new \WP_Error(
+				'nexo_mcp_content_forbidden',
+				__( 'No tienes permiso para ver los cambios de este contenido.', 'nexo-mcp' )
+			);
+		}
+
+		$result = array(
+			'original_id' => (int) $original->ID,
+			'copy_id'     => (int) $copy->ID,
+			'preview_url' => (string) get_preview_post_link( $copy ),
+			'stale'       => $this->copies->is_stale( $copy, $original ),
+			'changed'     => array(),
+		);
+
+		$fields = array(
+			'title'   => 'post_title',
+			'excerpt' => 'post_excerpt',
+		);
+
+		foreach ( $fields as $field => $property ) {
+			if ( (string) $original->$property !== (string) $copy->$property ) {
+				$result['changed'][] = $field;
+				$result[ $field ]    = array(
+					'before' => (string) $original->$property,
+					'after'  => (string) $copy->$property,
+				);
+			}
+		}
+
+		$content = LineDiff::unified( (string) $original->post_content, (string) $copy->post_content, 3, self::DIFF_MAX_BYTES );
+
+		if ( '' !== $content['diff'] ) {
+			$result['changed'][]    = 'content';
+			$result['content_diff'] = $content['diff'];
+
+			if ( $content['truncated'] ) {
+				$result['content_diff_truncated'] = true;
+			}
+		}
+
+		$meta = $this->meta_changes( (int) $original->ID, (int) $copy->ID );
+
+		if ( array() !== $meta['changed'] || array() !== $meta['added'] || array() !== $meta['kept_on_publish'] ) {
+			$result['changed'][] = 'meta';
+			$result['meta']      = $meta;
+		}
+
+		$terms = $this->term_changes( $original, $copy );
+
+		if ( array() !== $terms ) {
+			$result['changed'][] = 'terms';
+			$result['terms']     = $terms;
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Cambios de meta entre original y copia, sólo de la que la fusión copia.
+	 *
+	 * Una clave que existe en el original y falta en la copia no se informa
+	 * como quitada: la fusión sólo agrega o actualiza meta, nunca la borra, así
+	 * que al publicar el original la conserva. Va en `kept_on_publish`, con
+	 * `after` igual al valor que seguirá teniendo.
+	 *
+	 * @param int $original_id Original.
+	 * @param int $copy_id     Copia.
+	 * @return array{changed: list<array<string, mixed>>, added: list<array<string, mixed>>, kept_on_publish: list<array<string, mixed>>}
+	 */
+	private function meta_changes( int $original_id, int $copy_id ): array {
+		$before  = $this->copies->travelling_meta( $original_id );
+		$after   = $this->copies->travelling_meta( $copy_id );
+		$changes = array(
+			'changed'         => array(),
+			'added'           => array(),
+			'kept_on_publish' => array(),
+		);
+
+		foreach ( $after as $key => $values ) {
+			if ( ! array_key_exists( $key, $before ) ) {
+				$changes['added'][] = $this->meta_entry( $key, null, $this->meta_value( $values ) );
+			} elseif ( $before[ $key ] !== $values ) {
+				$changes['changed'][] = $this->meta_entry( $key, $this->meta_value( $before[ $key ] ), $this->meta_value( $values ) );
+			}
+		}
+
+		foreach ( $before as $key => $values ) {
+			if ( ! array_key_exists( $key, $after ) ) {
+				$kept                         = $this->meta_value( $values );
+				$changes['kept_on_publish'][] = $this->meta_entry( $key, $kept, $kept );
+			}
+		}
+
+		return $changes;
+	}
+
+	/**
+	 * Un solo valor se muestra tal cual; varios, como lista.
+	 *
+	 * @param array<int, mixed> $values Valores de la clave.
+	 * @return mixed
+	 */
+	private function meta_value( array $values ) {
+		return 1 === count( $values ) ? $values[0] : $values;
+	}
+
+	/**
+	 * Arma la entrada de una clave: valores si ambos son escalares cortos, si no tamaños.
+	 *
+	 * @param string $key    Clave de meta.
+	 * @param mixed  $before Valor en el original, o null si no existe.
+	 * @param mixed  $after  Valor en la copia, o null si no existe.
+	 * @return array<string, mixed>
+	 */
+	private function meta_entry( string $key, $before, $after ): array {
+		if ( $this->is_short_value( $before ) && $this->is_short_value( $after ) ) {
+			return array(
+				'key'    => $key,
+				'before' => $before,
+				'after'  => $after,
+			);
+		}
+
+		return array(
+			'key'          => $key,
+			'before_bytes' => $this->value_bytes( $before ),
+			'after_bytes'  => $this->value_bytes( $after ),
+		);
+	}
+
+	/**
+	 * Indica si un valor es nulo o un escalar de hasta 200 caracteres.
+	 *
+	 * @param mixed $value Valor evaluado.
+	 */
+	private function is_short_value( $value ): bool {
+		return null === $value || ( is_scalar( $value ) && mb_strlen( (string) $value ) <= self::META_SHORT_CHARS );
+	}
+
+	/**
+	 * Tamaño en bytes de un valor de meta; 0 si no existe.
+	 *
+	 * @param mixed $value Valor medido.
+	 */
+	private function value_bytes( $value ): int {
+		if ( null === $value ) {
+			return 0;
+		}
+
+		return strlen( is_scalar( $value ) ? (string) $value : (string) wp_json_encode( $value ) );
+	}
+
+	/**
+	 * Términos agregados y quitados por taxonomía en la copia.
+	 *
+	 * @param \WP_Post $original Original.
+	 * @param \WP_Post $copy     Copia.
+	 * @return array<string, array{added: list<string>, removed: list<string>}>
+	 */
+	private function term_changes( \WP_Post $original, \WP_Post $copy ): array {
+		$changes = array();
+
+		foreach ( $this->copies->copied_taxonomies( $original->post_type ) as $taxonomy ) {
+			$before = wp_get_object_terms( $original->ID, $taxonomy, array( 'fields' => 'slugs' ) );
+			$after  = wp_get_object_terms( $copy->ID, $taxonomy, array( 'fields' => 'slugs' ) );
+
+			if ( is_wp_error( $before ) || is_wp_error( $after ) ) {
+				continue;
+			}
+
+			$added   = array_values( array_diff( $after, $before ) );
+			$removed = array_values( array_diff( $before, $after ) );
+
+			if ( array() !== $added || array() !== $removed ) {
+				$changes[ $taxonomy ] = array(
+					'added'   => $added,
+					'removed' => $removed,
+				);
+			}
+		}
+
+		return $changes;
 	}
 
 	/**

@@ -44,6 +44,12 @@ final class WP_Test_State {
 	/** @var array<string, array<string, mixed>> */
 	public static array $abilities = array();
 
+	/** @var array<string, list<string>> Taxonomías por tipo de contenido. */
+	public static array $object_taxonomies = array();
+
+	/** @var array<int, array<string, array<string, int>>> Términos por contenido y taxonomía: slug => ID. */
+	public static array $terms = array();
+
 	/** @var array<int, array<string, mixed>> */
 	public static array $audit = array();
 
@@ -55,6 +61,8 @@ final class WP_Test_State {
 		self::$posts     = array();
 		self::$meta      = array();
 		self::$abilities = array();
+		self::$object_taxonomies = array();
+		self::$terms     = array();
 		self::$audit     = array();
 		self::$user_id   = 1;
 	}
@@ -102,6 +110,7 @@ class WP_Post {
 	public string $post_status = 'draft';
 	public string $post_title = '';
 	public string $post_content = '';
+	public string $post_excerpt = '';
 	public string $post_name = '';
 	public string $post_modified_gmt = '2026-01-01 00:00:00';
 
@@ -228,9 +237,53 @@ function get_post( $post = null ) {
 	}
 	return WP_Test_State::$posts[ (int) $post ] ?? null;
 }
+function maybe_serialize( $data ) {
+	return is_array( $data ) || is_object( $data ) ? serialize( $data ) : $data;
+}
+function maybe_unserialize( $data ) {
+	if ( is_string( $data ) && preg_match( '/^(a|O|s|i|d|b):/', $data ) ) {
+		$value = @unserialize( trim( $data ) );
+		return false === $value && 'b:0;' !== $data ? $data : $value;
+	}
+	return $data;
+}
 function get_post_meta( $post_id, $key = '', $single = false ) {
+	// Sin clave, WordPress entrega todas: clave => lista de valores crudos (serializados).
+	if ( '' === $key ) {
+		$all = array();
+		foreach ( WP_Test_State::$meta[ (int) $post_id ] ?? array() as $name => $stored ) {
+			$all[ $name ] = array( maybe_serialize( $stored ) );
+		}
+		return $all;
+	}
 	$value = WP_Test_State::$meta[ (int) $post_id ][ $key ] ?? '';
 	return $single ? $value : array( $value );
+}
+function get_post_status( $post = null ) {
+	$post = get_post( $post );
+	return $post instanceof WP_Post ? $post->post_status : false;
+}
+function get_preview_post_link( $post = null ) {
+	$post = get_post( $post );
+	return $post instanceof WP_Post ? home_url( '/?p=' . $post->ID . '&preview=true' ) : null;
+}
+function get_object_taxonomies( $object_type, $output = 'names' ) {
+	return WP_Test_State::$object_taxonomies[ (string) $object_type ] ?? array();
+}
+function wp_get_object_terms( $object_ids, $taxonomies, $args = array() ) {
+	$terms  = WP_Test_State::$terms[ (int) $object_ids ][ (string) $taxonomies ] ?? array();
+	$fields = $args['fields'] ?? 'all';
+	if ( 'slugs' === $fields ) {
+		return array_map( 'strval', array_keys( $terms ) );
+	}
+	if ( 'ids' === $fields ) {
+		return array_values( $terms );
+	}
+	$objects = array();
+	foreach ( $terms as $slug => $term_id ) {
+		$objects[] = (object) array( 'term_id' => $term_id, 'slug' => (string) $slug, 'taxonomy' => (string) $taxonomies );
+	}
+	return $objects;
 }
 function update_post_meta( $post_id, $key, $value, $prev = '' ) {
 	$old = WP_Test_State::$meta[ (int) $post_id ][ $key ] ?? null;

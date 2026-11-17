@@ -213,6 +213,7 @@ def main() -> int:
     names = [tool["name"] for tool in listing["result"]["tools"]]
     print(f"tools/list: {len(names)} herramientas")
     print("  ", ", ".join(sorted(names)))
+    assert any(n.endswith("get-working-copy-diff") for n in names), "get-working-copy-diff debe aparecer en tools/list"
 
     def call(name, arguments, rid):
         status, out = rpc("tools/call", {"name": name, "arguments": arguments}, rid)
@@ -286,6 +287,19 @@ def run_writes(args, token, call, tool, title, created):
         assert staged_data.get("draft_of") == page["id"], "La edición debería ir a una copia de trabajo"
         created.append(staged_data["id"])
         print(f"copia de trabajo: {staged_data['id']}")
+        diff = json.loads(call(tool("get-working-copy-diff"), {"id": page["id"]}, 30)["content"][0]["text"])
+        print("get-working-copy-diff:", json.dumps(diff, ensure_ascii=False, indent=2))
+        assert diff["original_id"] == page["id"], "El diff debe nombrar al original"
+        assert diff["copy_id"] == staged_data["id"], "El diff debe nombrar a la copia creada"
+        assert "title" in diff["changed"], "El título cambió y debe figurar en changed"
+        assert diff["title"]["after"].endswith(" (editado por IA)"), "El título nuevo debe traer el sufijo"
+        assert diff["title"]["before"] == page["title"], "El título anterior es el del original"
+        assert "content" not in diff["changed"], "El contenido no cambió"
+        assert diff["stale"] is False, "El original no cambió: la copia no está obsoleta"
+        by_copy = json.loads(call(tool("get-working-copy-diff"), {"id": staged_data["id"]}, 31)["content"][0]["text"])
+        assert (by_copy["original_id"], by_copy["copy_id"]) == (page["id"], staged_data["id"]), (
+            "Pedir el diff con el id de la copia debe resolver el mismo par"
+        )
         original = json.loads(call(tool("get-page"), {"id": page["id"]}, 8)["content"][0]["text"])
         assert original["title"] == page["title"], "El original publicado no debe cambiar"
         print(f"La página publicada {page['id']} sigue igual; el cambio quedó en el borrador {staged_data['id']}.")

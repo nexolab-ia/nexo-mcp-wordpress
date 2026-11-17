@@ -198,13 +198,9 @@ final class WorkingCopy {
 	 * @return array<string, int>|\WP_Error
 	 */
 	public function merge( \WP_Post $copy ) {
-		$original = get_post( self::original_of( $copy ) );
+		$original = $this->live_original( $copy );
 
-		if ( ! $original instanceof \WP_Post
-			|| 'trash' === $original->post_status
-			|| $original->post_type !== $copy->post_type
-			|| self::copy_of( $original ) !== (int) $copy->ID
-		) {
+		if ( null === $original ) {
 			return new \WP_Error(
 				'nexo_mcp_draft_orphan',
 				__( 'La página original ya no existe, está en la papelera o tiene otra copia. Descarta esta copia.', 'nexo-mcp' )
@@ -213,9 +209,7 @@ final class WorkingCopy {
 
 		// No se pisa nada: si el original cambió después de copiarlo, la copia
 		// se armó sobre una versión que ya no existe.
-		$base = (string) get_post_meta( $copy->ID, self::META_BASE, true );
-
-		if ( '' === $base || $this->last_change( $original ) !== $base ) {
+		if ( $this->is_stale( $copy, $original ) ) {
 			return new \WP_Error(
 				'nexo_mcp_draft_stale',
 				__( 'La página original cambió desde que se creó la copia. Descarta la copia y vuelve a crearla.', 'nexo-mcp' )
@@ -275,6 +269,117 @@ final class WorkingCopy {
 			'id'          => (int) $original->ID,
 			'merged_from' => (int) $copy->ID,
 		);
+	}
+
+	/**
+	 * Entrega el original vigente de una copia, o null si quedó huérfana.
+	 *
+	 * Una copia es huérfana si su original ya no existe, está en la papelera,
+	 * es de otro tipo o apunta a otra copia.
+	 *
+	 * @param \WP_Post $copy Copia de trabajo.
+	 */
+	public function live_original( \WP_Post $copy ): ?\WP_Post {
+		$original = get_post( self::original_of( $copy ) );
+
+		if ( ! $original instanceof \WP_Post
+			|| 'trash' === $original->post_status
+			|| $original->post_type !== $copy->post_type
+			|| self::copy_of( $original ) !== (int) $copy->ID
+		) {
+			return null;
+		}
+
+		return $original;
+	}
+
+	/**
+	 * Indica si el original cambió desde que se creó la copia.
+	 *
+	 * Es la regla con la que `merge()` rechaza publicar: sin base registrada,
+	 * o con una última modificación distinta a la base, la copia es obsoleta.
+	 *
+	 * @param \WP_Post $copy     Copia de trabajo.
+	 * @param \WP_Post $original Su original vigente.
+	 */
+	public function is_stale( \WP_Post $copy, \WP_Post $original ): bool {
+		$base = (string) get_post_meta( $copy->ID, self::META_BASE, true );
+
+		return '' === $base || $this->last_change( $original ) !== $base;
+	}
+
+	/**
+	 * Entrega el ID del original si el contenido es una copia, o el mismo ID.
+	 *
+	 * Sirve para decidir permisos sobre el original aunque la llamada traiga
+	 * el ID de la copia.
+	 *
+	 * @param int $id Contenido consultado.
+	 */
+	public static function original_id_for( int $id ): int {
+		$post = get_post( $id );
+
+		if ( $post instanceof \WP_Post ) {
+			$original = self::original_of( $post );
+
+			// Sólo si el original existe: con el original borrado, el permiso se
+			// comprueba sobre la copia y la herramienta explica que está huérfana
+			// en vez de responder con una denegación genérica.
+			if ( $original > 0 && get_post( $original ) instanceof \WP_Post ) {
+				return $original;
+			}
+		}
+
+		return $id;
+	}
+
+	/**
+	 * Entrega la meta que la fusión copiaría, con los valores ya deserializados.
+	 *
+	 * @param int $id Contenido.
+	 * @return array<string, list<mixed>> Clave => valores.
+	 */
+	public function travelling_meta( int $id ): array {
+		$all = get_post_meta( $id );
+
+		if ( ! is_array( $all ) ) {
+			return array();
+		}
+
+		$meta = array();
+
+		foreach ( $all as $key => $values ) {
+			$key = (string) $key;
+
+			if ( ! is_array( $values ) || array() === $values || ! self::travels( $key ) ) {
+				continue;
+			}
+
+			$meta[ $key ] = array_values( array_map( 'maybe_unserialize', $values ) );
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * Entrega las taxonomías que la fusión copia para un tipo de contenido.
+	 *
+	 * @param string $post_type Tipo de contenido.
+	 * @return list<string>
+	 */
+	public function copied_taxonomies( string $post_type ): array {
+		$taxonomies = array();
+
+		foreach ( get_object_taxonomies( $post_type ) as $taxonomy ) {
+			// El grupo de traducciones de Polylang une cada página con sus
+			// versiones en otros idiomas. La copia no es una traducción, así
+			// que no entra al grupo; el idioma (`language`) sí viaja.
+			if ( 'post_translations' !== $taxonomy ) {
+				$taxonomies[] = (string) $taxonomy;
+			}
+		}
+
+		return $taxonomies;
 	}
 
 	/**
@@ -388,14 +493,7 @@ final class WorkingCopy {
 	 * @return true|\WP_Error
 	 */
 	private function copy_terms( int $from, int $to, string $post_type ) {
-		foreach ( get_object_taxonomies( $post_type ) as $taxonomy ) {
-			// El grupo de traducciones de Polylang une cada página con sus
-			// versiones en otros idiomas. La copia no es una traducción, así
-			// que no entra al grupo; el idioma (`language`) sí viaja.
-			if ( 'post_translations' === $taxonomy ) {
-				continue;
-			}
-
+		foreach ( $this->copied_taxonomies( $post_type ) as $taxonomy ) {
 			$terms = wp_get_object_terms( $from, $taxonomy, array( 'fields' => 'ids' ) );
 
 			if ( is_wp_error( $terms ) ) {
@@ -423,21 +521,7 @@ final class WorkingCopy {
 	 * @param int $to   Contenido de destino.
 	 */
 	private function copy_meta( int $from, int $to ): void {
-		$all = get_post_meta( $from );
-
-		if ( ! is_array( $all ) ) {
-			return;
-		}
-
-		foreach ( $all as $key => $values ) {
-			$key = (string) $key;
-
-			if ( ! is_array( $values ) || array() === $values || ! self::travels( $key ) ) {
-				continue;
-			}
-
-			$values = array_values( array_map( 'maybe_unserialize', $values ) );
-
+		foreach ( $this->travelling_meta( $from ) as $key => $values ) {
 			if ( 1 === count( $values ) ) {
 				update_post_meta( $to, $key, wp_slash( $values[0] ) );
 				continue;

@@ -117,6 +117,9 @@ Reglas que siempre se cumplen:
 - **Copia de trabajo**: editar una página o entrada publicada crea un
   borrador enlazado; el original no cambia hasta que publiques la copia
   (desde la lista de páginas/entradas o con `set-content-status`).
+  Antes de publicarla, `get-working-copy-diff` muestra qué cambió respecto al
+  original (título, extracto, diff del contenido, metadatos, términos) y si
+  el original cambió desde que se creó la copia.
 - **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
   y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).

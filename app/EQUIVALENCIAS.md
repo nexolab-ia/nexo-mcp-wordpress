@@ -104,7 +104,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | WordPress | `SICS\MCPConnector\WordPress\MaintenanceGateway` | `NexoDev\NexoMCP\WordPress\MaintenanceGateway` | completa |  |
 | WordPress | `SICS\MCPConnector\WordPress\ReadGateway` | `NexoDev\NexoMCP\WordPress\ReadGateway` | completa |  |
 | WordPress | `SICS\MCPConnector\WordPress\SeoGateway` | `NexoDev\NexoMCP\WordPress\SeoGateway` | completa |  |
-| WordPress | `SICS\MCPConnector\WordPress\WorkingCopy` | `NexoDev\NexoMCP\WordPress\WorkingCopy` | completa | Ampliada: should_stage(); copia de trabajo por defecto (working_copy_default). |
+| WordPress | `SICS\MCPConnector\WordPress\WorkingCopy` | `NexoDev\NexoMCP\WordPress\WorkingCopy` | completa | Ampliada: should_stage(); copia de trabajo por defecto (working_copy_default); live_original(), is_stale() y travelling_meta() compartidos con la herramienta `get-working-copy-diff` (nueva). |
 | WordPress | `SICS\MCPConnector\WordPress\WriteGateway` | `NexoDev\NexoMCP\WordPress\WriteGateway` | completa |  |
 
 ## Clases nuevas (sin equivalente en el original)
@@ -112,6 +112,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Clase nueva | Para qué |
 |---|---|
 | `NexoDev\NexoMCP\Authorization\IrreversibleActions` | Exige `confirmation` exacta (`DELETE`, `RESTORE`) en el servidor antes de ejecutar acciones irreversibles, y lo audita. |
+| `NexoDev\NexoMCP\Support\LineDiff` | Diff unificado por líneas en PHP puro; lo usa la herramienta nueva `get-working-copy-diff` (comparar una copia de trabajo con su original). |
 
 ## Otros archivos
 

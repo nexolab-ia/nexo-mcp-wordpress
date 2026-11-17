@@ -38,6 +38,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/list-revisions',
 		'nexo-mcp/restore-revision',
 		'nexo-mcp/set-content-status',
+		'nexo-mcp/get-working-copy-diff',
 		'nexo-mcp/get-post-seo',
 		'nexo-mcp/update-post-seo',
 		'nexo-mcp/get-seo-settings',
@@ -501,6 +502,15 @@ final class ExtendedAbilityRegistrar {
 				? $this->set_status_batch( $input )
 				: $this->content->set_status( (int) $input['id'], (string) $input['status'] ),
 			fn( array $input ) => $this->status_permission( $input )
+		);
+		$this->ability(
+			'get-working-copy-diff',
+			'Comparar copia de trabajo',
+			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post).',
+			'read',
+			$this->id_schema(),
+			fn( array $input ) => $this->content->get_working_copy_diff( (int) $input['id'] ),
+			fn( array $input ) => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
 		);
 	}
 

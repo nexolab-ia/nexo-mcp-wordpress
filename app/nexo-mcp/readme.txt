@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.0.1
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,9 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.1.0 =
+* Nueva herramienta `get-working-copy-diff`: compara una copia de trabajo con su original antes de publicarla o descartarla. Muestra el título y el extracto antes y después, un diff del contenido por líneas (como `git diff`, con tope de tamaño), los metadatos cambiados, agregados o quitados, las categorías y etiquetas agregadas o quitadas, y si el original cambió desde que se creó la copia (en ese caso publicarla se rechazaría). Acepta el ID del original o el de la copia y exige poder editar el original.
 
 = 1.0.1 =
 * Al descartar una copia de trabajo, ahora va a la papelera y se puede recuperar (antes se borraba de forma permanente).
