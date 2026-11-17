@@ -4,8 +4,9 @@
 # 1. Modo «Solo revisar»: activa read_only, exige que la escritura se rechace
 #    y que no quede ningún post creado. Restaura los ajustes al terminar.
 # 2. Modo edición: corre la prueba de punta a punta completa (copia de trabajo,
-#    confirmaciones inválidas) y comprueba que la limpieza dejó en la papelera
-#    lo que creó la prueba (el post y la copia de trabajo descartada).
+#    confirmaciones inválidas, publicar una copia de trabajo del post de prueba
+#    y comprobar la fusión) y comprueba que la limpieza dejó en la papelera lo
+#    que creó la prueba (el post y la copia de trabajo descartada).
 #
 # Uso (desde app/):  tools/prueba_reglas.sh
 set -euo pipefail

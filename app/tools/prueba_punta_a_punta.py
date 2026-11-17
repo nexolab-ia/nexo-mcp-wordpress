@@ -317,8 +317,56 @@ def run_writes(args, token, call, tool, title, created):
         after = json.loads(call(tool("get-page"), {"id": page["id"]}, 20)["content"][0]["text"])
         assert after == before, "Una confirmación inválida no debe cambiar la página"
         print(f"La página {page['id']} no cambió tras 4 confirmaciones inválidas.")
+        if "mcp:publish" in granted:
+            publish_working_copy(call, tool, created[0])
     print("\nOK: conectar → autorizar OAuth → usar herramientas funciona de punta a punta.")
     return 0
+
+
+def publish_working_copy(call, tool, post_id):
+    """Publica una copia de trabajo y comprueba la fusión en el original.
+
+    Usa el post que creó la prueba, nunca una página real del sitio. Cambia
+    contenido y extracto pero no el título, que es lo que la limpieza usa para
+    encontrarlo en la papelera.
+    """
+    step("10. Publicar una copia de trabajo → se fusiona en el original")
+    published = call(tool("set-content-status"), {"id": post_id, "status": "publish"}, 40)
+    assert not published.get("isError"), f"Publicar el post de prueba debe funcionar: {text_of(published)}"
+    before = json.loads(call(tool("get-post"), {"id": post_id}, 41)["content"][0]["text"])
+    assert before["status"] == "publish", "El post de prueba debe quedar publicado"
+    content = "<p>Publicado desde la copia de trabajo</p>"
+    excerpt = "Extracto desde la copia"
+    staged = call(tool("update-post"), {"id": post_id, "content": content, "excerpt": excerpt}, 42)
+    copy_id = json.loads(staged["content"][0]["text"])["id"]
+    assert json.loads(staged["content"][0]["text"]).get("draft_of") == post_id, (
+        "Editar el post publicado debe ir a una copia de trabajo"
+    )
+    still = json.loads(call(tool("get-post"), {"id": post_id}, 43)["content"][0]["text"])
+    assert still["content"] == before["content"], "Antes de publicar la copia, el original no cambia"
+    diff = json.loads(call(tool("get-working-copy-diff"), {"id": post_id}, 44)["content"][0]["text"])
+    assert diff["copy_id"] == copy_id, "El diff debe nombrar a la copia nueva"
+    assert {"content", "excerpt"} <= set(diff["changed"]), "El diff debe listar contenido y extracto"
+    assert "title" not in diff["changed"], "El título no cambió"
+    assert "+" + content in diff["content_diff"], "El diff de contenido debe traer la línea nueva"
+    assert diff["stale"] is False, "Nadie tocó el original: la copia no está obsoleta"
+
+    merged = call(tool("set-content-status"), {"id": copy_id, "status": "publish"}, 45)
+    assert not merged.get("isError"), f"Publicar la copia debe fusionarla: {text_of(merged)}"
+    merged_data = json.loads(merged["content"][0]["text"])
+    assert (merged_data["id"], merged_data["merged_from"]) == (post_id, copy_id), (
+        "La fusión debe nombrar al original y a la copia"
+    )
+    after = json.loads(call(tool("get-post"), {"id": post_id}, 46)["content"][0]["text"])
+    assert after["content"] == content, "El original debe traer el contenido de la copia"
+    assert after["excerpt"] == excerpt, "El original debe traer el extracto de la copia"
+    assert after["title"] == before["title"], "El título del original no cambió"
+    assert after["status"] == "publish", "El original sigue publicado"
+    gone = call(tool("get-post"), {"id": copy_id}, 47)
+    assert gone.get("isError"), "La copia fusionada debe dejar de existir"
+    no_copy = call(tool("get-working-copy-diff"), {"id": post_id}, 48)
+    assert no_copy.get("isError"), "Tras la fusión el original ya no tiene copia de trabajo"
+    print(f"La copia {copy_id} se fusionó en el post {post_id} y dejó de existir.")
 
 
 if __name__ == "__main__":
