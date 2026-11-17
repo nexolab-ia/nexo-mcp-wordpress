@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: app/nexo-mcp
+
+jobs:
+  quality:
+    name: PHPUnit, PHPCS y PHPStan (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+
+      # Nunca se ejecutan scripts ni plugins de Composer.
+      - name: Dependencias (con desarrollo)
+        run: composer install --no-scripts --no-plugins --no-interaction --no-progress
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit
+
+      - name: PHPCS (estándares de WordPress)
+        if: matrix.php == '8.3'
+        run: vendor/bin/phpcs -q
+
+      - name: PHPStan (nivel 5 + baseline)
+        if: matrix.php == '8.3'
+        run: php -d memory_limit=1G vendor/bin/phpstan analyse --no-progress
+
+  e2e:
+    name: Punta a punta en WordPress real (docker)
+    runs-on: ubuntu-latest
+    needs: quality
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      # El docker monta nexo-mcp/ tal cual: necesita vendor/ de producción.
+      - name: Dependencias de producción del plugin
+        run: |
+          docker run --rm -v "$PWD/nexo-mcp":/app -w /app composer:2 \
+            install --no-dev --no-scripts --no-plugins --no-interaction --no-progress
+
+      - name: Levantar WordPress 6.9 + MySQL 8 + WooCommerce
+        run: docker compose up -d
+
+      - name: Esperar la instalación inicial
+        run: |
+          docker compose wait setup
+          docker compose logs setup | tail -5
+          until curl -sf -o /dev/null http://localhost:8080/; do sleep 2; done
+
+      - name: Reglas (OAuth, solo lectura, confirmaciones, copia de trabajo)
+        run: tools/prueba_reglas.sh
+
+      - name: Adaptadores (Yoast SEO, ACF, Elementor)
+        run: tools/prueba_adaptadores.sh
+
+      - name: Plugin Check
+        run: tools/plugin_check.sh
+
+      - name: Registros si algo falló
+        if: failure()
+        run: docker compose logs --tail=200
+
+  package:
+    name: Empaquetar el .zip
+    runs-on: ubuntu-latest
+    needs: quality
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: empaquetar.sh
+        run: ./empaquetar.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexo-mcp-zip
+          path: app/dist/nexo-mcp-*.zip
+          if-no-files-found: error

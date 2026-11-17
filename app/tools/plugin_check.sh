@@ -4,7 +4,8 @@
 # propias del directorio de wordpress.org (el plugin se distribuye por .zip).
 # Imprime cuántos avisos (WARNING) quedan.
 #
-# Requiere el WordPress de prueba levantado con el plugin activo.
+# Requiere el WordPress de prueba levantado con el plugin activo. Instala y
+# activa Plugin Check si falta (también en el CI, que parte de cero).
 # Uso (desde app/):  tools/plugin_check.sh
 set -euo pipefail
 
@@ -12,7 +13,7 @@ cd "$(dirname "$0")/.."
 
 # Códigos de ERROR aceptados: sólo aplican al directorio de wordpress.org.
 ALLOWED=(
-	# El ZIP lleva la configuración de PHPStan/PHPCS/PHPUnit; el directorio no admite aplicaciones.
+	# La carpeta de desarrollo lleva phpstan/phpcs/phpunit .dist (el zip no); el directorio no admite aplicaciones.
 	application_detected
 	# UpdateChecker actualiza el plugin desde nuestro servidor; el directorio lo prohíbe.
 	plugin_updater_detected
@@ -23,9 +24,21 @@ ALLOWED=(
 	outdated_tested_upto_header
 )
 
-out="$(docker compose run --rm -T --entrypoint wp setup plugin check nexo-mcp \
-	--exclude-directories=tests,vendor --format=csv \
-	--fields=line,column,type,code,message 2>/dev/null)"
+wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
+
+if ! wp plugin is-active plugin-check; then
+	wp plugin install plugin-check --activate >/dev/null
+fi
+
+check() {
+	wp plugin check nexo-mcp --exclude-directories=tests,vendor --format=csv \
+		--fields=line,column,type,code,message
+}
+out="$(check)"
+# wp-cli devuelve a veces vacío de forma transitoria. Vacío no es «sin
+# hallazgos»: siempre quedan los errores aceptados de arriba.
+[ -n "$out" ] || { sleep 2; out="$(check)"; }
+[ -n "$out" ] || { echo "FALLA: Plugin Check no devolvió resultados"; exit 1; }
 
 # Líneas CSV: line,column,type,code,message (el mensaje puede traer comas).
 errors="$(printf '%s\n' "$out" | awk -F, '$3 == "ERROR" { print $4 }')"
