@@ -9,7 +9,6 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       nexo-mcp
- * Domain Path:       /languages
  *
  * Nexo MCP es una obra derivada del plugin «MCP Prisma» de SICS, distribuido
  * bajo GPL-2.0-or-later. Se redistribuye modificado bajo la misma licencia.

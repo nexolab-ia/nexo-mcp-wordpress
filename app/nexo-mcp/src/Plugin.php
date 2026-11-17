@@ -162,6 +162,7 @@ final class Plugin {
 			$audit_logger
 		) )->register();
 
+		// phpcs:ignore PluginCheck.CodeAnalysis.DiscouragedFunctions.load_plugin_textdomainFound -- Se distribuye por .zip, no por wordpress.org: WordPress no cargaría las traducciones solo.
 		load_plugin_textdomain(
 			'nexo-mcp',
 			false,

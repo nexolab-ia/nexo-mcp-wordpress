@@ -184,6 +184,31 @@ debe pasar el nivel 5 sin añadir entradas al baseline; sólo se regenera
 (`phpstan analyse --generate-baseline`) al corregir hallazgos antiguos, para
 reducirlo.
 
+**Plugin Check (wordpress.org)**: corre el verificador oficial dentro del
+docker (con el plugin activo y el sitio de prueba levantado) y sale con 1 ante
+cualquier error que no sea una exclusión aceptada.
+
+```sh
+cd app
+tools/plugin_check.sh
+```
+
+Como el plugin se distribuye por `.zip` y no por wordpress.org, estos errores
+son propios del directorio y se aceptan (están en la lista del script):
+
+- `application_detected`: el ZIP/carpeta incluye `phpstan.neon.dist`,
+  `phpcs.xml.dist` y `phpunit.xml.dist` (configuración de desarrollo).
+- `plugin_updater_detected`: `UpdateChecker` actualiza desde nuestro servidor.
+- `readme_short_description_non_official_language` y
+  `readme_description_non_official_language`: el `readme.txt` está en español.
+- `outdated_tested_upto_header`: sólo afecta a las búsquedas del directorio.
+
+Los avisos que quedan tampoco cambian el comportamiento: `NOTICE.md`
+(`unexpected_markdown_file`) y las variables de las vistas del panel
+(`PrefixAllGlobals`, que sólo existen dentro del ámbito de la plantilla). Las
+consultas con tabla interpolada llevan un `phpcs:ignore` con el motivo: sólo se
+interpola `$wpdb->prefix` más una constante y los valores van por `prepare()`.
+
 **Punta a punta** (con el WordPress de prueba levantado):
 
 ```sh

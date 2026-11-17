@@ -118,6 +118,7 @@ final class TokenRepository {
 
 		$now = gmdate( 'Y-m-d H:i:s' );
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$result = $wpdb->query(
 			$wpdb->prepare(
 				'INSERT INTO `' . $this->clients_table() . '` (client_id, client_name, redirect_uris, metadata_url, created_at, updated_at)
@@ -145,6 +146,7 @@ final class TokenRepository {
 	public function find_client( string $client_id ): ?array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				'SELECT * FROM `' . $this->clients_table() . '` WHERE client_id = %s',
@@ -226,6 +228,7 @@ final class TokenRepository {
 		$hash = self::hash( $code );
 		$now  = gmdate( 'Y-m-d H:i:s' );
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$affected = $wpdb->query(
 			$wpdb->prepare(
 				'UPDATE `' . $this->codes_table() . '` SET consumed = 1, consumed_at = %s
@@ -240,6 +243,7 @@ final class TokenRepository {
 			return null;
 		}
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				'SELECT * FROM `' . $this->codes_table() . '` WHERE code_hash = %s',
@@ -262,6 +266,7 @@ final class TokenRepository {
 	public function revoke_lineage( string $code_hash ): void {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$wpdb->query(
 			$wpdb->prepare(
 				'UPDATE `' . $this->tokens_table() . '` SET revoked = 1 WHERE code_hash = %s',
@@ -280,6 +285,7 @@ final class TokenRepository {
 	public function find_consumed_code( string $code ): ?array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				'SELECT * FROM `' . $this->codes_table() . '` WHERE code_hash = %s AND consumed = 1',
@@ -346,6 +352,7 @@ final class TokenRepository {
 	public function find_active_token( string $token, string $type ): ?array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				'SELECT * FROM `' . $this->tokens_table() . '`
@@ -376,6 +383,7 @@ final class TokenRepository {
 	public function find_rotated_token( string $token, string $type ): ?array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
 				'SELECT * FROM `' . $this->tokens_table() . '`
@@ -458,6 +466,7 @@ final class TokenRepository {
 		global $wpdb;
 
 		if ( '' === $client_id ) {
+			// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 			$wpdb->query(
 				$wpdb->prepare(
 					'UPDATE `' . $this->tokens_table() . '` SET revoked = 1 WHERE user_id = %d',
@@ -468,6 +477,7 @@ final class TokenRepository {
 			return;
 		}
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$wpdb->query(
 			$wpdb->prepare(
 				'UPDATE `' . $this->tokens_table() . '` SET revoked = 1 WHERE user_id = %d AND client_id = %s',
@@ -492,6 +502,7 @@ final class TokenRepository {
 	public function update_connection_scope( int $user_id, string $client_id, string $scope ): int {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$updated = $wpdb->query(
 			$wpdb->prepare(
 				'UPDATE `' . $this->tokens_table() . '` SET scope = %s WHERE user_id = %d AND client_id = %s AND revoked = 0',
@@ -514,6 +525,7 @@ final class TokenRepository {
 	public function list_active_for_user( int $user_id ): array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				'SELECT t.client_id, c.client_name, t.scope, t.created_at, t.expires_at, t.last_used_at
@@ -547,6 +559,7 @@ final class TokenRepository {
 	public function list_active_connections(): array {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				'SELECT t.client_id, t.user_id, c.client_name,
@@ -578,6 +591,7 @@ final class TokenRepository {
 	public function purge_expired(): void {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$wpdb->query(
 			$wpdb->prepare(
 				'DELETE FROM `' . $this->codes_table() . '` WHERE expires_at < %s',
@@ -585,6 +599,7 @@ final class TokenRepository {
 			)
 		);
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$wpdb->query(
 			$wpdb->prepare(
 				'DELETE FROM `' . $this->tokens_table() . '` WHERE expires_at < %s',
@@ -599,6 +614,7 @@ final class TokenRepository {
 	public function count_clients(): int {
 		global $wpdb;
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		return (int) $wpdb->get_var( 'SELECT COUNT(*) FROM `' . $this->clients_table() . '`' );
 	}
 
@@ -631,6 +647,7 @@ final class TokenRepository {
 		$now    = gmdate( 'Y-m-d H:i:s' );
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - max( 0, $grace_seconds ) );
 
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter -- Sólo se interpola el nombre de tabla ($wpdb->prefix + constante); los valores van por prepare().
 		$deleted = $wpdb->query(
 			$wpdb->prepare(
 				'DELETE FROM `' . $this->clients_table() . '`
