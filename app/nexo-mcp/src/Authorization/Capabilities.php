@@ -49,6 +49,13 @@ final class Capabilities {
 	public const DESTRUCTIVE = 'nexo_mcp_destructive';
 
 	/**
+	 * Escritura del sistema de diseño de Elementor (clases, variables, colores y tipografía).
+	 *
+	 * Va aparte de BUILDERS: cambia el aspecto de todo el sitio en vivo, no una página.
+	 */
+	public const DESIGN_SYSTEM = 'nexo_mcp_design_system';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {

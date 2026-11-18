@@ -60,6 +60,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/delete-product',
 		'nexo-mcp/get-page-structure',
 		'nexo-mcp/get-design-system',
+		'nexo-mcp/undo-design-system-change',
 		'nexo-mcp/create-elementor-page',
 		'nexo-mcp/edit-elementor-section',
 		'nexo-mcp/update-node-text',
@@ -269,6 +270,15 @@ final class ExtendedAbilityRegistrar {
 			$this->empty_schema(),
 			fn() => $this->builders->get_design_system(),
 			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'undo-design-system-change',
+			'Deshacer el último cambio del sistema de diseño de Elementor',
+			'Restaura el estado previo al último cambio hecho al sistema de diseño de Elementor por este conector (clases globales, variables, o colores y tipografía del Kit), con los mismos ids, y borra ese respaldo. Restaura la colección completa que el cambio tocó (todas las clases, todas las variables, o las listas de colores y tipografía del Kit) tal como estaba antes del último cambio: lo que se haya cambiado después en esa colección desde el editor de Elementor también se pierde. Sólo hay un nivel: el último cambio; deshacer dos veces seguidas no cambia más. Sin cambio que deshacer responde nexo_mcp_design_no_backup y no cambia nada. Si el cambio había quitado una clase de las páginas que la usaban, deshacer la devuelve a la lista de clases pero no vuelve a ponerla en esas páginas (la respuesta lo avisa en warnings). Requiere el permiso del sistema de diseño y, para clases y variables, el Editor V4 activo.',
+			'write',
+			$this->empty_schema(),
+			fn() => $this->builders->undo_design_system_change(),
+			fn() => $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' )
 		);
 		$this->ability(
 			'create-elementor-page',

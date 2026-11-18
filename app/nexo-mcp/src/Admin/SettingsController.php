@@ -54,24 +54,25 @@ final class SettingsController {
 
 		$sanitized = Settings::defaults();
 
-		$sanitized['server_enabled']             = ! empty( $input['server_enabled'] );
-		$sanitized['wordpress_tools_enabled']    = ! empty( $input['wordpress_tools_enabled'] );
-		$sanitized['woocommerce_tools_enabled']  = class_exists( 'WooCommerce' )
+		$sanitized['server_enabled']              = ! empty( $input['server_enabled'] );
+		$sanitized['wordpress_tools_enabled']     = ! empty( $input['wordpress_tools_enabled'] );
+		$sanitized['woocommerce_tools_enabled']   = class_exists( 'WooCommerce' )
 			&& ! empty( $input['woocommerce_tools_enabled'] );
-		$sanitized['content_tools_enabled']      = ! empty( $input['content_tools_enabled'] );
-		$sanitized['seo_tools_enabled']          = ! empty( $input['seo_tools_enabled'] );
-		$sanitized['appearance_tools_enabled']   = ! empty( $input['appearance_tools_enabled'] );
-		$sanitized['builders_tools_enabled']     = ! empty( $input['builders_tools_enabled'] );
-		$sanitized['maintenance_tools_enabled']  = ! empty( $input['maintenance_tools_enabled'] );
-		$sanitized['extension_deletion_enabled'] = ! empty( $input['extension_deletion_enabled'] );
-		$sanitized['publishing_enabled']         = ! empty( $input['publishing_enabled'] );
-		$sanitized['destructive_enabled']        = ! empty( $input['destructive_enabled'] );
-		$sanitized['read_only']                  = ! empty( $input['read_only'] );
-		$sanitized['drafts_only']                = ! empty( $input['drafts_only'] );
-		$sanitized['working_copy_default']       = ! empty( $input['working_copy_default'] );
-		$sanitized['cache_purge_enabled']        = ! empty( $input['cache_purge_enabled'] );
-		$sanitized['enforce_connection_scopes']  = ! empty( $input['enforce_connection_scopes'] );
-		$sanitized['audit_retention_days']       = 90;
+		$sanitized['content_tools_enabled']       = ! empty( $input['content_tools_enabled'] );
+		$sanitized['seo_tools_enabled']           = ! empty( $input['seo_tools_enabled'] );
+		$sanitized['appearance_tools_enabled']    = ! empty( $input['appearance_tools_enabled'] );
+		$sanitized['builders_tools_enabled']      = ! empty( $input['builders_tools_enabled'] );
+		$sanitized['design_system_tools_enabled'] = ! empty( $input['design_system_tools_enabled'] );
+		$sanitized['maintenance_tools_enabled']   = ! empty( $input['maintenance_tools_enabled'] );
+		$sanitized['extension_deletion_enabled']  = ! empty( $input['extension_deletion_enabled'] );
+		$sanitized['publishing_enabled']          = ! empty( $input['publishing_enabled'] );
+		$sanitized['destructive_enabled']         = ! empty( $input['destructive_enabled'] );
+		$sanitized['read_only']                   = ! empty( $input['read_only'] );
+		$sanitized['drafts_only']                 = ! empty( $input['drafts_only'] );
+		$sanitized['working_copy_default']        = ! empty( $input['working_copy_default'] );
+		$sanitized['cache_purge_enabled']         = ! empty( $input['cache_purge_enabled'] );
+		$sanitized['enforce_connection_scopes']   = ! empty( $input['enforce_connection_scopes'] );
+		$sanitized['audit_retention_days']        = 90;
 
 		$escrito = isset( $input['proxy_resource'] ) ? (string) $input['proxy_resource'] : '';
 		$alias   = DiscoveryController::sanitize_resource_alias( wp_unslash( $escrito ) );

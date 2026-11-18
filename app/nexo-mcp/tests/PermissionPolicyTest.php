@@ -69,6 +69,7 @@ final class PermissionPolicyTest extends NexoTestCase {
 			'mantenimiento'  => array( 'maintenance_tools_enabled', Capabilities::MAINTENANCE ),
 			'woocommerce'    => array( 'woocommerce_tools_enabled', Capabilities::COMMERCE ),
 			'constructores'  => array( 'builders_tools_enabled', Capabilities::BUILDERS ),
+			'diseño global'  => array( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM ),
 		);
 	}
 

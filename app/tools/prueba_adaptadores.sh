@@ -25,6 +25,9 @@
 # 8b. update-node-text, update-node-attribute, edit-structure y restore-builder-backup:
 #    sobre una publicada → copia de trabajo (original intacto, diff, publicar fusiona,
 #    restaurar en la copia); sobre un borrador → en su sitio; un rechazo no crea copia.
+# 8c. Sistema de diseño: round-trip de ElementorDesignStore (foto → mutar → restaurar de
+#    clases, variables y Kit, mismos ids) y undo-design-system-change por MCP sin
+#    respaldo (error y nada cambia).
 # 9. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
 #    imagen de prueba se quitan) y restaura los ajustes y el estado del experimento.
 #
@@ -74,6 +77,18 @@ if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
 if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
 if [ "${1:-}" = "--render" ]; then
 	wp eval 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$2"', true );' --user=admin
+	exit 0
+fi
+
+# Subcomando para el bloque del sistema de diseño: huella del estado que respalda y
+# restaura ElementorDesignStore (clases, variables y Kit) y si hay un respaldo guardado.
+if [ "${1:-}" = "--diseno-estado" ]; then
+	wpr eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$estado = array();
+foreach ( array( "classes", "variables", "kit" ) as $tipo ) { $estado[ $tipo ] = $store->snapshot( $tipo ); }
+$estado["respaldo"] = false !== get_option( "nexo_mcp_design_system_backup", false );
+echo md5( wp_json_encode( $estado ) );' --user=admin
 	exit 0
 fi
 
@@ -186,7 +201,7 @@ trap cleanup EXIT
 needed="$(printf '%s' "$original" | python3 -I -c '
 import json, sys
 s = json.load(sys.stdin)
-s.update(read_only=False, content_tools_enabled=True, seo_tools_enabled=True, builders_tools_enabled=True)
+s.update(read_only=False, content_tools_enabled=True, seo_tools_enabled=True, builders_tools_enabled=True, design_system_tools_enabled=True)
 print(json.dumps(s))')"
 wp option update nexo_mcp_settings "$needed" --format=json >/dev/null
 
@@ -289,7 +304,9 @@ $arbol = array( array(
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
 echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-[ "$guardado" = "guardado" ] || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
+# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
+# basta con que la salida empiece por la marca.
+case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
 echo "Página atómica borrador: $atomic_page_id"
 
 echo
@@ -612,7 +629,9 @@ $arbol = array( array(
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
 echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-[ "$guardado" = "guardado" ] || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
+# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
+# basta con que la salida empiece por la marca.
+case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
 echo "Páginas publicadas: v3 $secciones_v3_id, atómica $secciones_atomica_id, una raíz $secciones_una_id"
 
 python3 -I - "$suffix" "$secciones_v3_id" "$secciones_atomica_id" "$secciones_una_id" <<'PY'
@@ -1284,6 +1303,171 @@ print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de las herramientas
 sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "las herramientas de constructor sobre publicadas/borradores tuvieron comprobaciones fallidas"
+
+echo
+echo "### Sistema de diseño: ElementorDesignStore (ida y vuelta) y undo-design-system-change"
+# El almacén real sobre el Elementor del docker: foto → mutar → restaurar, para clases,
+# variables y Kit. Cada tipo se restaura en un `finally`, así que un fallo a mitad no deja
+# el sitio mutado. Nada de esto toca lo que el sitio ya tenía.
+diseno_respaldo_previo="$(wpr eval 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')"
+viaje="$(wp eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$id = (int) $kit->get_main_id();
+$out = array();
+
+$antes = $store->snapshot( "classes" );
+try {
+	$items = $antes["items"];
+	$orden = $antes["order"];
+	$items["g-e2ediseno"] = array( "id" => "g-e2ediseno", "type" => "class", "label" => "e2e-diseno", "variants" => array() );
+	$orden[] = "g-e2ediseno";
+	\Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )->put( $items, $orden );
+	$durante = $store->snapshot( "classes" );
+	$out["classes_mutada"] = isset( $durante["items"]["g-e2ediseno"] ) ? "si" : "no";
+} finally {
+	$store->restore( "classes", $antes );
+}
+$despues = $store->snapshot( "classes" );
+$out["classes"] = $antes === $despues ? "igual" : "distinto";
+$out["classes_ids"] = array_keys( $antes["items"] ) === array_keys( $despues["items"] ) && $antes["order"] === $despues["order"] ? "iguales" : "distintos";
+
+$antes = $store->snapshot( "variables" );
+try {
+	$registro = array() === $antes ? array( "data" => array(), "watermark" => 0, "version" => 1 ) : $antes;
+	$registro["data"]["e-gv-e2ediseno"] = array( "type" => "global-color-variable", "label" => "e2e-diseno", "value" => "#123456" );
+	$registro["watermark"] = (int) ( $registro["watermark"] ?? 0 ) + 1;
+	$kit->update_json_meta( "_elementor_global_variables", $registro );
+	$durante = $store->snapshot( "variables" );
+	$out["variables_mutada"] = isset( $durante["data"]["e-gv-e2ediseno"] ) ? "si" : "no";
+} finally {
+	$store->restore( "variables", $antes );
+}
+$despues = $store->snapshot( "variables" );
+$out["variables"] = ( $antes["data"] ?? array() ) === ( $despues["data"] ?? array() ) ? "igual" : "distinto";
+$out["variables_marca"] = array() === $antes
+	? ( array() === $despues ? "ok" : "mal" )
+	: ( (int) $despues["watermark"] > (int) $durante["watermark"] ? "ok" : "mal" );
+
+$antes = $store->snapshot( "kit" );
+$crudo_antes = get_post_meta( $id, "_elementor_page_settings", true );
+try {
+	$ajustes = is_array( $crudo_antes ) ? $crudo_antes : array();
+	$ajustes["custom_colors"] = array_merge( $ajustes["custom_colors"] ?? array(), array( array( "_id" => "e2edis1", "title" => "e2e", "color" => "#123456" ) ) );
+	update_metadata( "post", $id, "_elementor_page_settings", wp_slash( $ajustes ) );
+	$durante = $store->snapshot( "kit" );
+	$out["kit_mutado"] = in_array( "e2edis1", array_column( $durante["custom_colors"] ?? array(), "_id" ), true ) ? "si" : "no";
+} finally {
+	$store->restore( "kit", $antes );
+}
+$out["kit"] = $antes === $store->snapshot( "kit" ) ? "igual" : "distinto";
+$out["kit_resto"] = $crudo_antes == get_post_meta( $id, "_elementor_page_settings", true ) ? "igual" : "distinto";
+$store->clear_cache();
+foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }' --user=admin)"
+dv() { printf '%s\n' "$viaje" | sed -n "s/^$1=//p"; }
+for tipo in classes variables kit; do
+	case "$tipo" in classes) mut=classes_mutada ;; variables) mut=variables_mutada ;; *) mut=kit_mutado ;; esac
+	check_eq "diseño: $tipo cambió durante la prueba" "si" "$(dv $mut)"
+	check_eq "diseño: $tipo igual tras restaurar" "igual" "$(dv $tipo)"
+done
+check_eq "diseño: clases conservan ids y orden" "iguales" "$(dv classes_ids)"
+check_eq "diseño: variables con marca de agua mayor tras restaurar" "ok" "$(dv variables_marca)"
+check_eq "diseño: resto de ajustes del Kit intacto" "igual" "$(dv kit_resto)"
+
+# Restaurar clases tras un borrado publicado: la clase vuelve también al orden de la vista previa
+# del editor, y la clase que nadie tocó conserva su borrador (meta de vista previa) tal cual.
+viaje="$(wp eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
+$prev = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )->set_preview( true );
+$a = "g-e2eborra";
+$b = "g-e2eintac";
+$clase = static fn( $id ) => array( "id" => $id, "type" => "class", "label" => "e2e-" . $id, "variants" => array() );
+$meta = "_elementor_global_class_data_preview";
+$out = array();
+// El orden de las claves de `items` depende de la consulta (fecha de creación), no importa: se compara el contenido.
+$igual = static fn( $x, $y ) => $x["order"] === $y["order"] && $x["items"] == $y["items"];
+$base = $store->snapshot( "classes" );
+try {
+	$items = $base["items"]; $orden = $base["order"];
+	foreach ( array( $a, $b ) as $id ) { $items[ $id ] = $clase( $id ); $orden[] = $id; }
+	$repo->apply_changes( array( $a => $items[ $a ], $b => $items[ $b ] ), array( "added" => array( $a, $b ), "deleted" => array(), "modified" => array(), "order" => true ), $orden );
+	$ids = \Elementor\Modules\GlobalClasses\Global_Classes_Post_IDs::make( $kit )->get_post_ids( array( $b ) );
+	$post_b = (int) $ids[ $b ];
+	update_post_meta( $post_b, $meta, array( "e2e" => "borrador sin publicar" ) );
+	$meta_antes = get_post_meta( $post_b, $meta, true );
+	$foto = $store->snapshot( "classes" );
+
+	$sin = array_values( array_diff( $foto["order"], array( $a ) ) );
+	$repo->apply_changes( array(), array( "added" => array(), "deleted" => array( $a ), "modified" => array(), "order" => true ), $sin );
+	$out["borrada"] = in_array( $a, $prev->get_order(), true ) || isset( $store->snapshot( "classes" )["items"][ $a ] ) ? "no" : "si";
+
+	$store->restore( "classes", $foto );
+	$out["publicada"] = isset( $store->snapshot( "classes" )["items"][ $a ] ) && in_array( $a, $store->snapshot( "classes" )["order"], true ) ? "si" : "no";
+	$out["vista_previa"] = in_array( $a, $prev->get_order(), true ) ? "si" : "no";
+	$out["igual"] = $igual( $foto, $store->snapshot( "classes" ) ) ? "igual" : "distinto";
+	$out["borrador_intacto"] = $meta_antes === get_post_meta( $post_b, $meta, true ) ? "igual" : "distinto";
+
+	// Una restauración sin diferencias no toca nada (tampoco el borrador de la clase sin tocar).
+	$store->restore( "classes", $foto );
+	$out["sin_cambios"] = $meta_antes === get_post_meta( $post_b, $meta, true ) && $igual( $foto, $store->snapshot( "classes" ) ) ? "igual" : "distinto";
+} finally {
+	$ahora = $store->snapshot( "classes" );
+	$quitar = array_values( array_intersect( array( $a, $b ), array_keys( $ahora["items"] ) ) );
+	if ( array() !== $quitar ) {
+		$repo->apply_changes( array(), array( "added" => array(), "deleted" => $quitar, "modified" => array(), "order" => true ), array_values( array_diff( $ahora["order"], $quitar ) ) );
+	}
+	$store->restore( "classes", $base );
+}
+$out["limpio"] = $igual( $base, $store->snapshot( "classes" ) ) && ! in_array( $a, $prev->get_order(), true ) && ! in_array( $b, $prev->get_order(), true ) ? "si" : "no";
+$store->clear_cache();
+foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }' --user=admin)"
+check_eq "diseño: la clase borrada (publicada) se quitó antes de restaurar" "si" "$(dv borrada)"
+check_eq "diseño: restaurar devuelve la clase a lo publicado" "si" "$(dv publicada)"
+check_eq "diseño: restaurar devuelve la clase al orden de la vista previa del editor" "si" "$(dv vista_previa)"
+check_eq "diseño: clases iguales tras restaurar (apply_changes)" "igual" "$(dv igual)"
+check_eq "diseño: el borrador de la clase sin tocar queda intacto" "igual" "$(dv borrador_intacto)"
+check_eq "diseño: restaurar sin diferencias no toca nada" "igual" "$(dv sin_cambios)"
+check_eq "diseño: limpieza de las clases de prueba" "si" "$(dv limpio)"
+
+if [ "$diseno_respaldo_previo" = "si" ]; then
+	echo "AVISO: el sitio ya tenía un respaldo del sistema de diseño; no se prueba undo-design-system-change para no deshacerlo."
+else
+python3 -I - <<'PY'
+import importlib.util, pathlib, subprocess, sys
+
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+
+def comprobar(nombre, fn):
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *args], capture_output=True, text=True).stdout.strip()
+
+def sin_respaldo():
+    antes = script("--diseno-estado")
+    assert len(antes) == 32, f"huella del estado: {antes!r}"
+    for _ in range(2):  # deshacer dos veces seguidas no cambia más
+        error, texto, _ = cli.call("undo-design-system-change", {})
+        assert error and "No hay ningún cambio del sistema de diseño para deshacer." in texto, texto[:300]
+        assert script("--diseno-estado") == antes, "deshacer sin respaldo cambió el estado"
+comprobar("undo-design-system-change sin respaldo: error y nada cambia (dos veces)", sin_respaldo)
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "undo-design-system-change tuvo comprobaciones fallidas"
+fi
+[ "$(wpr eval 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')" = "$diseno_respaldo_previo" ] \
+	&& ok "diseño: el sitio quedó sin respaldo nuevo" || falla "diseño: quedó un respaldo que no existía"
 
 echo
 echo "### Verificación con wp-cli"

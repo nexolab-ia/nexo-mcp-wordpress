@@ -55,6 +55,12 @@ final class WP_Test_State {
 
 	public static int $user_id = 1;
 
+	/** @var array<string, mixed> Autocarga pedida en la última escritura de cada opción. */
+	public static array $option_autoload = array();
+
+	/** Nombre de una opción cuya escritura falla (`update_option()` devuelve false sin guardar). */
+	public static string $fail_update_option = '';
+
 	/** Si es true, get_post() sirve copias cacheadas (como la caché de objetos de WordPress). */
 	public static bool $cache_posts = false;
 
@@ -89,6 +95,8 @@ final class WP_Test_State {
 		self::$terms     = array();
 		self::$audit     = array();
 		self::$user_id   = 1;
+		self::$option_autoload = array();
+		self::$fail_update_option = '';
 	}
 }
 
@@ -315,7 +323,11 @@ function get_option( $name, $default = false ) {
 	return array_key_exists( $name, WP_Test_State::$options ) ? WP_Test_State::$options[ $name ] : $default;
 }
 function update_option( $name, $value, $autoload = null ): bool {
-	WP_Test_State::$options[ $name ] = $value;
+	if ( '' !== WP_Test_State::$fail_update_option && WP_Test_State::$fail_update_option === $name ) {
+		return false;
+	}
+	WP_Test_State::$options[ $name ]         = $value;
+	WP_Test_State::$option_autoload[ $name ] = $autoload;
 	return true;
 }
 function add_option( $name, $value = '', $deprecated = '', $autoload = null ): bool {
@@ -325,7 +337,7 @@ function add_option( $name, $value = '', $deprecated = '', $autoload = null ): b
 	return true;
 }
 function delete_option( $name ): bool {
-	unset( WP_Test_State::$options[ $name ] );
+	unset( WP_Test_State::$options[ $name ], WP_Test_State::$option_autoload[ $name ] );
 	return true;
 }
 function get_transient( $name ) { return get_option( '_transient_' . $name ); }

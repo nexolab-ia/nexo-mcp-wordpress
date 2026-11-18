@@ -102,7 +102,7 @@ final class ElementorDesignSystem {
 	/**
 	 * Kit activo, o null si no hay.
 	 */
-	private function kit(): ?object {
+	public function kit(): ?object {
 		$plugin = $this->plugin();
 
 		if ( null === $plugin || ! isset( $plugin->kits_manager ) || ! is_object( $plugin->kits_manager ) ) {
