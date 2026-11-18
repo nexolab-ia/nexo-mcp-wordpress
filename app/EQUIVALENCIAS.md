@@ -31,7 +31,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Builders | `SICS\MCPConnector\Builders\AttributeValue` | `NexoDev\NexoMCP\Builders\AttributeValue` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderAdapter` | `NexoDev\NexoMCP\Builders\BuilderAdapter` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderBackup` | `NexoDev\NexoMCP\Builders\BuilderBackup` | completa |  |
-| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa | Ampliada: recibe `Settings` (para la copia de trabajo) y `edit_elementor_section()`; `update_node_text()`, `update_node_attribute()`, `edit_structure()` y `restore_backup()` editan la copia de trabajo de una página publicada (valida, luego `WorkingCopy::obtain()`; respuesta con `draft_of`) y `BuilderBackup::restore()` admite el respaldo de otro contenido. |
+| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa | Ampliada: recibe `Settings` (para la copia de trabajo) y `edit_elementor_section()`; `update_node_text()`, `update_node_attribute()`, `edit_structure()` y `restore_backup()` editan la copia de trabajo de una página publicada (valida, luego `WorkingCopy::obtain()`; respuesta con `draft_of`) y `BuilderBackup::restore()` admite el respaldo de otro contenido; `restore_backup()` con la copia (o la publicada con copia) restaura el respaldo propio de la copia sin capturar antes, y con la publicada sin copia el del original en una copia nueva. |
 | Builders | `SICS\MCPConnector\Builders\BuilderNode` | `NexoDev\NexoMCP\Builders\BuilderNode` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderRegistry` | `NexoDev\NexoMCP\Builders\BuilderRegistry` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\DiviAdapter` | `NexoDev\NexoMCP\Builders\DiviAdapter` | completa |  |
@@ -104,7 +104,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | WordPress | `SICS\MCPConnector\WordPress\MaintenanceGateway` | `NexoDev\NexoMCP\WordPress\MaintenanceGateway` | completa |  |
 | WordPress | `SICS\MCPConnector\WordPress\ReadGateway` | `NexoDev\NexoMCP\WordPress\ReadGateway` | completa |  |
 | WordPress | `SICS\MCPConnector\WordPress\SeoGateway` | `NexoDev\NexoMCP\WordPress\SeoGateway` | completa |  |
-| WordPress | `SICS\MCPConnector\WordPress\WorkingCopy` | `NexoDev\NexoMCP\WordPress\WorkingCopy` | completa | Ampliada: should_stage(); copia de trabajo por defecto (working_copy_default); live_original(), is_stale() y travelling_meta() compartidos con la herramienta `get-working-copy-diff` (nueva). |
+| WordPress | `SICS\MCPConnector\WordPress\WorkingCopy` | `NexoDev\NexoMCP\WordPress\WorkingCopy` | completa | Ampliada: should_stage(); copia de trabajo por defecto (working_copy_default); live_original(), is_stale() y travelling_meta() compartidos con la herramienta `get-working-copy-diff` (nueva); with_lock() y ensure_lock() (bloqueo por original y su comprobación antes de escribir, ver `Support\PostLock`). |
 | WordPress | `SICS\MCPConnector\WordPress\WriteGateway` | `NexoDev\NexoMCP\WordPress\WriteGateway` | completa |  |
 
 ## Clases nuevas (sin equivalente en el original)
@@ -112,7 +112,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Clase nueva | Para qué |
 |---|---|
 | `NexoDev\NexoMCP\Authorization\IrreversibleActions` | Exige `confirmation` exacta (`DELETE`, `RESTORE`) en el servidor antes de ejecutar acciones irreversibles, y lo audita. |
-| `NexoDev\NexoMCP\Builders\ElementorDesignSystem` | Lee el sistema de diseño de Elementor 4 (clases globales, variables, colores y tipografía del Kit) para `get-design-system`. |
+| `NexoDev\NexoMCP\Builders\ElementorDesignSystem` | Lee el sistema de diseño de Elementor 4 (clases globales, variables, colores y tipografía del Kit) para `get-design-system`; una lectura que falla se avisa en `warnings` y conserva lo ya leído. |
 | `NexoDev\NexoMCP\Builders\ElementorTreeValidator` | Valida en PHP puro el árbol atómico que recibe `create-elementor-page` (tipos, límites, enlaces, imágenes, clases, valores de estilo y regla de raíz). Valida también un subárbol que cuelga de un padre existente (`edit-elementor-section`). |
 | `NexoDev\NexoMCP\Builders\ElementorTreeBuilder` | Convierte el árbol validado al formato de `_elementor_data` con ids generados por el plugin. |
 | `NexoDev\NexoMCP\Builders\ElementorPageCreator` | Crea la página en borrador con los validadores y el guardado de documentos de Elementor; deshace el borrador si algo falla. |
@@ -122,6 +122,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | `NexoDev\NexoMCP\Builders\ElementorSectionSplicer` | Planifica y aplica `replace`/`insert`/`delete` sobre el árbol decodificado y comprueba que lo no tocado quede idéntico y que los ids no choquen. |
 | `NexoDev\NexoMCP\Builders\ElementorSectionEditor` | Orquesta `edit-elementor-section`: valida, crea o reutiliza la copia de trabajo, respalda y guarda con `save_tree` (nunca con `Document::save`). |
 | `NexoDev\NexoMCP\Support\LineDiff` | Diff unificado por líneas en PHP puro; lo usa la herramienta nueva `get-working-copy-diff` (comparar una copia de trabajo con su original). |
+| `NexoDev\NexoMCP\Support\PostLock` | Bloqueo por original en `wp_options` (inserción única, vencimiento de 30 s) para las escrituras que leen y reescriben; `verify()` comprueba antes de escribir que sigue siendo propio y registra en la auditoría (`lock-takeover`) cada toma de un bloqueo vencido. |
 
 ## Otros archivos
 

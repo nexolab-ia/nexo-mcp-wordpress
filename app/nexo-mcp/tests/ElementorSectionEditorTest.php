@@ -406,6 +406,67 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 		$this->assertSame( $snapshot, $this->snapshot() );
 	}
 
+	/**
+	 * Página v3 con un contenedor raíz y `$dividers` divisores: `$dividers + 1` nodos.
+	 */
+	private function put_big_page( int $id, int $dividers ): void {
+		$items = array();
+
+		for ( $i = 0; $i < $dividers; $i++ ) {
+			$items[] = array( 'id' => sprintf( 'dv%05d', $i ), 'elType' => 'widget', 'widgetType' => 'e-divider', 'settings' => array(), 'elements' => array() );
+		}
+
+		$this->put_page( $id, 'draft', array( array( 'id' => 'big0001', 'elType' => 'e-flexbox', 'settings' => array(), 'elements' => $items ) ) );
+	}
+
+	private function node_count( int $id ): int {
+		return count( $this->by_id( $this->data( $id ) ) );
+	}
+
+	public function test_una_pagina_v3_de_mas_de_200_nodos_admite_reemplazos_que_no_la_agrandan(): void {
+		$this->put_big_page( 107, 249 ); // 250 nodos: ya pasa del tope de 200.
+
+		// Mismo tamaño: permitido.
+		$same = $this->exec_edit( array( 'id' => 107, 'operation' => 'replace', 'node_id' => 'dv00000', 'elements' => array( ElementorSectionFixtures::new_heading( 'Igual' ) ) ) );
+		$this->assertIsArray( $same, $same instanceof \WP_Error ? $same->get_error_message() : '' );
+		$this->assertSame( 250, $this->node_count( 107 ) );
+
+		// Más chico: permitido.
+		$smaller = $this->exec_edit( array( 'id' => 107, 'operation' => 'replace', 'node_id' => 'big0001', 'elements' => ElementorSectionFixtures::new_box() ) );
+		$this->assertIsArray( $smaller, $smaller instanceof \WP_Error ? $smaller->get_error_message() : '' );
+		$this->assertSame( 2, $this->node_count( 107 ) );
+	}
+
+	public function test_una_pagina_v3_de_mas_de_200_nodos_rechaza_lo_que_la_agranda(): void {
+		$this->put_big_page( 107, 249 );
+		$snapshot = $this->snapshot();
+
+		$grows = $this->exec_edit( array( 'id' => 107, 'operation' => 'replace', 'node_id' => 'dv00000', 'elements' => ElementorSectionFixtures::new_box() ) );
+		$this->assertInstanceOf( \WP_Error::class, $grows );
+		$this->assertSame( 'nexo_mcp_elementor_too_many_nodes', $grows->get_error_code() );
+		$this->assertStringContainsString( 'máximo de 250 elementos', $grows->get_error_message() );
+
+		$insert = $this->exec_edit( array( 'id' => 107, 'operation' => 'insert', 'node_id' => 'big0001', 'position' => 'inside', 'elements' => array( ElementorSectionFixtures::new_heading() ) ) );
+		$this->assertInstanceOf( \WP_Error::class, $insert );
+		$this->assertSame( 'nexo_mcp_elementor_too_many_nodes', $insert->get_error_code() );
+
+		$this->assertSame( $snapshot, $this->snapshot() );
+	}
+
+	public function test_una_pagina_de_200_nodos_o_menos_sigue_con_el_tope_de_200(): void {
+		$this->put_big_page( 108, 198 ); // 199 nodos.
+
+		$fits = $this->exec_edit( array( 'id' => 108, 'operation' => 'insert', 'node_id' => 'big0001', 'position' => 'inside', 'elements' => array( ElementorSectionFixtures::new_heading() ) ) );
+		$this->assertIsArray( $fits );
+		$this->assertSame( 200, $this->node_count( 108 ) );
+
+		$over = $this->exec_edit( array( 'id' => 108, 'operation' => 'insert', 'node_id' => 'big0001', 'position' => 'inside', 'elements' => array( ElementorSectionFixtures::new_heading() ) ) );
+		$this->assertInstanceOf( \WP_Error::class, $over );
+		$this->assertSame( 'nexo_mcp_elementor_too_many_nodes', $over->get_error_code() );
+		$this->assertStringContainsString( 'máximo de 200 elementos', $over->get_error_message() );
+		$this->assertSame( 200, $this->node_count( 108 ) );
+	}
+
 	public function test_el_resultado_respeta_el_tope_de_profundidad(): void {
 		$tree = array( array( 'id' => 'lv00009', 'elType' => 'e-flexbox', 'settings' => array(), 'elements' => array() ) );
 
@@ -613,5 +674,100 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_draft_orphan', $result->get_error_code() );
 		$this->assertSame( $before, $this->snapshot() );
+	}
+
+	/**
+	 * Copias de trabajo vivas (borradores enlazados a un original).
+	 *
+	 * @return list<int>
+	 */
+	private function live_copies(): array {
+		$ids = array();
+
+		foreach ( \WP_Test_State::$posts as $id => $post ) {
+			if ( 'draft' === $post->post_status && WorkingCopy::original_of( $post ) > 0 ) {
+				$ids[] = (int) $id;
+			}
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public static function failures_after_the_copy(): array {
+		return array(
+			'falla el respaldo'  => array( 'capture', 'nexo_mcp_builder_backup_failed' ),
+			'falla save_tree'    => array( 'save_tree', 'nexo_mcp_builder_too_large' ),
+		);
+	}
+
+	/**
+	 * @dataProvider failures_after_the_copy
+	 */
+	public function test_si_falla_el_respaldo_o_el_guardado_tras_crear_la_copia_no_queda_copia( string $fails_in, string $code ): void {
+		$before = (string) get_post_meta( self::ORIGINAL, '_elementor_data', true );
+		\WP_Test_State::$json_fail_in = $fails_in;
+
+		$result = $this->exec_edit( array( 'id' => self::ORIGINAL, 'operation' => 'replace', 'node_id' => 'sec0001', 'elements' => ElementorSectionFixtures::new_box() ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $code, $result->get_error_code() );
+		$this->assertSame( array(), $this->live_copies(), 'no queda ninguna copia viva' );
+		$this->assertSame( 0, $this->find_copy(), 'el original ya no apunta a una copia' );
+		$this->assertSame( '', (string) get_post_meta( self::ORIGINAL, WorkingCopy::META_DRAFT, true ) );
+		$this->assertSame( 'trash', \WP_Test_State::$posts[ self::ORIGINAL + 1 ]->post_status, 'la copia creada se mandó a la papelera' );
+		$this->assertSame( $before, get_post_meta( self::ORIGINAL, '_elementor_data', true ) );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[ self::ORIGINAL ]->post_status );
+		$this->assertArrayNotHasKey( 'nexo_mcp_lock_' . self::ORIGINAL, \WP_Test_State::$options );
+	}
+
+	/**
+	 * @dataProvider failures_after_the_copy
+	 */
+	public function test_si_falla_con_una_copia_que_ya_existia_esa_copia_no_se_descarta( string $fails_in, string $code ): void {
+		$first = $this->exec_edit( array( 'id' => self::ORIGINAL, 'operation' => 'replace', 'node_id' => 'sec0001', 'elements' => ElementorSectionFixtures::new_box( 'Uno' ) ) );
+		$this->assertIsArray( $first );
+		$copy   = (int) $first['id'];
+		$before = (string) get_post_meta( $copy, '_elementor_data', true );
+		\WP_Test_State::$json_fail_in = $fails_in;
+
+		$result = $this->exec_edit( array( 'id' => self::ORIGINAL, 'operation' => 'replace', 'node_id' => 'sec0002', 'elements' => ElementorSectionFixtures::new_box( 'Dos' ) ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $code, $result->get_error_code() );
+		$this->assertSame( array( $copy ), $this->live_copies(), 'la copia anterior sigue viva' );
+		$this->assertSame( $copy, $this->find_copy() );
+		$this->assertSame( $before, get_post_meta( $copy, '_elementor_data', true ) );
+	}
+
+	public function test_si_el_bloqueo_se_pierde_antes_de_escribir_no_se_escribe_ni_se_crea_copia(): void {
+		$this->put_page( 109, 'draft', ElementorSectionFixtures::v3() );
+
+		foreach ( array( self::ORIGINAL, 109 ) as $id ) {
+			$this->lose_lock_after_acquiring( $id );
+			$before = $this->snapshot();
+
+			$result = $this->exec_edit( array( 'id' => $id, 'operation' => 'replace', 'node_id' => 'sec0001', 'elements' => ElementorSectionFixtures::new_box() ) );
+
+			$this->assertInstanceOf( \WP_Error::class, $result, 'id ' . $id );
+			$this->assertSame( 'nexo_mcp_busy', $result->get_error_code(), 'id ' . $id );
+			$this->assertSame( $before, $this->snapshot(), 'id ' . $id );
+			$this->assertSame( 0, $this->find_copy() );
+			$this->assertStringStartsWith( 'otro-dueno|', \WP_Test_State::$options[ 'nexo_mcp_lock_' . $id ] );
+			\WP_Test_State::$options = array();
+		}
+	}
+
+	public function test_si_falla_el_guardado_y_tampoco_se_puede_descartar_la_copia_el_error_lo_dice(): void {
+		\WP_Test_State::$json_fail_in = 'save_tree';
+		\WP_Test_State::$fail_trash    = true;
+
+		$result = $this->exec_edit( array( 'id' => self::ORIGINAL, 'operation' => 'replace', 'node_id' => 'sec0001', 'elements' => ElementorSectionFixtures::new_box() ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_copy_orphan', $result->get_error_code() );
+		$this->assertSame( 'nexo_mcp_builder_too_large', $result->get_error_data()['original_error'] );
 	}
 }

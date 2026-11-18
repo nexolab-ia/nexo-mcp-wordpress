@@ -811,6 +811,101 @@ final class ElementorTreeValidatorTest extends TestCase {
 		}
 	}
 
+	/**
+	 * @return array<string, array<int, string>>
+	 */
+	public static function unbalanced_parentheses(): array {
+		return array(
+			'abre y no cierra'            => array( 'width', 'size', 'calc(100% - 2rem' ),
+			'cierra de más'               => array( 'color', 'color', 'rgb(0, 0, 0))' ),
+			'cierra antes de abrir'       => array( 'color', 'color', ')rgb(0, 0, 0(' ),
+			'anidado sin cerrar el hijo'  => array( 'width', 'size', 'calc(100% - calc(2rem + 1px)' ),
+			'sólo un cierre'              => array( 'content', 'string', 'a)' ),
+		);
+	}
+
+	/**
+	 * @dataProvider unbalanced_parentheses
+	 */
+	public function test_los_parentesis_sin_cerrar_se_rechazan_con_su_propio_mensaje( string $prop, string $type, string $value ): void {
+		$path = 'elements[0].styles.caja.variants[0].props.' . $prop . '.value';
+
+		$this->assertRejected(
+			$this->validator()->validate( array( $this->styled( array( $prop => $this->prop( $type, $value ) ) ) ) ),
+			'nexo_mcp_elementor_style_value_denied',
+			$path,
+			$path . ': el valor tiene paréntesis sin cerrar.'
+		);
+	}
+
+	public function test_los_parentesis_balanceados_y_anidados_se_aceptan(): void {
+		foreach ( array(
+			'rgba(0, 0, 0, 0.5)',
+			'hsl(210deg 50% 40%)',
+			'calc(100% - 2.5rem)',
+			'calc(100% - calc(2rem + (1px * 2)))',
+			'"a ) b"',
+			'min(10px, calc(1vw + 2px))',
+		) as $value ) {
+			$this->assertTrue(
+				$this->validator()->validate( array( $this->styled( array( 'content' => $this->prop( 'string', $value ) ) ) ) ),
+				$value
+			);
+		}
+	}
+
+	/**
+	 * @return array<string, array<int, mixed>>
+	 */
+	public static function bad_meta(): array {
+		$bp    = 'no es un breakpoint válido de Elementor 4.4.1. Admitidos: desktop, widescreen, laptop, tablet_extra, tablet, mobile_extra, mobile.';
+		$state = 'no es un estado válido de Elementor 4.4.1. Admitidos: hover, active, focus, focus-visible, checked, e--selected, e--disabled, e--playing, e--paused, null.';
+
+		return array(
+			'breakpoint desconocido'    => array( 'breakpoint', 'phone', $bp ),
+			'breakpoint en mayúsculas'  => array( 'breakpoint', 'Desktop', $bp ),
+			'breakpoint vacío'          => array( 'breakpoint', '', $bp ),
+			'breakpoint no es texto'    => array( 'breakpoint', 768, $bp ),
+			'breakpoint nulo'           => array( 'breakpoint', null, $bp ),
+			'estado desconocido'        => array( 'state', 'visited', $state ),
+			'estado en mayúsculas'      => array( 'state', 'HOVER', $state ),
+			'estado vacío'              => array( 'state', '', $state ),
+			'estado no es texto'        => array( 'state', 5, $state ),
+			'estado con inyección'      => array( 'state', 'hover{color:red}', $state ),
+		);
+	}
+
+	/**
+	 * @dataProvider bad_meta
+	 * @param mixed $value Valor de la clave de `meta`.
+	 */
+	public function test_meta_breakpoint_y_state_fuera_de_la_lista_cerrada_se_rechazan_con_su_ruta( string $key, $value, string $reason ): void {
+		$node = $this->styled( array() );
+		$node['styles']['caja']['variants'][0]['meta'][ $key ] = $value;
+		$path = 'elements[0].styles.caja.variants[0].meta.' . $key;
+
+		$this->assertRejected(
+			$this->validator()->validate( array( $node ) ),
+			'nexo_mcp_elementor_style_invalid',
+			$path,
+			$path . ': ' . $reason
+		);
+	}
+
+	public function test_todos_los_breakpoints_y_estados_de_la_lista_se_aceptan(): void {
+		foreach ( array( 'desktop', 'widescreen', 'laptop', 'tablet_extra', 'tablet', 'mobile_extra', 'mobile' ) as $breakpoint ) {
+			$node = $this->styled( array() );
+			$node['styles']['caja']['variants'][0]['meta']['breakpoint'] = $breakpoint;
+			$this->assertTrue( $this->validator()->validate( array( $node ) ), $breakpoint );
+		}
+
+		foreach ( array( null, 'hover', 'active', 'focus', 'focus-visible', 'checked', 'e--selected', 'e--disabled', 'e--playing', 'e--paused' ) as $state ) {
+			$node = $this->styled( array() );
+			$node['styles']['caja']['variants'][0]['meta']['state'] = $state;
+			$this->assertTrue( $this->validator()->validate( array( $node ) ), (string) $state );
+		}
+	}
+
 	public function test_una_sola_familia_con_o_sin_comillas_se_acepta(): void {
 		foreach ( array( '"Open Sans"', 'Open Sans', "'Open Sans'" ) as $family ) {
 			$this->assertTrue(

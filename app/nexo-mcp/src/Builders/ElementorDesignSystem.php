@@ -13,9 +13,19 @@ namespace NexoDev\NexoMCP\Builders;
  * Entrega clases globales, variables, colores y tipografía del Kit activo.
  *
  * Sólo toca clases de Elementor si existen: lo que la versión instalada no trae
- * sale como lista vacía en vez de romper la herramienta.
+ * sale como lista vacía en vez de romper la herramienta. Distinto es que la clase
+ * exista y la lectura falle (un `Throwable` del repositorio): eso se avisa en
+ * `warnings` (`{source, message}`) para que una lista vacía no se tome por «no hay
+ * nada», y lo ya leído se conserva.
  */
 final class ElementorDesignSystem {
+
+	/**
+	 * Avisos de la lectura en curso.
+	 *
+	 * @var array<int, array{source: string, message: string}>
+	 */
+	private array $warnings = array();
 
 	/**
 	 * Lee el sistema de diseño.
@@ -30,9 +40,10 @@ final class ElementorDesignSystem {
 			);
 		}
 
-		$kit = $this->kit();
+		$kit            = $this->kit();
+		$this->warnings = array();
 
-		return array(
+		$out = array(
 			'atomic_enabled' => $this->atomic_enabled(),
 			'kit_id'         => null !== $kit ? $this->kit_id( $kit ) : 0,
 			'colors'         => $this->colors( $kit ),
@@ -40,6 +51,14 @@ final class ElementorDesignSystem {
 			'classes'        => $this->classes( $kit ),
 			'variables'      => $this->variables( $kit ),
 		);
+
+		$warnings = $this->take_warnings();
+
+		if ( array() !== $warnings ) {
+			$out['warnings'] = $warnings;
+		}
+
+		return $out;
 	}
 
 	/**
@@ -206,6 +225,8 @@ final class ElementorDesignSystem {
 		try {
 			$labels = $repository::make( $kit )->all_labels();
 		} catch ( \Throwable $e ) {
+			$this->warn( 'classes', $e );
+
 			return array();
 		}
 
@@ -236,9 +257,16 @@ final class ElementorDesignSystem {
 		$out = array();
 
 		try {
-			$collection = ( new $repository( $kit ) )->load();
+			$all = ( new $repository( $kit ) )->load()->all();
+		} catch ( \Throwable $e ) {
+			$this->warn( 'variables', $e );
 
-			foreach ( $collection->all() as $variable ) {
+			return array();
+		}
+
+		// Variable por variable: una que falla se avisa y no tira las ya leídas.
+		foreach ( $all as $variable ) {
+			try {
 				if ( $variable->is_deleted() ) {
 					continue;
 				}
@@ -249,11 +277,41 @@ final class ElementorDesignSystem {
 					'label' => (string) $variable->label(),
 					'value' => $variable->value(),
 				);
+			} catch ( \Throwable $e ) {
+				$this->warn( 'variables', $e );
 			}
-		} catch ( \Throwable $e ) {
-			return array();
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Entrega los avisos acumulados y los vacía.
+	 *
+	 * @return array<int, array{source: string, message: string}>
+	 */
+	private function take_warnings(): array {
+		$warnings       = $this->warnings;
+		$this->warnings = array();
+
+		return $warnings;
+	}
+
+	/**
+	 * Anota que una lectura falló.
+	 *
+	 * @param string     $source Bloque que falló (classes o variables).
+	 * @param \Throwable $error  Lo que lanzó Elementor.
+	 */
+	private function warn( string $source, \Throwable $error ): void {
+		$this->warnings[] = array(
+			'source'  => $source,
+			'message' => sprintf(
+				/* translators: 1: bloque (classes o variables), 2: mensaje de Elementor. */
+				__( 'No se pudo leer «%1$s» de Elementor; la lista puede estar incompleta: %2$s', 'nexo-mcp' ),
+				$source,
+				$error->getMessage()
+			),
+		);
 	}
 }

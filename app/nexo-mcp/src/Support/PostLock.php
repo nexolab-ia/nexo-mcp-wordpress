@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Support;
 
+use NexoDev\NexoMCP\Audit\AuditLogger;
+use NexoDev\NexoMCP\Audit\AuditRepository;
+
 // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
 // phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
 // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -39,6 +42,16 @@ namespace NexoDev\NexoMCP\Support;
  *
  * El valor es `token|vencimiento`. La fila es `autoload = no`, así que no engorda la
  * carga de opciones. Es reentrante dentro del mismo proceso.
+ *
+ * Sin latido: el vencimiento no se renueva mientras el trabajo corre. Un trabajo que
+ * dura más que {@see self::TTL} podría seguir escribiendo después de que otro proceso
+ * tomó el bloqueo vencido. Por eso cada ruta bloqueada llama a {@see self::verify()}
+ * justo antes de su primera escritura (la fase de validación y armado es la larga; las
+ * escrituras son milisegundos): si el bloqueo ya es de otro no se escribe y la herramienta
+ * responde `nexo_mcp_busy`; si sigue siendo propio, se renueva el vencimiento (un paso
+ * atómico) para que lo que falta de escritura quede cubierto. No hay comprobación al
+ * final de {@see self::run()}: para entonces ya se escribió y no se podría deshacer.
+ * Cada toma de un bloqueo vencido queda en el log de auditoría.
  */
 final class PostLock {
 
@@ -172,6 +185,67 @@ final class PostLock {
 	}
 
 	/**
+	 * Comprueba, justo antes de escribir, que el bloqueo que este proceso obtuvo sigue siendo suyo.
+	 *
+	 * Si venció y otro lo tomó (o la fila desapareció) no se debe escribir: responde
+	 * `nexo_mcp_busy`. Si sigue siendo propio, renueva el vencimiento con una
+	 * comparación atómica. Sin bloqueo propio para ese ID (no hay trabajo bloqueado en
+	 * este proceso) no hay nada que comprobar.
+	 *
+	 * @param int $id ID del contenido original (la clave del bloqueo).
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function verify( int $id ) {
+		global $wpdb;
+
+		if ( ! isset( self::$held[ $id ] ) ) {
+			return true;
+		}
+
+		$token   = self::$held[ $id ][0];
+		$name    = self::name( $id );
+		$current = $wpdb->get_var(
+			$wpdb->prepare( "SELECT option_value FROM `{$wpdb->options}` WHERE option_name = %s", $name )
+		);
+
+		if ( is_string( $current ) && str_starts_with( $current, $token . '|' ) ) {
+			$renewed = $token . '|' . ( time() + self::TTL );
+
+			// Con el mismo valor (misma marca de tiempo) un UPDATE no cambia filas: ya está renovado.
+			if ( $renewed === $current ) {
+				return true;
+			}
+
+			$rows = $wpdb->query(
+				$wpdb->prepare(
+					"UPDATE `{$wpdb->options}` SET option_value = %s WHERE option_name = %s AND option_value = %s",
+					$renewed,
+					$name,
+					$current
+				)
+			);
+
+			if ( 1 === (int) $rows ) {
+				return true;
+			}
+
+			$now = $wpdb->get_var(
+				$wpdb->prepare( "SELECT option_value FROM `{$wpdb->options}` WHERE option_name = %s", $name )
+			);
+
+			if ( is_string( $now ) && str_starts_with( $now, $token . '|' ) ) {
+				return true;
+			}
+		}
+
+		return new \WP_Error(
+			'nexo_mcp_busy',
+			__( 'Otra edición tomó este contenido mientras esta trabajaba (el bloqueo venció). No se escribió nada. Reintentá en unos segundos.', 'nexo-mcp' )
+		);
+	}
+
+	/**
 	 * Toma un bloqueo vencido sólo si sigue valiendo lo que se leyó.
 	 *
 	 * @param int    $id    ID del contenido original.
@@ -190,7 +264,34 @@ final class PostLock {
 			)
 		);
 
-		return 1 === (int) $rows;
+		if ( 1 !== (int) $rows ) {
+			return false;
+		}
+
+		self::audit_takeover( $id, $stale );
+
+		return true;
+	}
+
+	/**
+	 * Registra en el log de auditoría que se tomó un bloqueo vencido.
+	 *
+	 * Un bloqueo vencido suele ser un proceso que murió, pero también uno que sigue
+	 * trabajando: el rastro permite verlo. Un fallo de la auditoría nunca impide el bloqueo.
+	 *
+	 * @param int    $id    ID del contenido original.
+	 * @param string $stale Valor vencido tal como se leyó.
+	 */
+	private static function audit_takeover( int $id, string $stale ): void {
+		$parts   = explode( '|', $stale );
+		$expired = isset( $parts[1] ) ? (int) $parts[1] : 0;
+		$result  = $expired > 0 ? array( 'seconds_overdue' => max( 0, time() - $expired ) ) : array( 'malformed' => true );
+
+		try {
+			( new AuditLogger( new AuditRepository() ) )->log( 'lock-takeover', 'write', 'success', array( 'post_id' => $id ), $result );
+		} catch ( \Throwable $e ) {
+			return;
+		}
 	}
 
 	/**

@@ -260,6 +260,13 @@ final class WriteGateway {
 	 * @return int|\WP_Error
 	 */
 	private function write( int $post_id, array $input ) {
+		// Primera escritura: el bloqueo pudo vencer mientras se validaba.
+		$held = WorkingCopy::ensure_lock( $post_id );
+
+		if ( is_wp_error( $held ) ) {
+			return $held;
+		}
+
 		$post_data = array( 'ID' => $post_id );
 
 		if ( array_key_exists( 'title', $input ) ) {

@@ -587,14 +587,19 @@ final class BuilderGateway {
 	/**
 	 * Versión de restore_backup con el bloqueo del original en mano.
 	 *
-	 * Restaurar es una edición más. Con el id de la copia, de un borrador, o con
-	 * el de una página publicada que ya tiene copia, se restaura el respaldo
-	 * propio de ese contenido (la copia), en su sitio: deshace su última edición.
-	 * No se captura antes de escribir: un reintento restauraría lo recién
-	 * restaurado y perdería la edición anterior. Con una página publicada sin
-	 * copia se usa el respaldo del original y se restaura en una copia nueva,
-	 * que es un clon sin ediciones que perder, así que tampoco captura. Sin
-	 * respaldo del original no se crea la copia.
+	 * Restaurar es una edición más, y «el último estado respaldado» de una página con
+	 * copia de trabajo es el de la copia:
+	 *
+	 * - Con el id de la copia, de un borrador, o con el de una página publicada que ya
+	 *   tiene copia, se restaura el respaldo propio de la copia (o del borrador), en su
+	 *   sitio: deshace la última edición de la copia. No se captura antes de escribir:
+	 *   si se capturara, un reintento restauraría lo que acaba de restaurar y la
+	 *   edición anterior se perdería. Restaurar dos veces deja el mismo estado.
+	 * - Con el id de una página publicada que no tiene copia se usa el respaldo del
+	 *   original (el estado previo a su última edición en vivo o a su última
+	 *   publicación) y se restaura en una copia nueva, nunca en vivo. La copia recién
+	 *   creada es un clon del original y no tiene ediciones que perder, así que tampoco
+	 *   se captura. Sin respaldo del original no se crea la copia.
 	 *
 	 * @param \WP_Post             $post  Contenido ya resuelto.
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
@@ -629,6 +634,13 @@ final class BuilderGateway {
 
 			if ( is_wp_error( $dest ) ) {
 				return $dest;
+			}
+		} else {
+			// En su sitio (copia, borrador o publicada con copia): el respaldo propio del destino.
+			$held = WorkingCopy::ensure_lock( (int) $post->ID );
+
+			if ( is_wp_error( $held ) ) {
+				return $held;
 			}
 		}
 
@@ -707,6 +719,13 @@ final class BuilderGateway {
 	 * @return array{post: \WP_Post, created: bool}|\WP_Error
 	 */
 	private function destination( \WP_Post $post, array $plan ) {
+		// Primera escritura: el bloqueo pudo vencer mientras se validaba.
+		$held = WorkingCopy::ensure_lock( (int) $post->ID );
+
+		if ( is_wp_error( $held ) ) {
+			return $held;
+		}
+
 		if ( ! $plan['staged'] ) {
 			return array(
 				'post'    => $post,
@@ -734,7 +753,11 @@ final class BuilderGateway {
 	 */
 	private function abort( array $dest, \WP_Error $error ): \WP_Error {
 		if ( $dest['created'] ) {
-			( new WorkingCopy( $this->settings ) )->discard( $dest['post'] );
+			$discarded = ( new WorkingCopy( $this->settings ) )->discard( $dest['post'] );
+
+			if ( is_wp_error( $discarded ) ) {
+				return WorkingCopy::orphan_error( $dest['post'], $error );
+			}
 		}
 
 		return $error;

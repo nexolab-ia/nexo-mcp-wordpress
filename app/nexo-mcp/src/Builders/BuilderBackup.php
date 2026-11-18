@@ -52,7 +52,13 @@ final class BuilderBackup {
 			return false;
 		}
 
-		return false !== update_post_meta( $post->ID, self::META_KEY, wp_slash( $encoded ) );
+		if ( false !== update_post_meta( $post->ID, self::META_KEY, wp_slash( $encoded ) ) ) {
+			return true;
+		}
+
+		// `false` también significa «el valor guardado ya es idéntico» (mismo estado en el
+		// mismo segundo, p. ej. editar justo tras restaurar): el respaldo que se quería ya está.
+		return (string) get_post_meta( $post->ID, self::META_KEY, true ) === $encoded;
 	}
 
 	/**

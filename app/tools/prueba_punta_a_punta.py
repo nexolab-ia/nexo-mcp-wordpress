@@ -319,6 +319,10 @@ def run_writes(args, token, call, tool, title, created):
         print(f"La página {page['id']} no cambió tras 4 confirmaciones inválidas.")
         if "mcp:publish" in granted:
             publish_working_copy(call, tool, created[0])
+        else:
+            # Sin publicar no hay copia de trabajo que fusionar: se avisa en vez de callar.
+            step("10. Publicar una copia de trabajo → se fusiona en el original")
+            print("SALTEADO: el scope concedido no incluye mcp:publish; no se prueba la fusión de la copia.")
     print("\nOK: conectar → autorizar OAuth → usar herramientas funciona de punta a punta.")
     return 0
 
@@ -338,6 +342,7 @@ def publish_working_copy(call, tool, post_id):
     content = "<p>Publicado desde la copia de trabajo</p>"
     excerpt = "Extracto desde la copia"
     staged = call(tool("update-post"), {"id": post_id, "content": content, "excerpt": excerpt}, 42)
+    assert not staged.get("isError"), f"Editar el post publicado debe crear su copia de trabajo: {text_of(staged)}"
     copy_id = json.loads(staged["content"][0]["text"])["id"]
     assert json.loads(staged["content"][0]["text"]).get("draft_of") == post_id, (
         "Editar el post publicado debe ir a una copia de trabajo"
