@@ -16,7 +16,7 @@ namespace NexoDev\NexoMCP\Builders;
  * - fuente: nombres de familia (letras, números, espacios, `-_.,` y comillas).
  * - tamaño: número + unidad de Elementor en minúsculas (la forma que `Prop_Type_Adapter` interpreta).
  * - tamaño personalizado: texto CSS libre (`calc()`, `clamp()`…) con las mismas restricciones de hojas
- *   que `ElementorTreeValidator::check_css_leaves` (F2/F3).
+ *   que las hojas de `ElementorTreeValidator` (F2/F3, `css_text_problem()`).
  */
 final class DesignVariableValue {
 
@@ -156,19 +156,9 @@ final class DesignVariableValue {
 	 * @return true|string
 	 */
 	private static function check_custom_size( string $value ) {
-		if ( 1 === preg_match( '/[;{}<>\\\\@\x00-\x1F\x7F]|\/\*|!\s*important|(?:url|src|expression|image-set|image|cross-fade|element|var)\s*\(/i', $value ) ) {
-			return __( 'contiene caracteres o funciones que no se admiten en un valor de estilo (; { } < > \\ @, saltos de línea, /*, url(), image-set(), var(), !important…).', 'nexo-mcp' );
-		}
+		$problem = ElementorTreeValidator::css_text_problem( $value );
 
-		if ( 0 !== substr_count( $value, '"' ) % 2 || 0 !== substr_count( $value, "'" ) % 2 ) {
-			return __( 'tiene comillas sin cerrar.', 'nexo-mcp' );
-		}
-
-		if ( ! self::balanced_parentheses( $value ) ) {
-			return __( 'tiene paréntesis sin cerrar.', 'nexo-mcp' );
-		}
-
-		return true;
+		return null === $problem ? true : $problem;
 	}
 
 	/**
@@ -181,32 +171,5 @@ final class DesignVariableValue {
 		$units     = class_exists( $constants ) ? $constants::all_supported_units() : self::FALLBACK_UNITS;
 
 		return array_values( array_diff( $units, array( 'auto', 'custom' ) ) );
-	}
-
-	/**
-	 * Paréntesis emparejados (anidados vale), sin contar los de entre comillas.
-	 *
-	 * @param string $value Valor.
-	 */
-	private static function balanced_parentheses( string $value ): bool {
-		$depth = 0;
-		$quote = '';
-
-		foreach ( str_split( $value ) as $char ) {
-			if ( '' !== $quote ) {
-				$quote = $char === $quote ? '' : $quote;
-				continue;
-			}
-
-			if ( '"' === $char || "'" === $char ) {
-				$quote = $char;
-			} elseif ( '(' === $char ) {
-				++$depth;
-			} elseif ( ')' === $char && --$depth < 0 ) {
-				return false;
-			}
-		}
-
-		return 0 === $depth;
 	}
 }

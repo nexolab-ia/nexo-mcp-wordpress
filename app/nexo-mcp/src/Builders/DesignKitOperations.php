@@ -642,7 +642,7 @@ final class DesignKitOperations {
 	 *
 	 * @return array<string, array{type: string, options?: array<int, string>, units?: array<int, string>}>
 	 */
-	private static function typography_keys(): array {
+	public static function typography_keys(): array {
 		$keys = array( self::FAMILY_KEY => array( 'type' => 'family' ) );
 
 		foreach ( self::SELECTS as $key => $options ) {
@@ -680,6 +680,12 @@ final class DesignKitOperations {
 					return $this->invalid( $path, sprintf( 'el nombre de la fuente tiene que ser texto de hasta %d caracteres, sin ; { } < > \\ @ ni comillas.', self::TITLE_MAX ) );
 				}
 
+				$problem = ElementorTreeValidator::css_text_problem( $value );
+
+				if ( null !== $problem ) {
+					return $this->invalid( $path, $problem );
+				}
+
 				return array( 'value' => $value );
 
 			case 'select':
@@ -711,6 +717,13 @@ final class DesignKitOperations {
 		if ( 'custom' === $value['unit'] ) {
 			if ( ! is_string( $size ) || ! $this->safe_text( $size ) ) {
 				return $error;
+			}
+
+			// Llega tal cual al CSS del Kit: misma regla que las hojas de F2/F3 (comentarios, funciones, comillas, paréntesis).
+			$problem = ElementorTreeValidator::css_text_problem( $size );
+
+			if ( null !== $problem ) {
+				return $this->invalid( $path, $problem );
 			}
 		} elseif ( ! ( is_int( $size ) || is_float( $size ) || ( is_string( $size ) && is_numeric( $size ) ) ) || ! is_finite( (float) $size ) ) {
 			return $error;

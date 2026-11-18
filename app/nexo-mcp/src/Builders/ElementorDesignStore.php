@@ -211,7 +211,7 @@ final class ElementorDesignStore implements DesignSystemStore {
 		$modified = array();
 
 		foreach ( $items as $id => $item ) {
-			if ( isset( $now_items[ $id ] ) && $item != $now_items[ $id ] ) { // phpcs:ignore Universal.Operators.StrictComparisons.LooseNotEqual -- comparación estructural de arreglos.
+			if ( isset( $now_items[ $id ] ) && ! self::same_content( $item, $now_items[ $id ] ) ) {
 				$modified[] = $id;
 			}
 		}
@@ -235,11 +235,53 @@ final class ElementorDesignStore implements DesignSystemStore {
 			array_values( $order )
 		);
 
-		$after = array_keys( (array) $repository->all( true )->get()['items'] );
+		$after       = $repository->all( true )->get();
+		$after_items = (array) $after['items'];
 
-		if ( array() !== array_diff( array_keys( $items ), $after ) || array() !== array_diff( $after, array_keys( $items ) ) ) {
+		if ( array() !== array_diff( array_keys( $items ), array_keys( $after_items ) ) || array() !== array_diff( array_keys( $after_items ), array_keys( $items ) ) ) {
 			throw new \RuntimeException( 'Elementor no devolvió todas las clases respaldadas.' );
 		}
+
+		if ( array_values( (array) $after['order'] ) !== array_values( $order ) ) {
+			throw new \RuntimeException( 'Elementor no devolvió las clases en el orden respaldado.' );
+		}
+
+		foreach ( array_merge( $added, $modified ) as $id ) {
+			if ( ! self::same_content( $items[ $id ], $after_items[ $id ] ) ) {
+				throw new \RuntimeException( esc_html( 'Elementor no dejó la clase «' . $id . '» con el contenido respaldado.' ) );
+			}
+		}
+	}
+
+	/**
+	 * Igualdad estricta (tipos incluidos) de dos valores, sin importar el orden de las claves de los arreglos asociativos.
+	 *
+	 * @param mixed $a Un valor.
+	 * @param mixed $b Otro valor.
+	 */
+	private static function same_content( $a, $b ): bool {
+		return self::canonical( $a ) === self::canonical( $b );
+	}
+
+	/**
+	 * Ordena por clave los arreglos asociativos, en todos los niveles; las listas conservan su orden.
+	 *
+	 * @param mixed $value Valor.
+	 *
+	 * @return mixed
+	 */
+	private static function canonical( $value ) {
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+
+		$value = array_map( array( self::class, 'canonical' ), $value );
+
+		if ( ! array_is_list( $value ) ) {
+			ksort( $value );
+		}
+
+		return $value;
 	}
 
 	/**

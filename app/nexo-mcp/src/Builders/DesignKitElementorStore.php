@@ -94,7 +94,11 @@ final class DesignKitElementorStore implements DesignKitStore {
 
 		foreach ( self::KEYS as $key ) {
 			if ( isset( $lists[ $key ] ) && ( $saved[ $key ] ?? null ) !== array_values( $lists[ $key ] ) ) {
-				throw new \RuntimeException( esc_html( 'Elementor no guardó la lista «' . $key . '» del Kit tal como se pidió.' ) );
+				$reason = current_user_can( 'unfiltered_html' )
+					? ''
+					: ' Sin la capacidad unfiltered_html, WordPress filtra el HTML de los textos al guardar (por ejemplo un título con etiquetas): usá títulos de texto plano o un usuario con esa capacidad.';
+
+				throw new \RuntimeException( esc_html( 'Elementor no guardó la lista «' . $key . '» del Kit tal como se pidió.' . $reason ) );
 			}
 		}
 	}

@@ -137,6 +137,7 @@ final class DesignSystemWriterTest extends NexoTestCase {
 		$previous = array(
 			'kind'      => 'kit',
 			'operation' => 'update-kit',
+			'kit_id'    => 77,
 			'state'     => array( 'custom_colors' => array() ),
 			'at'        => '2026-11-17 10:00:00',
 			'user'      => 2,
@@ -431,9 +432,8 @@ final class DesignSystemWriterTest extends NexoTestCase {
 			'clases sin orden'                 => array( 'classes', array( 'items' => array() ) ),
 			'clases con item que no es mapa'   => array( 'classes', array( 'items' => array( 'g-a' => 'x' ), 'order' => array( 'g-a' ) ) ),
 			'clases con orden de no cadenas'   => array( 'classes', array( 'items' => array( 'g-a' => array() ), 'order' => array( 5 ) ) ),
-			'clases con id de orden ausente'   => array( 'classes', array( 'items' => array( 'g-a' => array() ), 'order' => array( 'g-a', 'g-z' ) ) ),
 			'clases con orden que no es lista' => array( 'classes', array( 'items' => array( 'g-a' => array() ), 'order' => array( 'x' => 'g-a' ) ) ),
-			'variables sin marca de agua'      => array( 'variables', array( 'data' => array() ) ),
+			'variables con registro sin data'  => array( 'variables', array( 'watermark' => 3 ) ),
 			'variables con marca de texto'     => array( 'variables', array( 'data' => array(), 'watermark' => '3' ) ),
 			'variables con entrada escalar'    => array( 'variables', array( 'data' => array( 'e-gv-1' => 'x' ), 'watermark' => 3 ) ),
 			'variables con data escalar'       => array( 'variables', array( 'data' => 'x', 'watermark' => 3 ) ),
@@ -451,6 +451,7 @@ final class DesignSystemWriterTest extends NexoTestCase {
 		$stored = array(
 			'kind'      => $kind,
 			'operation' => 'x',
+			'kit_id'    => 77,
 			'state'     => $state,
 			'at'        => '2026-11-17 10:00:00',
 			'user'      => 2,
@@ -474,7 +475,7 @@ final class DesignSystemWriterTest extends NexoTestCase {
 				array( 'kit', array( 'system_colors' => array(), 'custom_typography' => array( array( '_id' => 'a' ) ) ) ),
 			) as [ $kind, $state ]
 		) {
-			update_option( DesignSystemWriter::BACKUP_OPTION, array( 'kind' => $kind, 'operation' => 'x', 'state' => $state, 'at' => 'z', 'user' => 1, 'note' => '' ), false );
+			update_option( DesignSystemWriter::BACKUP_OPTION, array( 'kind' => $kind, 'operation' => 'x', 'kit_id' => 77, 'state' => $state, 'at' => 'z', 'user' => 1, 'note' => '' ), false );
 
 			$this->assertIsArray( $this->writer()->undo(), $kind );
 		}
@@ -503,6 +504,76 @@ final class DesignSystemWriterTest extends NexoTestCase {
 
 		$this->assertWPError( $this->write_class(), 'nexo_mcp_design_backup_failed' );
 		$this->assertSame( $previous, $this->backup() );
+	}
+
+	// ------------------------------------------------- Forma real de Elementor (S6c)
+
+	public function test_lo_que_elementor_guarda_de_verdad_se_normaliza_y_se_respalda(): void {
+		// Orden con un id sin item (Elementor los deja al borrar) y registro de variables sin marca de agua.
+		$this->store->states['classes']   = array( 'items' => array( 'g-a' => array( 'label' => 'a' ) ), 'order' => array( 'g-fantasma', 'g-a' ) );
+		$this->store->states['variables'] = array( 'data' => array( 'e-gv-1' => array( 'label' => 'rojo' ) ) );
+
+		$this->assertIsArray( $this->write_class() );
+		$this->assertSame( array( 'g-a' ), $this->backup()['state']['order'] );
+
+		$this->assertIsArray( $this->writer()->write( 'variables', 'update-variable', fn() => array(), fn() => array() ) );
+		$this->assertSame( 0, $this->backup()['state']['watermark'] );
+		$this->assertSame( array( 'e-gv-1' => array( 'label' => 'rojo' ) ), $this->backup()['state']['data'] );
+
+		$this->assertIsArray( $this->writer()->undo() );
+		$this->assertSame( array( array( 'variables', array( 'data' => array( 'e-gv-1' => array( 'label' => 'rojo' ) ), 'watermark' => 0 ) ) ), $this->store->restored );
+	}
+
+	public function test_un_estado_real_que_no_se_puede_respaldar_impide_escribir(): void {
+		$previous                         = $this->previous_backup();
+		$this->store->states['classes']   = array( 'items' => array( 'g-a' => 'no es un mapa' ), 'order' => array( 'g-a' ) );
+
+		$result = $this->write_class();
+
+		$this->assertWPError( $result, 'nexo_mcp_design_backup_failed' );
+		$this->assertSame( array( 'validate' ), $this->calls );
+		$this->assertSame( $previous, $this->backup() );
+		$this->assertSame( array(), $this->store->restored );
+		$this->assertSame( 0, $this->store->cleared );
+		$this->assertSame( array(), $this->audit );
+		$this->assertArrayNotHasKey( 'nexo_mcp_lock_77', \WP_Test_State::$options );
+	}
+
+	// ------------------------------------------------------- Kit del respaldo (S6a)
+
+	public function test_el_respaldo_guarda_el_id_del_kit(): void {
+		$this->write_class();
+
+		$this->assertSame( 77, $this->backup()['kit_id'] );
+	}
+
+	public function test_deshacer_con_otro_kit_activo_no_restaura_y_conserva_el_respaldo(): void {
+		$this->write_class();
+		$backup      = $this->backup();
+		$this->audit = array();
+		$this->store->kit = 88;
+
+		$result = $this->writer()->undo();
+
+		$this->assertWPError( $result, 'nexo_mcp_design_kit_changed' );
+		$this->assertSame( array( 'backup_kit_id' => 77, 'active_kit_id' => 88 ), $result->get_error_data() );
+		$this->assertStringContainsString( 'Kit 77', $result->get_error_message() );
+		$this->assertSame( array(), $this->store->restored );
+		$this->assertSame( 1, $this->store->cleared );
+		$this->assertSame( $backup, $this->backup() );
+		$this->assertSame( 'design-system-undo', $this->audit[0][0] );
+		$this->assertSame( 'error', $this->audit[0][1] );
+		$this->assertArrayNotHasKey( 'nexo_mcp_lock_88', \WP_Test_State::$options );
+	}
+
+	public function test_un_respaldo_sin_id_de_kit_no_se_restaura(): void {
+		$this->write_class();
+		$backup = $this->backup();
+		unset( $backup['kit_id'] );
+		update_option( DesignSystemWriter::BACKUP_OPTION, $backup, false );
+
+		$this->assertWPError( $this->writer()->undo(), 'nexo_mcp_design_kit_changed' );
+		$this->assertSame( array(), $this->store->restored );
 	}
 
 	private function assertWPError( $value, string $code ): void {

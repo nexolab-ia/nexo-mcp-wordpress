@@ -173,7 +173,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 		$this->assertSame( $code, $result->get_error_code() );
 
 		if ( null !== $field ) {
-			$this->assertSame( array( 'field' => $field ), $result->get_error_data() );
+			$this->assertSame( array( 'path' => $field ), $result->get_error_data() );
 		}
 	}
 
@@ -335,7 +335,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->create( $params );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_variable_invalid', $field );
+		$this->assertRejected( $result, 'nexo_mcp_design_invalid', $field );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -344,8 +344,9 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->create( array( 'type' => 'global-color-variable', 'label' => 'ROJO', 'value' => '#fff' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_label_taken', 'label' );
-		$this->assertSame( 'Ya existe una variable con la etiqueta «ROJO». Elegí otra.', $result->get_error_message() );
+		$this->assertRejected( $result, 'nexo_mcp_design_label_taken', null );
+		$this->assertSame( array( 'path' => 'label', 'id' => 'e-gv-red' ), $result->get_error_data() );
+		$this->assertSame( 'label: ya existe una variable con la etiqueta «ROJO». Elegí otra.', $result->get_error_message() );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -449,8 +450,9 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->update( array( 'id' => 'e-gv-red', 'label' => 'GAP' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_label_taken', 'label' );
-		$this->assertSame( 'Ya existe una variable con la etiqueta «GAP». Elegí otra.', $result->get_error_message() );
+		$this->assertRejected( $result, 'nexo_mcp_design_label_taken', null );
+		$this->assertSame( array( 'path' => 'label', 'id' => 'e-gv-gap' ), $result->get_error_data() );
+		$this->assertSame( 'label: ya existe una variable con la etiqueta «GAP». Elegí otra.', $result->get_error_message() );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -489,7 +491,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->update( array( 'id' => 'e-gv-fl', 'type' => 'global-size-variable' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_variable_invalid', 'value' );
+		$this->assertRejected( $result, 'nexo_mcp_design_invalid', 'value' );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -506,7 +508,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 		) {
 			$result = $this->ops()->update( array( 'id' => $id, 'type' => $type, 'value' => $value ) );
 
-			$this->assertRejected( $result, 'nexo_mcp_design_variable_invalid', 'type' );
+			$this->assertRejected( $result, 'nexo_mcp_design_invalid', 'type' );
 		}
 
 		$this->assertNothingWritten( $before );
@@ -538,21 +540,21 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 	public function test_modificar_valida_el_valor_con_el_tipo_de_la_variable(): void {
 		$before = $this->vars->records;
 
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => '10px' ) ), 'nexo_mcp_design_variable_invalid', 'value' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-gap', 'value' => 'calc(1px + 1px)' ) ), 'nexo_mcp_design_variable_invalid', 'value' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-ff', 'value' => 'a;b' ) ), 'nexo_mcp_design_variable_invalid', 'value' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-fl', 'value' => 'url(x)' ) ), 'nexo_mcp_design_variable_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => '10px' ) ), 'nexo_mcp_design_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-gap', 'value' => 'calc(1px + 1px)' ) ), 'nexo_mcp_design_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-ff', 'value' => 'a;b' ) ), 'nexo_mcp_design_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-fl', 'value' => 'url(x)' ) ), 'nexo_mcp_design_invalid', 'value' );
 		$this->assertNothingWritten( $before );
 	}
 
 	public function test_modificar_valida_label_y_formato_de_los_campos(): void {
 		$before = $this->vars->records;
 
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'label' => 'dos palabras' ) ), 'nexo_mcp_design_variable_invalid', 'label' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'label' => str_repeat( 'a', 51 ) ) ), 'nexo_mcp_design_variable_invalid', 'label' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => '' ) ), 'nexo_mcp_design_variable_invalid', 'value' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => str_repeat( '1', 513 ) ) ), 'nexo_mcp_design_variable_invalid', 'value' );
-		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'type' => 'desconocido' ) ), 'nexo_mcp_design_variable_invalid', 'type' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'label' => 'dos palabras' ) ), 'nexo_mcp_design_invalid', 'label' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'label' => str_repeat( 'a', 51 ) ) ), 'nexo_mcp_design_invalid', 'label' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => '' ) ), 'nexo_mcp_design_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'value' => str_repeat( '1', 513 ) ) ), 'nexo_mcp_design_invalid', 'value' );
+		$this->assertRejected( $this->ops()->update( array( 'id' => 'e-gv-red', 'type' => 'desconocido' ) ), 'nexo_mcp_design_invalid', 'type' );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -561,8 +563,8 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->update( array( 'id' => 'e-gv-red' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_variable_invalid', 'id' );
-		$this->assertSame( 'Indicá qué cambiar: label, value o type.', $result->get_error_message() );
+		$this->assertRejected( $result, 'nexo_mcp_design_invalid', 'id' );
+		$this->assertSame( 'id: indicá qué cambiar: label, value o type.', $result->get_error_message() );
 		$this->assertNothingWritten( $before );
 	}
 
@@ -599,7 +601,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 		$this->assertSame(
 			array(
 				'deleted'        => 'e-gv-red',
-				'pages_affected' => 0,
+				'pages_affected' => array(),
 				'undo_available' => true,
 			),
 			$result
@@ -622,7 +624,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 		$result = $this->ops()->delete( array( 'id' => 'e-gv-red' ) );
 
 		$this->assertRejected( $result, 'nexo_mcp_design_in_use' );
-		$this->assertSame( array( 'used_in' => $this->vars->used['e-gv-red'] ), $result->get_error_data() );
+		$this->assertSame( array( 'id' => 'e-gv-red', 'used_in' => $this->vars->used['e-gv-red'] ), $result->get_error_data() );
 		$this->assertSame( 'No se borró la variable «Rojo»: se usa en 2 contenidos. Pasá force: true para borrarla igual.', $result->get_error_message() );
 		$this->assertNothingWritten( $before );
 	}
@@ -649,7 +651,10 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 		$this->assertSame(
 			array(
 				'deleted'        => 'e-gv-red',
-				'pages_affected' => 2,
+				'pages_affected' => array(
+					array( 'id' => 12, 'title' => 'Inicio' ),
+					array( 'id' => 9, 'title' => 'Kit predeterminado' ),
+				),
 				'undo_available' => true,
 			),
 			$result
@@ -667,7 +672,7 @@ final class DesignVariableOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->delete( array( 'id' => 'e-gv-red', 'force' => 'si' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_variable_invalid', 'force' );
+		$this->assertRejected( $result, 'nexo_mcp_design_invalid', 'force' );
 		$this->assertNothingWritten( $before );
 	}
 

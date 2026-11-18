@@ -1104,31 +1104,10 @@ final class ElementorTreeValidator {
 	 */
 	private function check_css_leaves( $value, string $path ) {
 		if ( is_string( $value ) ) {
-			if ( 1 === preg_match( '/[;{}<>\\\\@\x00-\x1F\x7F]|\/\*|!\s*important|(?:url|src|expression|image-set|image|cross-fade|element|var)\s*\(/i', $value ) ) {
-				return $this->error(
-					'nexo_mcp_elementor_style_value_denied',
-					$path,
-					__( 'el valor contiene caracteres o funciones que no se admiten en un valor de estilo (; { } < > \\ @, saltos de línea, /*, url(), image-set(), var(), !important…).', 'nexo-mcp' )
-				);
-			}
+			$problem = self::css_text_problem( $value );
 
-			// Comillas sin cerrar abrirían una cadena que se come el resto de la regla.
-			if ( 0 !== substr_count( $value, '"' ) % 2 || 0 !== substr_count( $value, "'" ) % 2 ) {
-				return $this->error(
-					'nexo_mcp_elementor_style_value_denied',
-					$path,
-					__( 'el valor tiene comillas sin cerrar.', 'nexo-mcp' )
-				);
-			}
-
-			// Igual con los paréntesis: uno sin cerrar (o uno de más) descuadra la
-			// declaración. Los que van entre comillas son texto y no cuentan.
-			if ( ! self::balanced_parentheses( $value ) ) {
-				return $this->error(
-					'nexo_mcp_elementor_style_value_denied',
-					$path,
-					__( 'el valor tiene paréntesis sin cerrar.', 'nexo-mcp' )
-				);
+			if ( null !== $problem ) {
+				return $this->error( 'nexo_mcp_elementor_style_value_denied', $path, $problem );
 			}
 
 			return true;
@@ -1151,6 +1130,34 @@ final class ElementorTreeValidator {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Motivo por el que un texto no vale como valor de estilo CSS, o null si vale.
+	 *
+	 * Es la comprobación de cada hoja de `check_css_leaves()` (F2/F3), pública para que
+	 * otras piezas (variables globales de tamaño personalizado) apliquen la misma regla:
+	 * caracteres y funciones prohibidos, comillas sin cerrar y paréntesis sin cerrar.
+	 *
+	 * @param string $value Texto del valor.
+	 */
+	public static function css_text_problem( string $value ): ?string {
+		if ( 1 === preg_match( '/[;{}<>\\\\@\x00-\x1F\x7F]|\/\*|!\s*important|(?:url|src|expression|image-set|image|cross-fade|element|var)\s*\(/i', $value ) ) {
+			return __( 'el valor contiene caracteres o funciones que no se admiten en un valor de estilo (; { } < > \\ @, saltos de línea, /*, url(), image-set(), var(), !important…).', 'nexo-mcp' );
+		}
+
+		// Comillas sin cerrar abrirían una cadena que se come el resto de la regla.
+		if ( 0 !== substr_count( $value, '"' ) % 2 || 0 !== substr_count( $value, "'" ) % 2 ) {
+			return __( 'el valor tiene comillas sin cerrar.', 'nexo-mcp' );
+		}
+
+		// Igual con los paréntesis: uno sin cerrar (o uno de más) descuadra la
+		// declaración. Los que van entre comillas son texto y no cuentan.
+		if ( ! self::balanced_parentheses( $value ) ) {
+			return __( 'el valor tiene paréntesis sin cerrar.', 'nexo-mcp' );
+		}
+
+		return null;
 	}
 
 	/**

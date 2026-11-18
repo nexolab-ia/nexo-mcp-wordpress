@@ -195,9 +195,19 @@ final class DesignSystemWriter {
 		}
 
 		try {
-			$state = $this->store->snapshot( $kind );
+			$snapshot = $this->store->snapshot( $kind );
 		} catch ( \Throwable $e ) {
 			return new \WP_Error( 'nexo_mcp_design_write_failed', $this->failure_message( $e ) );
+		}
+
+		// Un respaldo que `undo()` no aceptaría no sirve: si el estado real no pasa la misma comprobación, no se escribe.
+		$state = $this->normalize_state( $kind, $snapshot );
+
+		if ( null === $state ) {
+			return new \WP_Error(
+				'nexo_mcp_design_backup_failed',
+				__( 'El estado actual no tiene una forma que se pueda respaldar y deshacer, así que no se escribió nada.', 'nexo-mcp' )
+			);
 		}
 
 		$previous_backup = get_option( self::BACKUP_OPTION, null );
@@ -205,6 +215,7 @@ final class DesignSystemWriter {
 		$backup = array(
 			'kind'      => $kind,
 			'operation' => $operation,
+			'kit_id'    => $kit_id,
 			'state'     => $state,
 			'at'        => gmdate( 'Y-m-d H:i:s' ),
 			'user'      => get_current_user_id(),
@@ -324,16 +335,37 @@ final class DesignSystemWriter {
 			return $this->no_backup();
 		}
 
+		$params = array(
+			'kind'      => $backup['kind'],
+			'operation' => $backup['operation'],
+		);
+
+		// El respaldo es del Kit que estaba activo al escribir: con otro Kit activo restaurarlo escribiría en el equivocado.
+		if ( $backup['kit_id'] !== $kit_id ) {
+			$error = new \WP_Error(
+				'nexo_mcp_design_kit_changed',
+				sprintf(
+					/* translators: 1: id del Kit del respaldo, 2: id del Kit activo. */
+					__( 'El último cambio se hizo sobre el Kit %1$d y ahora el Kit activo es el %2$d, así que no se restauró nada. Reactivá el Kit %1$d para deshacerlo; el respaldo se conserva.', 'nexo-mcp' ),
+					$backup['kit_id'],
+					$kit_id
+				),
+				array(
+					'backup_kit_id' => $backup['kit_id'],
+					'active_kit_id' => $kit_id,
+				)
+			);
+
+			$this->log( 'design-system-undo', 'error', $params, array( 'error' => $error->get_error_code() ) );
+
+			return $error;
+		}
+
 		$verified = PostLock::verify( $kit_id );
 
 		if ( is_wp_error( $verified ) ) {
 			return $verified;
 		}
-
-		$params = array(
-			'kind'      => $backup['kind'],
-			'operation' => $backup['operation'],
-		);
 
 		try {
 			$this->store->restore( $backup['kind'], $backup['state'] );
@@ -375,7 +407,7 @@ final class DesignSystemWriter {
 	/**
 	 * Respaldo guardado, o null si falta o no tiene la forma esperada.
 	 *
-	 * @return array{kind: string, operation: string, state: array<string, mixed>, at: string, user: int, note: string}|null
+	 * @return array{kind: string, operation: string, kit_id: int, state: array<string, mixed>, at: string, user: int, note: string}|null
 	 */
 	private function read_backup(): ?array {
 		$backup = get_option( self::BACKUP_OPTION, null );
@@ -386,15 +418,21 @@ final class DesignSystemWriter {
 			|| ! is_string( $backup['kind'] )
 			|| ! in_array( $backup['kind'], self::KINDS, true )
 			|| ! is_string( $backup['operation'] )
-			|| ! $this->valid_state( $backup['kind'], $backup['state'] )
 		) {
+			return null;
+		}
+
+		$state = $this->normalize_state( $backup['kind'], $backup['state'] );
+
+		if ( null === $state ) {
 			return null;
 		}
 
 		return array(
 			'kind'      => $backup['kind'],
 			'operation' => $backup['operation'],
-			'state'     => $backup['state'],
+			'kit_id'    => isset( $backup['kit_id'] ) && is_int( $backup['kit_id'] ) ? $backup['kit_id'] : 0,
+			'state'     => $state,
 			'at'        => isset( $backup['at'] ) && is_string( $backup['at'] ) ? $backup['at'] : '',
 			'user'      => isset( $backup['user'] ) ? (int) $backup['user'] : 0,
 			'note'      => isset( $backup['note'] ) && is_string( $backup['note'] ) ? $backup['note'] : '',
@@ -402,17 +440,26 @@ final class DesignSystemWriter {
 	}
 
 	/**
-	 * Comprueba que un estado respaldado tiene la forma que entrega `snapshot()` de su tipo.
+	 * Normaliza un estado a la forma que entrega `snapshot()` de su tipo, o null si no es válido.
+	 *
+	 * Lo que Elementor guarda de verdad no siempre es limpio, y un respaldo que no se pueda
+	 * restaurar no sirve, así que se acepta y se corrige lo inofensivo:
+	 *
+	 * - clases: ids del orden sin item se descartan;
+	 * - variables: un registro sin `watermark` pasa a `0`;
+	 * - Kit: sólo las cuatro listas.
 	 *
 	 * Un respaldo malformado se trata como «no hay respaldo» (`nexo_mcp_design_no_backup`):
-	 * nunca se restaura y no se toca.
+	 * nunca se restaura y no se toca. Un estado real que no lo pasa impide escribir.
 	 *
 	 * @param string $kind  Tipo.
-	 * @param mixed  $state Estado guardado.
+	 * @param mixed  $state Estado de `snapshot()` o guardado.
+	 *
+	 * @return array<string, mixed>|null
 	 */
-	private function valid_state( string $kind, $state ): bool {
+	private function normalize_state( string $kind, $state ): ?array {
 		if ( ! is_array( $state ) ) {
-			return false;
+			return null;
 		}
 
 		if ( 'classes' === $kind ) {
@@ -420,53 +467,70 @@ final class DesignSystemWriter {
 			sort( $keys );
 
 			if ( array( 'items', 'order' ) !== $keys ) {
-				return false;
+				return null;
 			}
 
 			if ( ! is_array( $state['items'] ) || ! is_array( $state['order'] ) || ! array_is_list( $state['order'] ) ) {
-				return false;
+				return null;
 			}
 
 			foreach ( $state['items'] as $item ) {
 				if ( ! is_array( $item ) ) {
-					return false;
+					return null;
 				}
 			}
+
+			$order = array();
 
 			foreach ( $state['order'] as $id ) {
-				if ( ! is_string( $id ) || ! array_key_exists( $id, $state['items'] ) ) {
-					return false;
+				if ( ! is_string( $id ) ) {
+					return null;
+				}
+
+				if ( array_key_exists( $id, $state['items'] ) ) {
+					$order[] = $id;
 				}
 			}
 
-			return true;
+			return array(
+				'items' => $state['items'],
+				'order' => $order,
+			);
 		}
 
 		if ( 'variables' === $kind ) {
 			if ( array() === $state ) {
-				return true;
+				return $state;
 			}
 
-			if ( ! isset( $state['data'] ) || ! is_array( $state['data'] ) || ! isset( $state['watermark'] ) || ! is_int( $state['watermark'] ) ) {
-				return false;
+			if ( ! isset( $state['data'] ) || ! is_array( $state['data'] ) ) {
+				return null;
+			}
+
+			if ( ! array_key_exists( 'watermark', $state ) || null === $state['watermark'] ) {
+				$state['watermark'] = 0;
+			}
+
+			if ( ! is_int( $state['watermark'] ) ) {
+				return null;
 			}
 
 			foreach ( $state['data'] as $entry ) {
 				if ( ! is_array( $entry ) ) {
-					return false;
+					return null;
 				}
 			}
 
-			return true;
+			return $state;
 		}
 
 		foreach ( $state as $key => $list ) {
 			if ( ! in_array( $key, self::KIT_LISTS, true ) || ! is_array( $list ) ) {
-				return false;
+				return null;
 			}
 		}
 
-		return true;
+		return $state;
 	}
 
 	/**

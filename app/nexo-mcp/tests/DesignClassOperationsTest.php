@@ -331,7 +331,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$this->assertRejected(
 			$result,
-			'nexo_mcp_design_label_invalid',
+			'nexo_mcp_design_invalid',
 			'label: debe empezar con una letra, usar sólo letras, números, guiones y guiones bajos, y tener como máximo 50 caracteres.',
 			array( 'path' => 'label' ),
 			$previous
@@ -399,9 +399,9 @@ final class DesignClassOperationsTest extends NexoTestCase {
 	 */
 	public static function parametros_invalidos(): array {
 		return array(
-			'sin variants'      => array( array( 'label' => 'x' ), 'nexo_mcp_design_params_invalid', 'variants: indicá la lista de variantes (puede ir vacía).', 'variants' ),
-			'variants objeto'   => array( array( 'label' => 'x', 'variants' => array( 'a' => 1 ) ), 'nexo_mcp_design_params_invalid', 'variants: debe ser una lista de variantes.', 'variants' ),
-			'clave desconocida' => array( array( 'label' => 'x', 'variants' => array(), 'color' => 'rojo' ), 'nexo_mcp_design_params_invalid', 'color: parámetro desconocido. Admitidos: label, variants.', 'color' ),
+			'sin variants'      => array( array( 'label' => 'x' ), 'nexo_mcp_design_invalid', 'variants: indicá la lista de variantes (puede ir vacía).', 'variants' ),
+			'variants objeto'   => array( array( 'label' => 'x', 'variants' => array( 'a' => 1 ) ), 'nexo_mcp_design_invalid', 'variants: debe ser una lista de variantes.', 'variants' ),
+			'clave desconocida' => array( array( 'label' => 'x', 'variants' => array(), 'color' => 'rojo' ), 'nexo_mcp_design_invalid', 'color: parámetro desconocido. Admitidos: label, variants.', 'color' ),
 		);
 	}
 
@@ -434,43 +434,43 @@ final class DesignClassOperationsTest extends NexoTestCase {
 		return array(
 			'breakpoint desconocido' => array(
 				$con( array( 'meta' => array( 'breakpoint' => 'gigante' ) ) ),
-				'nexo_mcp_elementor_style_invalid',
+				'nexo_mcp_design_invalid',
 				'variants[0].meta.breakpoint',
 				'no es un breakpoint válido de Elementor 4.4.1. Admitidos: desktop, widescreen, laptop, tablet_extra, tablet, mobile_extra, mobile.',
 			),
 			'estado desconocido'     => array(
 				$con( array( 'meta' => array( 'state' => 'volando' ) ) ),
-				'nexo_mcp_elementor_style_invalid',
+				'nexo_mcp_design_invalid',
 				'variants[0].meta.state',
 				'no es un estado válido de Elementor 4.4.1. Admitidos: hover, active, focus, focus-visible, checked, e--selected, e--disabled, e--playing, e--paused, null.',
 			),
 			'propiedad desconocida'  => array(
 				$con( array( 'props' => array( 'magia' => array( '$$type' => 'string', 'value' => 'x' ) ) ) ),
-				'nexo_mcp_elementor_style_prop_unknown',
+				'nexo_mcp_design_invalid',
 				'variants[0].props.magia',
 				'la propiedad de estilo «magia» no existe en el esquema de estilos de Elementor.',
 			),
 			'css con url()'          => array(
 				$con( array( 'props' => array( 'color' => array( 'value' => 'url(http://x)' ) ) ) ),
-				'nexo_mcp_elementor_style_value_denied',
+				'nexo_mcp_design_invalid',
 				'variants[0].props.color.value',
 				'el valor contiene caracteres o funciones que no se admiten en un valor de estilo (; { } < > \\ @, saltos de línea, /*, url(), image-set(), var(), !important…).',
 			),
 			'css personalizado'      => array(
 				$con( array( 'custom_css' => array( 'raw' => 'YQ==' ) ) ),
-				'nexo_mcp_elementor_style_css_denied',
+				'nexo_mcp_design_invalid',
 				'variants[0].custom_css',
 				'el CSS personalizado no se admite.',
 			),
 			'clave de variante'      => array(
 				$con( array( 'extra' => 1 ) ),
-				'nexo_mcp_elementor_style_invalid',
+				'nexo_mcp_design_invalid',
 				'variants[0].extra',
 				'la clave «extra» no se admite en una variante. Admitidas: meta, props, custom_css.',
 			),
 			'rechazo de Elementor'   => array(
 				$con( array( 'props' => array( 'gap' => array( '$$type' => 'size', 'value' => 'malo' ) ) ) ),
-				'nexo_mcp_elementor_style_rejected',
+				'nexo_mcp_design_invalid',
 				'variants[0].props.gap',
 				'Elementor rechazó el valor (invalid_value).',
 			),
@@ -593,7 +593,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$result = $this->ops()->update( array( 'id' => 'g-hero', 'label' => '9x' ) );
 
-		$this->assertRejected( $result, 'nexo_mcp_design_label_invalid', null, array( 'path' => 'label' ), $previous );
+		$this->assertRejected( $result, 'nexo_mcp_design_invalid', null, array( 'path' => 'label' ), $previous );
 	}
 
 	public function test_modificar_una_clase_que_no_existe_responde_no_encontrada(): void {
@@ -615,7 +615,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$this->assertRejected(
 			$this->ops()->update( array( 'label' => 'x' ) ),
-			'nexo_mcp_design_params_invalid',
+			'nexo_mcp_design_invalid',
 			'id: indicá el id de la clase (g-…).',
 			array( 'path' => 'id' ),
 			$previous
@@ -623,7 +623,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$this->assertRejected(
 			$this->ops()->update( array( 'id' => 'g-hero' ) ),
-			'nexo_mcp_design_params_invalid',
+			'nexo_mcp_design_invalid',
 			'indicá label, variants o ambos: no hay nada que modificar.',
 			array( 'path' => 'label' ),
 			$previous
@@ -638,7 +638,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 		$result = $this->ops()->update( array( 'id' => 'g-hero', 'variants' => array( $bad ) ) );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'nexo_mcp_elementor_style_value_denied', $result->get_error_code() );
+		$this->assertSame( 'nexo_mcp_design_invalid', $result->get_error_code() );
 		$this->assertStringStartsWith( 'variants[0].props.color.value: ', $result->get_error_message() );
 		$this->assertSame( array( 'path' => 'variants[0].props.color.value' ), $result->get_error_data() );
 		$this->assertSame( array(), $this->world->writes );
@@ -729,7 +729,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$this->assertRejected(
 			$this->ops()->delete( array( 'id' => 'g-hero', 'force' => 'si' ) ),
-			'nexo_mcp_design_params_invalid',
+			'nexo_mcp_design_invalid',
 			'force: debe ser verdadero o falso.',
 			array( 'path' => 'force' ),
 			$previous
@@ -737,7 +737,7 @@ final class DesignClassOperationsTest extends NexoTestCase {
 
 		$this->assertRejected(
 			$this->ops()->delete( array() ),
-			'nexo_mcp_design_params_invalid',
+			'nexo_mcp_design_invalid',
 			'id: indicá el id de la clase (g-…).',
 			array( 'path' => 'id' ),
 			$previous
