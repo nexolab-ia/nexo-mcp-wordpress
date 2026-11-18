@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,15 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.3.0 =
+* Nuevo: escritura del sistema de diseño de Elementor 4 en vivo, con permiso propio. Siete herramientas: `create-global-class`, `update-global-class` y `delete-global-class` (clases globales con variantes por breakpoint y estado), `create-design-variable`, `update-design-variable` y `delete-design-variable` (variables de color, fuente, tamaño y tamaño personalizado) y `update-kit-globals` (colores y tipografía del Kit, system y custom). Cambian todo el sitio al instante: se validan antes de escribir (la misma validación de estilos que `create-elementor-page`), corren bajo el bloqueo del Kit, guardan un respaldo y quedan en Actividad.
+* Nuevo: interruptor «Sistema de diseño de Elementor» (apagado por defecto), capacidad `nexo_mcp_design_system` (administrador, también al actualizar) y scope OAuth `mcp:design_system`. Las escrituras respetan «Solo revisar».
+* Nuevo: borrar una clase o variable exige además el permiso destructivo y la confirmación `DELETE`; si está en uso se rechaza con la lista de dónde (`nexo_mcp_design_in_use`) salvo `force: true`. `update-kit-globals` pide ambas sólo si borra.
+* Nuevo: `undo-design-system-change` deshace el último cambio con los mismos ids (un nivel); ahora se marca destructiva y exige la confirmación `UNDO`, y si el Kit activo cambió desde el cambio responde `nexo_mcp_design_kit_changed` sin restaurar nada.
+* Fix: el respaldo se comprueba antes de escribir (si el estado real no se puede restaurar no se escribe) y tolera lo que Elementor guarda de verdad (ids de orden sin clase, registro de variables sin marca de agua); restaurar clases verifica orden y contenido.
+* Seguridad: la etiqueta de una variable es un identificador CSS seguro (letras, números, guiones y guiones bajos), porque Elementor la escribe como `--etiqueta` en el CSS del Kit; la familia de fuente y el tamaño `custom` de la tipografía del Kit pasan la misma regla de valores CSS que las clases.
+* Cambio: un valor de estilo CSS inválido en una variable de tamaño personalizado se rechaza con la misma regla que las clases y las páginas atómicas. Todos los errores de validación del sistema de diseño usan el código `nexo_mcp_design_invalid` con `data.path`.
 
 = 1.2.1 =
 * Fix: dos ediciones simultáneas sobre una página publicada ya no crean dos copias de trabajo ni pierden una edición. Las escrituras que leen y reescriben un contenido (copia de trabajo, `update-page`/`update-post`, `edit-elementor-section`, herramientas de constructor, publicar y descartar una copia) corren bajo un bloqueo por original con vencimiento, releen el contenido dentro del bloqueo y comprueban que el bloqueo sigue siendo suyo antes de escribir. Si está ocupado responden «Otra edición de este contenido está en curso» sin escribir; las tomas de bloqueos vencidos quedan en Actividad.

@@ -182,8 +182,52 @@ Reglas que siempre se cumplen:
   `nexo_mcp_design_backup_failed` y no se escribe nada (un solo nivel: sin cambio que deshacer responde
   `nexo_mcp_design_no_backup` y no cambia nada). Clases y variables exigen el
   Editor V4; los colores y la tipografía del Kit sólo requieren Elementor.
-- **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
-  y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
+  El respaldo guarda el id del Kit: si el Kit activo cambió, deshacer responde
+  `nexo_mcp_design_kit_changed` y no restaura nada. Antes de escribir, el estado
+  real que se va a respaldar tiene que poder restaurarse (si no, no se escribe:
+  `nexo_mcp_design_backup_failed`); Elementor deja a veces ids en el orden de las
+  clases sin su item o un registro de variables sin `watermark`, y eso se
+  normaliza (se descartan esos ids; `watermark` pasa a 0).
+  `undo-design-system-change` se marca destructiva y pide
+  `"confirmation": "UNDO"` (en el servidor, como las demás acciones irreversibles).
+  Siete herramientas escriben en vivo, todas con el permiso del sistema de diseño
+  y descritas para que la IA llame antes a `get-design-system`:
+  - `create-global-class`, `update-global-class`, `delete-global-class`: clases
+    globales con variantes por breakpoint y estado, con la misma validación de
+    valores de estilo que `create-elementor-page` (F2/F3) y el analizador de
+    Elementor. El `label` (`/^[a-z][a-z-_0-9]*$/i`, hasta 50 caracteres) es único
+    sin distinguir mayúsculas: uno repetido se rechaza con
+    `nexo_mcp_design_label_taken` (no se renombra solo); máximo 1000 clases
+    (`nexo_mcp_design_limit_reached`). `update-global-class` reemplaza las
+    variantes si se mandan.
+  - `create-design-variable`, `update-design-variable`, `delete-design-variable`:
+    variables de color, fuente, tamaño y tamaño personalizado, cada valor validado
+    según su tipo (el tamaño personalizado aplica las mismas restricciones de
+    hojas CSS que las clases). Label de letras sin tildes, números, `-` y `_` (Elementor lo escribe como nombre de propiedad CSS `--label` en el CSS del Kit, así que no admite espacios ni otros símbolos ni empezar con `--`), hasta 50 caracteres, único
+    entre las no borradas; hasta 1000 activas. El tipo sólo se cambia entre los
+    dos de tamaño. Borrar es el borrado lógico de Elementor.
+  - `update-kit-globals`: modifica, crea y borra colores y tipografías globales
+    del Kit activo (`system` y `custom`); con `id` modifica, sin `id` crea uno
+    `custom`; los `system` no se borran (`nexo_mcp_design_system_item`). Sólo
+    admite las claves `typography_*` del control de tipografía de Elementor; la familia de fuente y el tamaño `custom` (que llegan tal cual al CSS) pasan la misma regla de valores CSS que las clases.
+  - Los errores de validación tienen todos el código `nexo_mcp_design_invalid`,
+    con la ruta en `data.path` y el mensaje `ruta: motivo`; no se escribe nada.
+    Los demás códigos son específicos (`nexo_mcp_design_label_taken`,
+    `nexo_mcp_design_limit_reached`, `nexo_mcp_design_not_found`,
+    `nexo_mcp_design_in_use`, `nexo_mcp_design_system_item`,
+    `nexo_mcp_design_nothing_to_change`, `nexo_mcp_design_backup_failed`).
+  - Borrar exige además el permiso destructivo («Acciones destructivas» y la
+    capacidad `nexo_mcp_destructive`) y `"confirmation": "DELETE"`. Si la clase o
+    variable está en uso se rechaza con `nexo_mcp_design_in_use` y
+    `data.used_in: [{id, title}]`; con `force: true` se borra igual y la respuesta
+    trae `{deleted, pages_affected: [{id, title}]}`. Forzar una clase deja que
+    Elementor la quite de esas páginas: deshacer la devuelve a la lista pero no
+    vuelve a ponerla en ellas (lo avisa en `warnings`). `update-kit-globals` pide
+    el permiso destructivo y `DELETE` sólo si `delete` trae ids.
+- **Acciones irreversibles**: `delete-product`, `delete-global-class`,
+  `delete-design-variable` y `update-kit-globals` (si `delete` trae ids) exigen
+  `"confirmation": "DELETE"`; `restore-revision` exige `"confirmation": "RESTORE"`
+  y `undo-design-system-change` exige `"confirmation": "UNDO"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).
 - **Constructores visuales** (Gutenberg, Elementor, Flatsome, Divi,
   WPBakery, shortcodes): se respalda antes de cada edición y un intento
