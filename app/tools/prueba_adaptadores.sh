@@ -18,7 +18,11 @@
 #    una atómica publicadas: cada edición cae en una copia de trabajo (el original
 #    no cambia), se revisa con get-working-copy-diff, se renderiza y se publica
 #    (fusión); y cada rechazo no crea copia ni cambia el original.
-# 8. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
+# 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
+#    sobre la misma página publicada, con update-page y con edit-elementor-section, y
+#    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
+#    respondió «ocupado», y que ninguna edición con éxito se perdió.
+# 9. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
 #    imagen de prueba se quitan) y restaura los ajustes y el estado del experimento.
 #
 # Uso (desde app/):  tools/prueba_adaptadores.sh
@@ -69,6 +73,20 @@ if [ "${1:-}" = "--render" ]; then
 	wp eval 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$2"', true );' --user=admin
 	exit 0
 fi
+
+# Subcomandos para el bloque de concurrencia.
+#   --copias <id>       IDs de las copias de trabajo enlazadas al original (en cualquier estado)
+#   --bloqueos          opciones nexo_mcp_lock_* que quedan en la base (debe ser ninguna)
+#   --poner-bloqueo <id> <valor> / --quitar-bloqueo <id>   fija o quita la cerradura de un original
+#   --campo <id> <f>    campo de la entrada (post_content, post_title, post_excerpt…)
+if [ "${1:-}" = "--copias" ]; then
+	wpr post list --post_type=page --post_status=any --meta_key=_nexo_mcp_draft_of --meta_value="$2" --field=ID | tr '\n' ' '
+	exit 0
+fi
+if [ "${1:-}" = "--bloqueos" ]; then wp option list --search='nexo_mcp_lock_*' --field=option_name; exit 0; fi
+if [ "${1:-}" = "--poner-bloqueo" ]; then wp option update "nexo_mcp_lock_$2" "$3" --autoload=no >/dev/null; exit 0; fi
+if [ "${1:-}" = "--quitar-bloqueo" ]; then wp option delete "nexo_mcp_lock_$2" >/dev/null; exit 0; fi
+if [ "${1:-}" = "--campo" ]; then wpr post get "$2" --field="$3"; exit 0; fi
 
 fallas=0
 falla() { echo "FALLA: $*"; fallas=$((fallas + 1)); }
@@ -813,6 +831,250 @@ print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de edit-elementor-s
 sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "la prueba de edit-elementor-section tuvo comprobaciones fallidas"
+
+echo
+echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
+# Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page
+# con campos distintos (ninguna edición puede perderse) y 5 edit-elementor-section que insertan
+# cada una un bloque propio. Cada llamada va en su propio hilo, con una barrera de arranque.
+conc_titulo="Prueba concurrencia elementor-mcp-$suffix"
+conc_cinco_id="$(wp post create --post_type=page --post_status=publish --post_title="$conc_titulo cinco" --post_content="base" --porcelain)"
+conc_campos_id="$(wp post create --post_type=page --post_status=publish --post_title="$conc_titulo campos" --post_content="base" --porcelain)"
+conc_secciones_id="$(wp post create --post_type=page --post_status=publish --post_title="$conc_titulo secciones" --porcelain)"
+conc_borrador_id="$(wp post create --post_type=page --post_status=draft --post_title="$conc_titulo borrador" --post_content="base" --porcelain)"
+conc_publicar_id="$(wp post create --post_type=page --post_status=publish --post_title="$conc_titulo publicar" --post_content="base" --porcelain)"
+conc_bloq_id="$(wp post create --post_type=page --post_status=publish --post_title="$conc_titulo bloqueo" --post_content="base" --porcelain)"
+[ -n "$conc_cinco_id" ] && [ -n "$conc_campos_id" ] && [ -n "$conc_secciones_id" ] && [ -n "$conc_borrador_id" ] && [ -n "$conc_publicar_id" ] && [ -n "$conc_bloq_id" ] || { echo "FALLA: no se pudieron crear las páginas de concurrencia"; exit 1; }
+wp post meta update "$conc_secciones_id" _elementor_edit_mode builder >/dev/null
+wp post meta update "$conc_secciones_id" _elementor_version "$version_elementor" >/dev/null
+wp post meta update "$conc_secciones_id" _elementor_data "$v3_tree" >/dev/null
+echo "Páginas publicadas: cinco $conc_cinco_id, campos $conc_campos_id, secciones $conc_secciones_id"
+
+python3 -I - "$suffix" "$conc_cinco_id" "$conc_campos_id" "$conc_secciones_id" "$conc_borrador_id" "$conc_publicar_id" "$conc_bloq_id" <<'PY'
+import importlib.util, json, pathlib, select, subprocess, sys, threading, time
+
+suffix, cinco_id, campos_id, secciones_id = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+borrador_id, publicar_id, bloq_id = int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+OCUPADO = "Otra edición de este contenido está en curso."
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def llamar(corto, argumentos):
+    """Una llamada MCP sin imprimir (corre en un hilo): (es_error, texto)."""
+    _, out = cli.rpc("tools/call", {"name": cli.tool(corto), "arguments": argumentos})
+    res = out.get("result", out.get("error"))
+    texto = "".join(c.get("text", "") for c in res["content"]) if "content" in res else json.dumps(res, ensure_ascii=False)
+    return bool(res.get("isError")) or "content" not in res, texto
+
+def en_paralelo(corto, lista):
+    """Dispara todas las llamadas a la vez; devuelve [(args, es_error, texto)] en el mismo orden."""
+    barrera = threading.Barrier(len(lista))
+    salida = [None] * len(lista)
+    def hilo(i, args):
+        barrera.wait()
+        try:
+            salida[i] = (args, *llamar(corto, args))
+        except Exception as err:  # noqa: BLE001
+            salida[i] = (args, True, f"excepción del cliente: {err}")
+    hilos = [threading.Thread(target=hilo, args=(i, a)) for i, a in enumerate(lista)]
+    for h in hilos: h.start()
+    for h in hilos: h.join()
+    for args, error, texto in salida:
+        print(f"  {corto} {json.dumps({k: v for k, v in args.items() if k != 'elements'}, ensure_ascii=False)[:120]} -> {'ERROR ' if error else ''}{texto[:110]}")
+    return salida
+
+def clasificar(salida):
+    """Cada llamada: éxito (dict con id) o «ocupado»; cualquier otra cosa es falla."""
+    ok, ocupadas = [], 0
+    for args, error, texto in salida:
+        if not error:
+            ok.append((args, json.loads(texto)))
+        else:
+            assert OCUPADO in texto, f"error que no es «ocupado»: {texto[:300]}"
+            ocupadas += 1
+    return ok, ocupadas
+
+def una_copia(original, ok):
+    copias = script("--copias", original).split()
+    assert len(copias) == 1, f"debía existir una sola copia y hay {len(copias)}: {copias}"
+    for args, d in ok:
+        assert str(d["id"]) == copias[0] and d["draft_of"] == original, f"una llamada exitosa cayó en otra copia: {d} (copia {copias[0]})"
+    assert script("--estado", original) == "publish"
+    return copias[0]
+
+def sin_bloqueos():
+    assert script("--bloqueos") == "", "quedaron bloqueos en la base"
+
+cinco = {}
+def cinco_update():
+    salida = en_paralelo("update-page", [{"id": cinco_id, "title": f"Titulo concurrente {i} {suffix}", "content": f"<p>Contenido concurrente {i} {suffix}</p>"} for i in range(5)])
+    ok, ocupadas = clasificar(salida)
+    print(f"  éxitos: {len(ok)}, ocupado: {ocupadas}")
+    assert ok, "ninguna llamada tuvo éxito"
+    copia = una_copia(cinco_id, ok)
+    # La copia conserva una edición completa que tuvo éxito (el último que escribió), nunca una mezcla.
+    titulo, contenido = script("--campo", copia, "post_title"), script("--campo", copia, "post_content")
+    assert any(a["title"] == titulo and a["content"] == contenido for a, _ in ok), (titulo, contenido)
+    assert script("--campo", cinco_id, "post_content") == "base", "el original cambió"
+    cinco["copia"] = copia
+comprobar("update-page x5: una sola copia, todas en ella o «ocupado», estado final de una edición", cinco_update)
+comprobar("update-page x5: sin bloqueos pendientes", sin_bloqueos)
+
+def campos_update():
+    pedidos = [
+        {"id": campos_id, "title": f"Titulo campos {suffix}"},
+        {"id": campos_id, "content": f"<p>Contenido campos {suffix}</p>"},
+        {"id": campos_id, "excerpt": f"Extracto campos {suffix}"},
+    ]
+    ok, ocupadas = clasificar(en_paralelo("update-page", pedidos))
+    print(f"  éxitos: {len(ok)}, ocupado: {ocupadas}")
+    assert ok, "ninguna llamada tuvo éxito"
+    copia = una_copia(campos_id, ok)
+    campo = {"title": "post_title", "content": "post_content", "excerpt": "post_excerpt"}
+    for args, _ in ok:
+        clave = next(k for k in campo if k in args)
+        assert script("--campo", copia, campo[clave]) == args[clave], f"se perdió la edición de «{clave}» que devolvió éxito"
+comprobar("update-page x3 en campos distintos: ninguna edición con éxito se pierde", campos_update)
+comprobar("update-page x3: sin bloqueos pendientes", sin_bloqueos)
+
+def secciones_edit():
+    def caja(texto):
+        return {"type": "e-flexbox", "elements": [{"type": "e-heading", "settings": {
+            "title": {"$$type": "escaped-html", "value": texto}, "tag": {"$$type": "string", "value": "h2"}}}]}
+    pedidos = [{"id": secciones_id, "operation": "insert", "node_id": "sec3001", "position": "after", "elements": [caja(f"Bloque concurrente {i} {suffix}")]} for i in range(5)]
+    ok, ocupadas = clasificar(en_paralelo("edit-elementor-section", pedidos))
+    print(f"  éxitos: {len(ok)}, ocupado: {ocupadas}")
+    assert ok, "ninguna llamada tuvo éxito"
+    copia = una_copia(secciones_id, ok)
+    datos = script("--meta", copia, "_elementor_data")
+    for args, d in ok:
+        texto = args["elements"][0]["elements"][0]["settings"]["title"]["value"]
+        assert texto in datos, f"se perdió el bloque con éxito «{texto}»"
+        for nodo in d["node_ids"]:
+            assert nodo in datos, f"falta el nodo {nodo} que devolvió éxito"
+    assert "sec3000" in datos and "sec3001" in datos, "faltan secciones originales"
+    assert "Bloque concurrente" not in script("--meta", secciones_id, "_elementor_data"), "el original cambió"
+comprobar("edit-elementor-section x5: una sola copia, ningún bloque con éxito se pierde", secciones_edit)
+comprobar("edit-elementor-section x5: sin bloqueos pendientes", sin_bloqueos)
+
+CAMPO = {"title": "post_title", "content": "post_content", "excerpt": "post_excerpt"}
+
+def tres_campos(destino, etiqueta):
+    """3 update-page a la vez, cada una con un campo distinto: ninguno con éxito puede perderse."""
+    pedidos = [
+        {"id": destino, "title": f"Titulo {etiqueta} {suffix}"},
+        {"id": destino, "content": f"<p>Contenido {etiqueta} {suffix}</p>"},
+        {"id": destino, "excerpt": f"Extracto {etiqueta} {suffix}"},
+    ]
+    ok, ocupadas = clasificar(en_paralelo("update-page", pedidos))
+    print(f"  éxitos: {len(ok)}, ocupado: {ocupadas}")
+    assert ok, "ninguna llamada tuvo éxito"
+    return ok
+
+def borrador_tres_campos():
+    ok = tres_campos(borrador_id, "borrador")
+    assert script("--copias", borrador_id) == "", "un borrador no debe tener copia"
+    assert script("--estado", borrador_id) == "draft"
+    for args, d in ok:
+        clave = next(k for k in CAMPO if k in args)
+        assert script("--campo", borrador_id, CAMPO[clave]) == args[clave], f"se perdió «{clave}» (devolvió éxito)"
+comprobar("S2-a update-page x3 (título/contenido/extracto) sobre un borrador: ningún campo con éxito se pierde", borrador_tres_campos)
+
+def copia_por_su_id():
+    copia = script("--copias", campos_id).split()[0]
+    pedidos = [
+        {"id": int(copia), "title": f"Titulo por copia {suffix}"},
+        {"id": int(copia), "content": f"<p>Contenido por copia {suffix}</p>"},
+        {"id": int(copia), "excerpt": f"Extracto por copia {suffix}"},
+    ]
+    ok, ocupadas = clasificar(en_paralelo("update-page", pedidos))
+    print(f"  éxitos: {len(ok)}, ocupado: {ocupadas}")
+    assert ok, "ninguna llamada tuvo éxito"
+    assert script("--copias", campos_id).split() == [copia], "cambió la cantidad de copias"
+    for args, _ in ok:
+        clave = next(k for k in CAMPO if k in args)
+        assert script("--campo", copia, CAMPO[clave]) == args[clave], f"se perdió «{clave}» en la copia (devolvió éxito)"
+comprobar("S2-a update-page x3 por el ID de una copia existente: ningún campo con éxito se pierde", copia_por_su_id)
+comprobar("S2-a: sin bloqueos pendientes", sin_bloqueos)
+
+def publicar_con_copia_cambiada():
+    esp, d = llamar("update-page", {"id": publicar_id, "content": "<p>v1</p>"})
+    assert not esp, d
+    copia = json.loads(d)["id"]
+    php = (r'\NexoDev\NexoMCP\Support\PostLock::run( %d, function () { echo "LOCKED\n"; sleep( 3 );'
+           r' wp_update_post( array( "ID" => %d, "post_content" => "<p>v2</p>" ) ); } );') % (publicar_id, copia)
+    proc = subprocess.Popen(["docker", "compose", "run", "--rm", "-T", "--entrypoint", "wp", "setup", "eval", php],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        listo, _, _ = select.select([proc.stdout], [], [], 90)
+        assert listo and "LOCKED" in proc.stdout.readline(), "el proceso de fondo no obtuvo el bloqueo"
+        # La copia ya estaba cargada para quien publica; el cambio v2 llega mientras espera el bloqueo.
+        inicio = time.time()
+        error, texto = llamar("set-content-status", {"id": copia, "status": "publish"})
+        print(f"  espera: {time.time() - inicio:.1f} s")
+        assert not error, f"publicar debía tener éxito: {texto[:300]}"
+    finally:
+        proc.wait(timeout=60)
+    contenido = script("--campo", publicar_id, "post_content")
+    assert "v2" in contenido and "v1" not in contenido, f"el original quedó con {contenido!r}, no con lo último de la copia"
+    assert script("--estado", copia) == "", "la copia debía haberse fusionado y borrado"
+comprobar("S2-b publicar mientras otro proceso cambia la copia: el original queda con lo último (v2)", publicar_con_copia_cambiada)
+comprobar("S2-b: sin bloqueos pendientes", sin_bloqueos)
+
+def bloqueos_ajenos():
+    ahora = int(time.time())
+    try:
+        # Vigente: ocupado, no se escribe nada y no se crea copia.
+        script("--poner-bloqueo", bloq_id, f"otro|{ahora + 120}")
+        inicio = time.time()
+        error, texto = llamar("update-page", {"id": bloq_id, "content": "<p>no debe escribirse</p>"})
+        espera = time.time() - inicio
+        assert error and OCUPADO in texto, f"debía responder «ocupado»: {texto[:300]}"
+        assert 3 <= espera <= 20, f"la espera fue de {espera:.1f} s (se esperaba ~5)"
+        assert script("--copias", bloq_id) == "", "se creó una copia pese al bloqueo"
+        assert script("--campo", bloq_id, "post_content") == "base"
+        assert script("--bloqueos") == f"nexo_mcp_lock_{bloq_id}", "el bloqueo ajeno debía seguir ahí"
+        # Vencido: se toma y se libera.
+        script("--poner-bloqueo", bloq_id, f"otro|{ahora - 5}")
+        error, texto = llamar("update-page", {"id": bloq_id, "content": "<p>tras vencido</p>"})
+        assert not error, f"un bloqueo vencido debía tomarse: {texto[:300]}"
+        copia = script("--copias", bloq_id)
+        assert len(copia.split()) == 1 and script("--bloqueos") == "", (copia, script("--bloqueos"))
+        # Mal formado: también se toma, esta vez por el ID de la copia.
+        script("--poner-bloqueo", bloq_id, "basura")
+        error, texto = llamar("update-page", {"id": int(copia), "excerpt": "tras mal formado"})
+        assert not error, f"un bloqueo mal formado debía tomarse: {texto[:300]}"
+        assert script("--campo", int(copia), "post_excerpt") == "tras mal formado" and script("--bloqueos") == ""
+        # Vigente, por el ID de la copia: compite por el mismo bloqueo (clave = original).
+        script("--poner-bloqueo", bloq_id, f"otro|{ahora + 120}")
+        error, texto = llamar("update-page", {"id": int(copia), "excerpt": "no debe escribirse"})
+        assert error and OCUPADO in texto, f"por la copia debía responder «ocupado»: {texto[:300]}"
+        assert script("--campo", int(copia), "post_excerpt") == "tras mal formado"
+    finally:
+        script("--quitar-bloqueo", bloq_id)
+comprobar("S2-c bloqueo vigente (ocupado, nada escrito), vencido y mal formado (se toman), también por el ID de la copia", bloqueos_ajenos)
+comprobar("S2-c: sin bloqueos pendientes", sin_bloqueos)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de concurrencia OK.")
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "la prueba de concurrencia tuvo comprobaciones fallidas"
 
 echo
 echo "### Verificación con wp-cli"

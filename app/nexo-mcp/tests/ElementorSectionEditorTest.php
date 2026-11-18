@@ -553,4 +553,60 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
 		$this->assertCount( 1, $this->data( 107 )[0]['elements'] );
 	}
+
+	public function test_con_el_original_bloqueado_por_otro_proceso_no_se_escribe_ni_se_crea_copia(): void {
+		\NexoDev\NexoMCP\Support\PostLock::$wait = 0.1;
+		\WP_Test_State::$options[ 'nexo_mcp_lock_' . self::ORIGINAL ] = 'otro|' . ( time() + 100 );
+		$before = $this->snapshot();
+
+		$result = $this->exec_edit(
+			array(
+				'id'        => self::ORIGINAL,
+				'operation' => 'replace',
+				'node_id'   => 'sec0001',
+				'elements'  => ElementorSectionFixtures::new_box( 'Reconstruido' ),
+			)
+		);
+
+		\NexoDev\NexoMCP\Support\PostLock::$wait = 5.0;
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_busy', $result->get_error_code() );
+		$this->assertSame( $before, $this->snapshot() );
+		$this->assertSame( 0, $this->find_copy() );
+	}
+
+	public function test_la_edicion_libera_el_bloqueo_al_terminar(): void {
+		$this->exec_edit(
+			array(
+				'id'        => self::ORIGINAL,
+				'operation' => 'replace',
+				'node_id'   => 'sec0001',
+				'elements'  => ElementorSectionFixtures::new_box( 'Reconstruido' ),
+			)
+		);
+
+		$this->assertArrayNotHasKey( 'nexo_mcp_lock_' . self::ORIGINAL, \WP_Test_State::$options );
+	}
+
+	public function test_editar_por_una_copia_descartada_mientras_se_esperaba_no_escribe(): void {
+		$first = $this->exec_edit(
+			array( 'id' => self::ORIGINAL, 'operation' => 'replace', 'node_id' => 'sec0001', 'elements' => ElementorSectionFixtures::new_box( 'Uno' ) )
+		);
+		$this->assertIsArray( $first );
+		$copy_id = (int) $first['id'];
+
+		\WP_Test_State::$cache_posts = true;
+		$stale = get_post( $copy_id ); // El llamador cargó la copia antes de esperar el bloqueo.
+		( new WorkingCopy( $this->cfg ) )->discard( $stale ); // Otro proceso la descartó entretanto.
+		$before = $this->snapshot();
+
+		$result = $this->editor()->edit(
+			$stale,
+			array( 'operation' => 'replace', 'node_id' => 'sec0002', 'elements' => ElementorSectionFixtures::new_box( 'Dos' ) )
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_draft_orphan', $result->get_error_code() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
 }

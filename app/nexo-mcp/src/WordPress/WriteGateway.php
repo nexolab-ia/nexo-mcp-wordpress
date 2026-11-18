@@ -122,6 +122,21 @@ final class WriteGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function update( int $post_id, string $post_type, array $input ) {
+		// Lectura y reescritura bajo el bloqueo del original: dos ediciones a la
+		// vez no crean dos copias ni se pisan. Dentro se descarta la caché y se
+		// vuelve a leer todo: `update_locked()` no recibe ningún objeto leído antes.
+		return WorkingCopy::with_lock( $post_id, fn() => $this->update_locked( $post_id, $post_type, $input ) );
+	}
+
+	/**
+	 * Actualiza ya con el bloqueo del original en mano.
+	 *
+	 * @param int                  $post_id   ID solicitado.
+	 * @param string               $post_type page o post.
+	 * @param array<string, mixed> $input     Datos validados por el esquema.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update_locked( int $post_id, string $post_type, array $input ) {
 		$post = get_post( $post_id );
 
 		if ( ! $post instanceof \WP_Post || $post_type !== $post->post_type ) {

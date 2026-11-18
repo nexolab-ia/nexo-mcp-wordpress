@@ -12,6 +12,7 @@ namespace NexoDev\NexoMCP\WordPress;
 use NexoDev\NexoMCP\Builders\BuilderBackup;
 use NexoDev\NexoMCP\Builders\BuilderRegistry;
 use NexoDev\NexoMCP\Cache\CachePurger;
+use NexoDev\NexoMCP\Support\PostLock;
 use NexoDev\NexoMCP\Support\Settings;
 
 /**
@@ -168,27 +169,98 @@ final class WorkingCopy {
 	}
 
 	/**
+	 * Corre una escritura bajo el bloqueo del original y con el estado releído.
+	 *
+	 * Todo lo leído antes de esperar el bloqueo puede estar viejo, así que dentro se
+	 * descarta la caché del contenido, de su original y de su copia y se vuelve a
+	 * resolver la clave: si mientras tanto la copia se descartó o se publicó, el
+	 * original cambia y se reintenta con el bueno. `$work` debe releer con
+	 * `get_post()` cada contenido que use. Con `$refuse_discarded` se rechaza un
+	 * ID que ya es una copia a la papelera (escribir ahí se perdería sin avisar).
+	 *
+	 * @param int      $post_id          Contenido indicado (original o copia).
+	 * @param callable $work             Escritura: fn(): mixed.
+	 * @param bool     $refuse_discarded Rechazar copias ya descartadas.
+	 *
+	 * @return mixed|\WP_Error Lo que devuelve `$work`, `nexo_mcp_busy` o `nexo_mcp_draft_orphan`.
+	 */
+	public static function with_lock( int $post_id, callable $work, bool $refuse_discarded = true ) {
+		$retry = new \stdClass();
+
+		for ( $attempt = 0; $attempt < 3; ++$attempt ) {
+			$key = self::original_id_for( $post_id );
+
+			$result = PostLock::run(
+				$key,
+				static function () use ( $post_id, $key, $work, $refuse_discarded, $retry ) {
+					PostLock::forget( $post_id, $key );
+
+					if ( self::original_id_for( $post_id ) !== $key ) {
+						return $retry;
+					}
+
+					$original = get_post( $key );
+
+					if ( $original instanceof \WP_Post ) {
+						PostLock::forget( absint( get_post_meta( $original->ID, self::META_DRAFT, true ) ) );
+					}
+
+					$post = get_post( $post_id );
+
+					if ( $refuse_discarded && $post instanceof \WP_Post && 'trash' === $post->post_status && absint( get_post_meta( $post->ID, self::META_DRAFT_OF, true ) ) > 0 ) {
+						return new \WP_Error(
+							'nexo_mcp_draft_orphan',
+							__( 'Esta copia de trabajo ya fue descartada o publicada. No se escribió nada.', 'nexo-mcp' )
+						);
+					}
+
+					return $work();
+				}
+			);
+
+			if ( $retry !== $result ) {
+				return $result;
+			}
+		}
+
+		return new \WP_Error( 'nexo_mcp_busy', __( 'Otra edición de este contenido está en curso. Reintentá en unos segundos.', 'nexo-mcp' ) );
+	}
+
+	/**
 	 * Entrega la copia de un original, creándola si todavía no existe.
+	 *
+	 * Bajo el bloqueo del original ({@see PostLock}): dos primeras ediciones
+	 * simultáneas no crean dos copias. El enlace a la copia se vuelve a leer ya
+	 * dentro del bloqueo (otro proceso pudo crearla mientras se esperaba) y, si
+	 * el bloqueo no se obtiene, no se crea nada y se devuelve `nexo_mcp_busy`.
 	 *
 	 * @param \WP_Post $original Contenido publicado.
 	 * @return \WP_Post|\WP_Error
 	 */
 	public function obtain( \WP_Post $original ) {
-		$copy_id = self::copy_of( $original );
+		return PostLock::run(
+			(int) $original->ID,
+			function () use ( $original ) {
+				// Se relee dentro del bloqueo: el objeto recibido puede ser viejo.
+				$fresh    = get_post( $original->ID );
+				$original = $fresh instanceof \WP_Post ? $fresh : $original;
+				$copy_id  = self::copy_of( $original );
 
-		if ( 0 === $copy_id ) {
-			$copy_id = $this->create( $original );
-		}
+				if ( 0 === $copy_id ) {
+					$copy_id = $this->create( $original );
+				}
 
-		if ( is_wp_error( $copy_id ) ) {
-			return $copy_id;
-		}
+				if ( is_wp_error( $copy_id ) ) {
+					return $copy_id;
+				}
 
-		$copy = get_post( $copy_id );
+				$copy = get_post( $copy_id );
 
-		return $copy instanceof \WP_Post
-			? $copy
-			: new \WP_Error( 'nexo_mcp_draft_missing', __( 'No se pudo leer la copia de trabajo.', 'nexo-mcp' ) );
+				return $copy instanceof \WP_Post
+					? $copy
+					: new \WP_Error( 'nexo_mcp_draft_missing', __( 'No se pudo leer la copia de trabajo.', 'nexo-mcp' ) );
+			}
+		);
 	}
 
 	/**
@@ -198,13 +270,41 @@ final class WorkingCopy {
 	 * @return array<string, int>|\WP_Error
 	 */
 	public function merge( \WP_Post $copy ) {
+		return self::with_lock(
+			(int) $copy->ID,
+			function () use ( $copy ) {
+				// La copia que recibió quien llamó se leyó antes de esperar: se vuelve a
+				// leer, y si ya no existe o dejó de ser borrador de su original, la
+				// comprobación de huérfana de `merge_locked()` lo rechaza.
+				$fresh = get_post( $copy->ID );
+
+				return $fresh instanceof \WP_Post ? $this->merge_locked( $fresh ) : $this->orphan();
+			},
+			false
+		);
+	}
+
+	/**
+	 * Error de copia huérfana.
+	 */
+	private function orphan(): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_draft_orphan',
+			__( 'La página original ya no existe, está en la papelera o tiene otra copia. Descarta esta copia.', 'nexo-mcp' )
+		);
+	}
+
+	/**
+	 * Fusiona ya con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post $copy Copia de trabajo, releída dentro del bloqueo.
+	 * @return array<string, int>|\WP_Error
+	 */
+	private function merge_locked( \WP_Post $copy ) {
 		$original = $this->live_original( $copy );
 
 		if ( null === $original ) {
-			return new \WP_Error(
-				'nexo_mcp_draft_orphan',
-				__( 'La página original ya no existe, está en la papelera o tiene otra copia. Descarta esta copia.', 'nexo-mcp' )
-			);
+			return $this->orphan();
 		}
 
 		// No se pisa nada: si el original cambió después de copiarlo, la copia
@@ -395,12 +495,30 @@ final class WorkingCopy {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function discard( \WP_Post $copy ) {
-		$original_id = self::original_of( $copy );
+		return self::with_lock(
+			(int) $copy->ID,
+			function () use ( $copy ) {
+				$fresh       = get_post( $copy->ID );
+				$original_id = $fresh instanceof \WP_Post ? self::original_of( $fresh ) : 0;
 
-		if ( 0 === $original_id ) {
-			return new \WP_Error( 'nexo_mcp_draft_not_copy', __( 'Este contenido no es una copia de trabajo.', 'nexo-mcp' ) );
-		}
+				if ( ! $fresh instanceof \WP_Post || 0 === $original_id ) {
+					return new \WP_Error( 'nexo_mcp_draft_not_copy', __( 'Este contenido no es una copia de trabajo.', 'nexo-mcp' ) );
+				}
 
+				return $this->discard_locked( $fresh, $original_id );
+			},
+			false
+		);
+	}
+
+	/**
+	 * Descarta ya con el bloqueo del original en mano.
+	 *
+	 * @param \WP_Post $copy        Copia de trabajo.
+	 * @param int      $original_id Su original.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function discard_locked( \WP_Post $copy, int $original_id ) {
 		if ( ! wp_trash_post( $copy->ID ) ) {
 			return new \WP_Error( 'nexo_mcp_draft_trash_failed', __( 'WordPress no pudo enviar la copia a la papelera.', 'nexo-mcp' ) );
 		}
