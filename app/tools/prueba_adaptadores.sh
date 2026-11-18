@@ -1085,7 +1085,7 @@ echo "### Herramientas de constructor viejas: página publicada → copia de tra
 # El título lleva el sufijo: la limpieza barre las páginas y sus copias.
 viejas_tree="$(printf '[{"id":"sec7000","elType":"section","settings":{"gap":"default"},"elements":[{"id":"col7000","elType":"column","settings":{"_column_size":100},"elements":[{"id":"hd7000","elType":"widget","widgetType":"heading","settings":{"title":"Titulo viejas %s"},"elements":[]},{"id":"tx7000","elType":"widget","widgetType":"text-editor","settings":{"editor":"<p>Texto viejas</p>"},"elements":[]},{"id":"bt7000","elType":"widget","widgetType":"button","settings":{"text":"Boton viejas","link":{"url":"https://example.com/viejas","is_external":"","nofollow":""}},"elements":[]}]}]}]' "$suffix")"
 viejas_ids=""
-for tipo in texto atributo estructura restaurar vacia borrador; do
+for tipo in texto atributo estructura restaurar vacia borrador deshacer; do
 	if [ "$tipo" = "borrador" ]; then estado=draft; else estado=publish; fi
 	id="$(wp post create --post_type=page --post_status=$estado --post_title="Prueba viejas $tipo elementor-mcp-$suffix" --porcelain)"
 	[ -n "$id" ] || { echo "FALLA: no se pudo crear la página de prueba ($tipo)"; exit 1; }
@@ -1094,13 +1094,13 @@ for tipo in texto atributo estructura restaurar vacia borrador; do
 	wp post meta update "$id" _elementor_data "$viejas_tree" >/dev/null
 	viejas_ids="$viejas_ids $id"
 done
-echo "Páginas (texto, atributo, estructura, restaurar, sin respaldo, borrador):$viejas_ids"
+echo "Páginas (texto, atributo, estructura, restaurar, sin respaldo, borrador, deshacer):$viejas_ids"
 
 python3 -I - "$suffix" $viejas_ids <<'PY'
 import importlib.util, json, pathlib, subprocess, sys
 
 suffix = sys.argv[1]
-p_texto, p_attr, p_estr, p_rest, p_vacia, p_borr = (int(x) for x in sys.argv[2:8])
+p_texto, p_attr, p_estr, p_rest, p_vacia, p_borr, p_desh = (int(x) for x in sys.argv[2:9])
 spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -1204,11 +1204,37 @@ def restaurar_publicada():
     assert json.loads(crudo(r["id"])) == json.loads(inicial), "la copia no trae el estado respaldado"
     assert copias(p_rest) == [str(r["id"])]
     diff_nombra(p_rest, r["id"])
-    # Por el id de la copia se deshace la restauración (lo que tenía la copia quedó respaldado).
-    r2 = cli.ok("restore-builder-backup", {"id": r["id"]})[1]
-    assert r2["id"] == r["id"] and json.loads(crudo(r["id"])) == json.loads(editado), r2
+    # La copia nueva no tenía ediciones que respaldar: restaurar el respaldo del original en ella no
+    # captura antes de escribir. Un reintento (ya hay copia, sin respaldo propio) no cambia nada.
+    estado = crudo(r["id"])
+    error, texto, _ = cli.call("restore-builder-backup", {"id": p_rest})
+    assert error and crudo(r["id"]) == estado and crudo(p_rest) == editado, f"el reintento debía rechazarse sin cambiar nada: {texto[:200]}"
     publicar(p_rest, r["id"])
-comprobar("restore-builder-backup en publicada: restaura en la copia, original intacto, por la copia se deshace", restaurar_publicada)
+comprobar("restore-builder-backup en publicada sin copia: restaura el respaldo del original en una copia nueva; el reintento no cambia nada", restaurar_publicada)
+
+def deshacer_por_el_original():
+    # S6a/b: con una publicada que ya tiene copia, restaurar por el id del ORIGINAL deshace la
+    # última edición de la copia (igual que por el id de la copia) y restaurar dos veces deja lo mismo.
+    primero, segundo = f"Primera edicion {suffix}", f"Segunda edicion {suffix}"
+    original = crudo(p_desh)
+    cli.ok("update-node-text", {"id": p_desh, "node_id": "hd7000", "text": primero})
+    d = cli.ok("update-node-text", {"id": p_desh, "node_id": "hd7000", "text": segundo})[1]
+    copia = d["id"]
+    assert copias(p_desh) == [str(copia)] and nodos(copia)["hd7000"]["settings"]["title"] == segundo
+    r = cli.ok("restore-builder-backup", {"id": p_desh})[1]
+    assert r["restored"] is True and r["id"] == copia and r["draft_of"] == p_desh, r
+    tras_primera = crudo(copia)
+    assert nodos(copia)["hd7000"]["settings"]["title"] == primero, "debía deshacer sólo la última edición de la copia"
+    assert crudo(p_desh) == original and copias(p_desh) == [str(copia)], "el original o las copias cambiaron"
+    # Restaurar dos veces: mismo estado y sin perder la primera edición.
+    r2 = cli.ok("restore-builder-backup", {"id": p_desh})[1]
+    assert r2 == r and crudo(copia) == tras_primera, "el reintento por el original cambió el estado"
+    r3 = cli.ok("restore-builder-backup", {"id": copia})[1]
+    assert r3 == r and crudo(copia) == tras_primera, "restaurar por el id de la copia debe dar lo mismo"
+    assert nodos(copia)["hd7000"]["settings"]["title"] == primero
+    assert crudo(p_desh) == original, "el original no debe cambiar"
+    diff_nombra(p_desh, copia)
+comprobar("restore-builder-backup por el id del original con copia: deshace la última edición de la copia; dos veces deja el mismo estado", deshacer_por_el_original)
 
 def borrador_en_su_sitio():
     for herramienta, args, claves in (
