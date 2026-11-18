@@ -300,7 +300,8 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'update-node-text',
 			'Editar texto del constructor',
-			'Reemplaza el texto de un elemento sin alterar la estructura de la página.',
+			'Reemplaza el texto de un elemento sin alterar la estructura de la página.' .
+				' En una página publicada el cambio va a su copia de trabajo (se crea o se reutiliza; la respuesta trae id de la copia y draft_of): revísalo con nexo-mcp-get-working-copy-diff y publícalo con nexo-mcp-set-content-status. Un borrador se edita directamente.',
 			'write',
 			$this->builder_text_schema(),
 			fn( array $input ) => $this->builders->update_node_text( $input ),
@@ -308,13 +309,14 @@ final class ExtendedAbilityRegistrar {
 				'builders_tools_enabled',
 				Capabilities::BUILDERS,
 				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
 			)
 		);
 		$this->ability(
 			'update-node-attribute',
 			'Editar enlace o imagen del constructor',
-			'Cambia el enlace, la imagen o el texto alternativo de un elemento. La imagen se indica por su identificador en la biblioteca de medios, no por URL.',
+			'Cambia el enlace, la imagen o el texto alternativo de un elemento. La imagen se indica por su identificador en la biblioteca de medios, no por URL.' .
+				' En una página publicada el cambio va a su copia de trabajo (se crea o se reutiliza; la respuesta trae id de la copia y draft_of): revísalo con nexo-mcp-get-working-copy-diff y publícalo con nexo-mcp-set-content-status. Un borrador se edita directamente.',
 			'write',
 			$this->builder_attribute_schema(),
 			fn( array $input ) => $this->builders->update_node_attribute( $input ),
@@ -324,27 +326,28 @@ final class ExtendedAbilityRegistrar {
 				'builders_tools_enabled',
 				Capabilities::BUILDER_ATTRS,
 				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
 			)
 		);
 		$this->ability(
 			'restore-builder-backup',
 			'Restaurar respaldo del constructor',
-			'Devuelve la página al estado previo a la última edición del conector.',
+			'Devuelve la página al estado previo a la última edición del conector. Es una edición más: con el id de una página publicada, su respaldo (el estado previo a su última edición en vivo o a su última publicación) se restaura en su copia de trabajo, no en vivo, tras respaldar la copia; con el id de la copia se deshace la última edición de la copia. Revisa con nexo-mcp-get-working-copy-diff y publica con nexo-mcp-set-content-status. Un borrador se restaura en su sitio.',
 			'write',
-			$this->id_schema(),
+			$this->builder_restore_schema(),
 			fn( array $input ) => $this->builders->restore_backup( $input ),
 			fn( array $input ) => $this->module_write(
 				'builders_tools_enabled',
 				Capabilities::BUILDERS,
 				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
 			)
 		);
 		$this->ability(
 			'edit-structure',
 			'Duplicar elemento del constructor',
-			'Duplica un elemento de Elementor (widget, columna, sección o contenedor) junto al original o antes/después de target, y devuelve los ids de la copia para editarla con nexo-mcp-update-node-text.',
+			'Duplica un elemento de Elementor (widget, columna, sección o contenedor) junto al original o antes/después de target, y devuelve los ids de la copia para editarla con nexo-mcp-update-node-text.' .
+				' En una página publicada el cambio va a su copia de trabajo (se crea o se reutiliza; la respuesta trae id de la copia y draft_of): revísalo con nexo-mcp-get-working-copy-diff y publícalo con nexo-mcp-set-content-status. Un borrador se edita directamente.',
 			'write',
 			$this->builder_structure_schema(),
 			fn( array $input ) => $this->builders->edit_structure( $input ),
@@ -352,7 +355,7 @@ final class ExtendedAbilityRegistrar {
 				'builders_tools_enabled',
 				Capabilities::BUILDERS,
 				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
 			)
 		);
 	}
@@ -520,6 +523,22 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Esquema de restore-builder-backup: el id y, opcional, `draft`.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function builder_restore_schema(): array {
+		$schema = $this->id_schema();
+
+		$schema['properties']['draft'] = array(
+			'type'        => 'boolean',
+			'description' => 'Si el sitio no usa copia de trabajo por defecto, pide restaurar en la copia de una página publicada.',
+		);
+
+		return $schema;
+	}
+
+	/**
 	 * Esquema de duplicación de elementos en un constructor.
 	 *
 	 * @return array<string, mixed>
@@ -544,6 +563,10 @@ final class ExtendedAbilityRegistrar {
 				'position' => array(
 					'type' => 'string',
 					'enum' => array( 'before', 'after' ),
+				),
+				'draft'    => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
 				),
 			),
 			'required'             => array( 'id', 'node_id' ),
@@ -572,6 +595,10 @@ final class ExtendedAbilityRegistrar {
 				'text'    => array(
 					'type'      => 'string',
 					'maxLength' => 65535,
+				),
+				'draft'   => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
 				),
 			),
 			'required'             => array( 'id', 'node_id', 'text' ),
@@ -610,6 +637,10 @@ final class ExtendedAbilityRegistrar {
 					'type'        => array( 'string', 'integer' ),
 					'description' => 'Para link, la dirección (https, mailto, tel o ruta que empiece por «/»). Para image, el identificador del adjunto. Para alt, el texto.',
 					'maxLength'   => 2000,
+				),
+				'draft'     => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
 				),
 			),
 			'required'             => array( 'id', 'node_id', 'attribute', 'value' ),

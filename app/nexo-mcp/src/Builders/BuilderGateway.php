@@ -226,10 +226,10 @@ final class BuilderGateway {
 			);
 		}
 
-		$locked = $this->locked_by_other( $post );
+		$plan = $this->plan_target( $post, $input );
 
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
 		}
 
 		$node_id = isset( $input['node_id'] ) ? sanitize_text_field( (string) $input['node_id'] ) : '';
@@ -254,7 +254,7 @@ final class BuilderGateway {
 		// operación condenada a fallar —un elemento inexistente, o uno vedado por
 		// admitir código— sobrescribiría el último estado bueno con el actual y
 		// dejaría al propietario sin punto de retorno.
-		$target = $this->find_node( $adapter, $post, $node_id );
+		$target = $this->find_node( $adapter, $plan['source'], $node_id );
 
 		if ( null === $target ) {
 			return new \WP_Error(
@@ -276,29 +276,38 @@ final class BuilderGateway {
 		// que ya excluye script, iframe y atributos de evento.
 		$text = wp_kses_post( $text );
 
+		// Todo lo que podía fallar ya pasó: recién ahora se crea la copia.
+		$dest = $this->destination( $post, $plan );
+
+		if ( is_wp_error( $dest ) ) {
+			return $dest;
+		}
+
+		$target_post = $dest['post'];
+
 		// Sin respaldo no se escribe: las revisiones de WordPress no cubren
 		// `post_meta` y una escritura fallida dejaría la página irrecuperable.
-		if ( ! $this->backup->capture( $post, $adapter ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_backup_failed',
-				__( 'No fue posible respaldar el contenido; la edición se canceló.', 'nexo-mcp' )
-			);
+		if ( ! $this->backup->capture( $target_post, $adapter ) ) {
+			return $this->abort( $dest, $this->backup_failed() );
 		}
 
-		$result = $adapter->update_node_text( $post, $node_id, $text );
+		$result = $adapter->update_node_text( $target_post, $node_id, $text );
 
 		if ( is_wp_error( $result ) ) {
-			return $result;
+			return $this->abort( $dest, $result );
 		}
 
-		$adapter->flush( $post );
+		$adapter->flush( $target_post );
 
-		return array(
-			'id'      => $post->ID,
-			'builder' => $adapter->slug(),
-			'node_id' => $node_id,
-			'updated' => true,
-			'backup'  => $this->backup->describe( $post->ID ),
+		return $this->with_draft_of(
+			array(
+				'id'      => $target_post->ID,
+				'builder' => $adapter->slug(),
+				'node_id' => $node_id,
+				'updated' => true,
+				'backup'  => $this->backup->describe( $target_post->ID ),
+			),
+			$target_post
 		);
 	}
 
@@ -342,10 +351,10 @@ final class BuilderGateway {
 			);
 		}
 
-		$locked = $this->locked_by_other( $post );
+		$plan = $this->plan_target( $post, $input );
 
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
 		}
 
 		$node_id = isset( $input['node_id'] ) ? sanitize_text_field( (string) $input['node_id'] ) : '';
@@ -359,7 +368,7 @@ final class BuilderGateway {
 
 		$attribute = isset( $input['attribute'] ) ? sanitize_key( (string) $input['attribute'] ) : '';
 
-		$target = $this->find_node( $adapter, $post, $node_id );
+		$target = $this->find_node( $adapter, $plan['source'], $node_id );
 
 		if ( null === $target ) {
 			return new \WP_Error(
@@ -397,30 +406,39 @@ final class BuilderGateway {
 			return $value;
 		}
 
+		// Todo lo que podía fallar ya pasó: recién ahora se crea la copia.
+		$dest = $this->destination( $post, $plan );
+
+		if ( is_wp_error( $dest ) ) {
+			return $dest;
+		}
+
+		$target_post = $dest['post'];
+
 		// Sin respaldo no se escribe: las revisiones de WordPress no cubren
 		// `post_meta` y una escritura fallida dejaría la página irrecuperable.
-		if ( ! $this->backup->capture( $post, $adapter ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_backup_failed',
-				__( 'No fue posible respaldar el contenido; la edición se canceló.', 'nexo-mcp' )
-			);
+		if ( ! $this->backup->capture( $target_post, $adapter ) ) {
+			return $this->abort( $dest, $this->backup_failed() );
 		}
 
-		$result = $adapter->update_node_attribute( $post, $node_id, $attribute, $value );
+		$result = $adapter->update_node_attribute( $target_post, $node_id, $attribute, $value );
 
 		if ( is_wp_error( $result ) ) {
-			return $result;
+			return $this->abort( $dest, $result );
 		}
 
-		$adapter->flush( $post );
+		$adapter->flush( $target_post );
 
-		return array(
-			'id'        => $post->ID,
-			'builder'   => $adapter->slug(),
-			'node_id'   => $node_id,
-			'attribute' => $attribute,
-			'updated'   => true,
-			'backup'    => $this->backup->describe( $post->ID ),
+		return $this->with_draft_of(
+			array(
+				'id'        => $target_post->ID,
+				'builder'   => $adapter->slug(),
+				'node_id'   => $node_id,
+				'attribute' => $attribute,
+				'updated'   => true,
+				'backup'    => $this->backup->describe( $target_post->ID ),
+			),
+			$target_post
 		);
 	}
 
@@ -462,10 +480,10 @@ final class BuilderGateway {
 			);
 		}
 
-		$locked = $this->locked_by_other( $post );
+		$plan = $this->plan_target( $post, $input );
 
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
 		}
 
 		$node_id  = isset( $input['node_id'] ) ? sanitize_text_field( (string) $input['node_id'] ) : '';
@@ -479,34 +497,43 @@ final class BuilderGateway {
 			);
 		}
 
-		$prepared = $adapter->prepare_duplicate( $post, $node_id, $target, $position );
+		$prepared = $adapter->prepare_duplicate( $plan['source'], $node_id, $target, $position );
 
 		if ( is_wp_error( $prepared ) ) {
 			return $prepared;
 		}
 
-		if ( ! $this->backup->capture( $post, $adapter ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_backup_failed',
-				__( 'No fue posible respaldar el contenido; la edición se canceló.', 'nexo-mcp' )
-			);
+		// Todo lo que podía fallar ya pasó: recién ahora se crea la copia.
+		$dest = $this->destination( $post, $plan );
+
+		if ( is_wp_error( $dest ) ) {
+			return $dest;
 		}
 
-		$saved = $adapter->save_tree( $post, $prepared['tree'] );
+		$target_post = $dest['post'];
+
+		if ( ! $this->backup->capture( $target_post, $adapter ) ) {
+			return $this->abort( $dest, $this->backup_failed() );
+		}
+
+		$saved = $adapter->save_tree( $target_post, $prepared['tree'] );
 
 		if ( is_wp_error( $saved ) ) {
-			return $saved;
+			return $this->abort( $dest, $saved );
 		}
 
-		$adapter->flush( $post );
+		$adapter->flush( $target_post );
 
-		return array(
-			'id'      => $post->ID,
-			'created' => array_map(
-				static fn( BuilderNode $node ): array => $node->to_array(),
-				$prepared['created']
+		return $this->with_draft_of(
+			array(
+				'id'      => $target_post->ID,
+				'created' => array_map(
+					static fn( BuilderNode $node ): array => $node->to_array(),
+					$prepared['created']
+				),
+				'backup'  => $this->backup->describe( $target_post->ID ),
 			),
-			'backup'  => $this->backup->describe( $post->ID ),
+			$target_post
 		);
 	}
 
@@ -554,39 +581,191 @@ final class BuilderGateway {
 			return $post;
 		}
 
-		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->restore_backup_locked( $fresh ) );
+		return $this->locked( $post, fn( \WP_Post $fresh ) => $this->restore_backup_locked( $fresh, $input ) );
 	}
 
 	/**
 	 * Versión de restore_backup con el bloqueo del original en mano.
 	 *
-	 * @param \WP_Post $post Contenido ya resuelto.
+	 * Restaurar es una edición más. Con el id de la copia, de un borrador, o con
+	 * el de una página publicada que ya tiene copia, se restaura el respaldo
+	 * propio de ese contenido (la copia), en su sitio: deshace su última edición.
+	 * No se captura antes de escribir: un reintento restauraría lo recién
+	 * restaurado y perdería la edición anterior. Con una página publicada sin
+	 * copia se usa el respaldo del original y se restaura en una copia nueva,
+	 * que es un clon sin ediciones que perder, así que tampoco captura. Sin
+	 * respaldo del original no se crea la copia.
+	 *
+	 * @param \WP_Post             $post  Contenido ya resuelto.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function restore_backup_locked( \WP_Post $post ) {
-		$locked = $this->locked_by_other( $post );
+	private function restore_backup_locked( \WP_Post $post, array $input ) {
+		$plan = $this->plan_target( $post, $input );
 
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
-		}
-
-		$restored = $this->backup->restore( $post );
-
-		if ( is_wp_error( $restored ) ) {
-			return $restored;
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
 		}
 
 		$adapter = $this->registry->resolve( $post );
+		$from    = 0;
+		$dest    = array(
+			'post'    => $plan['source'],
+			'created' => false,
+		);
+
+		if ( $plan['staged'] && 0 === $plan['existing'] ) {
+			// Sin copia: el respaldo es el del original y va a una copia nueva.
+			if ( null === $adapter || ! $this->backup->exists( (int) $post->ID ) ) {
+				return new \WP_Error(
+					'nexo_mcp_builder_no_backup',
+					__( 'Este contenido no tiene un respaldo disponible.', 'nexo-mcp' )
+				);
+			}
+
+			$from = (int) $post->ID;
+			$dest = $this->destination( $post, $plan );
+
+			if ( is_wp_error( $dest ) ) {
+				return $dest;
+			}
+		}
+
+		$target_post = $dest['post'];
+		$restored    = $this->backup->restore( $target_post, $from );
+
+		if ( is_wp_error( $restored ) ) {
+			return $this->abort( $dest, $restored );
+		}
 
 		if ( null !== $adapter ) {
-			$adapter->flush( $post );
+			$adapter->flush( $target_post );
+		}
+
+		return $this->with_draft_of(
+			array(
+				'id'       => $target_post->ID,
+				'restored' => true,
+			),
+			$target_post
+		);
+	}
+
+	/**
+	 * Decide el destino de una edición y hace las comprobaciones previas.
+	 *
+	 * No crea nada. `source` es el contenido sobre el que se valida: la copia
+	 * ya existente si la hay (puede tener nodos que el original no tiene) o el
+	 * propio contenido (la copia nace como clon suyo).
+	 *
+	 * @param \WP_Post             $post  Contenido indicado, releído dentro del bloqueo.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array{source: \WP_Post, staged: bool, existing: int}|\WP_Error
+	 */
+	private function plan_target( \WP_Post $post, array $input ) {
+		$staged   = WorkingCopy::should_stage( $post, $input, $this->settings );
+		$existing = $staged ? WorkingCopy::copy_of( $post ) : 0;
+		$source   = $existing > 0 ? get_post( $existing ) : $post;
+
+		if ( ! $source instanceof \WP_Post ) {
+			return new \WP_Error( 'nexo_mcp_draft_missing', __( 'No se pudo leer la copia de trabajo.', 'nexo-mcp' ) );
+		}
+
+		if ( (bool) $this->settings->get( 'drafts_only' ) && 'draft' !== $post->post_status && ! $staged ) {
+			return new \WP_Error(
+				'nexo_mcp_draft_required',
+				__( 'El modo sólo borradores impide editar contenido publicado.', 'nexo-mcp' )
+			);
+		}
+
+		foreach ( array_unique( array( (int) $post->ID, (int) $source->ID ) ) as $id ) {
+			$candidate = get_post( $id );
+			$locked    = $candidate instanceof \WP_Post ? $this->locked_by_other( $candidate ) : true;
+
+			if ( is_wp_error( $locked ) ) {
+				return $locked;
+			}
 		}
 
 		return array(
-			'id'       => $post->ID,
-			'restored' => true,
+			'source'   => $source,
+			'staged'   => $staged,
+			'existing' => $existing,
 		);
+	}
+
+	/**
+	 * Entrega el contenido que se va a escribir: la copia (creada o reutilizada) o el propio.
+	 *
+	 * Se llama sólo cuando la entrada ya se validó, para que un rechazo no cree copia.
+	 *
+	 * @param \WP_Post                                             $post Contenido indicado.
+	 * @param array{source: \WP_Post, staged: bool, existing: int} $plan Destino decidido.
+	 *
+	 * @return array{post: \WP_Post, created: bool}|\WP_Error
+	 */
+	private function destination( \WP_Post $post, array $plan ) {
+		if ( ! $plan['staged'] ) {
+			return array(
+				'post'    => $post,
+				'created' => false,
+			);
+		}
+
+		$copy = ( new WorkingCopy( $this->settings ) )->obtain( $post );
+
+		if ( is_wp_error( $copy ) ) {
+			return $copy;
+		}
+
+		return array(
+			'post'    => $copy,
+			'created' => 0 === $plan['existing'],
+		);
+	}
+
+	/**
+	 * Devuelve el error y manda a la papelera la copia que esta llamada acaba de crear.
+	 *
+	 * @param array{post: \WP_Post, created: bool} $dest  Destino.
+	 * @param \WP_Error                            $error Error a devolver.
+	 */
+	private function abort( array $dest, \WP_Error $error ): \WP_Error {
+		if ( $dest['created'] ) {
+			( new WorkingCopy( $this->settings ) )->discard( $dest['post'] );
+		}
+
+		return $error;
+	}
+
+	/**
+	 * Error de respaldo fallido.
+	 */
+	private function backup_failed(): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_builder_backup_failed',
+			__( 'No fue posible respaldar el contenido; la edición se canceló.', 'nexo-mcp' )
+		);
+	}
+
+	/**
+	 * Agrega `draft_of` a la respuesta si el contenido editado es una copia de trabajo.
+	 *
+	 * @param array<string, mixed> $out  Respuesta.
+	 * @param \WP_Post             $post Contenido editado.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function with_draft_of( array $out, \WP_Post $post ): array {
+		$original = WorkingCopy::original_of( $post );
+
+		if ( $original > 0 ) {
+			$out['draft_of'] = $original;
+		}
+
+		return $out;
 	}
 
 	/**

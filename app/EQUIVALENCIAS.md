@@ -31,7 +31,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Builders | `SICS\MCPConnector\Builders\AttributeValue` | `NexoDev\NexoMCP\Builders\AttributeValue` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderAdapter` | `NexoDev\NexoMCP\Builders\BuilderAdapter` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderBackup` | `NexoDev\NexoMCP\Builders\BuilderBackup` | completa |  |
-| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa | Ampliada: recibe `Settings` (para la copia de trabajo) y `edit_elementor_section()`. |
+| Builders | `SICS\MCPConnector\Builders\BuilderGateway` | `NexoDev\NexoMCP\Builders\BuilderGateway` | completa | Ampliada: recibe `Settings` (para la copia de trabajo) y `edit_elementor_section()`; `update_node_text()`, `update_node_attribute()`, `edit_structure()` y `restore_backup()` editan la copia de trabajo de una página publicada (valida, luego `WorkingCopy::obtain()`; respuesta con `draft_of`) y `BuilderBackup::restore()` admite el respaldo de otro contenido. |
 | Builders | `SICS\MCPConnector\Builders\BuilderNode` | `NexoDev\NexoMCP\Builders\BuilderNode` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\BuilderRegistry` | `NexoDev\NexoMCP\Builders\BuilderRegistry` | completa |  |
 | Builders | `SICS\MCPConnector\Builders\DiviAdapter` | `NexoDev\NexoMCP\Builders\DiviAdapter` | completa |  |

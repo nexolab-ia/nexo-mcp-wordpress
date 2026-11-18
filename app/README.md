@@ -151,6 +151,17 @@ Reglas que siempre se cumplen:
 - **Constructores visuales** (Gutenberg, Elementor, Flatsome, Divi,
   WPBakery, shortcodes): se respalda antes de cada edición y un intento
   rechazado nunca borra ese respaldo (`restore-builder-backup` lo recupera).
+  `update-node-text`, `update-node-attribute`, `edit-structure` y
+  `restore-builder-backup` siguen la misma regla que `update-page`: una página
+  **publicada** se edita en su **copia de trabajo** (se crea o se reutiliza,
+  sólo tras validar la entrada; la respuesta trae el `id` de la copia y
+  `draft_of`); revisa con `get-working-copy-diff` y publica con
+  `set-content-status`. Un borrador se edita en su sitio. El respaldo se toma
+  sobre lo que se edita (la copia). `restore-builder-backup` con el id de una
+  página publicada restaura en su copia el respaldo del original (estado previo
+  a su última edición en vivo o publicación), tras respaldar la copia; con el id
+  de la copia deshace la última edición de la copia. Con «Editar lo publicado
+  directamente» las ediciones vuelven a ir en vivo salvo `draft: true`.
 - Cada llamada —también las rechazadas— queda en **Actividad**, sin datos
   sensibles.
 
