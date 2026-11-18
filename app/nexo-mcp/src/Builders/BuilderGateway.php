@@ -135,6 +135,15 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Deshace el último cambio del sistema de diseño de Elementor.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function undo_design_system_change() {
+		return ( new DesignSystemWriter() )->undo();
+	}
+
+	/**
 	 * Crea una página de Elementor 4 en borrador a partir de un árbol atómico.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.

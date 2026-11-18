@@ -160,6 +160,28 @@ Reglas que siempre se cumplen:
   elementos para la página resultante; una página v3 que ya los pasa admite
   `replace` e `insert` mientras el documento resultante no supere
   `max(200, elementos actuales)` (se puede reemplazar sin agrandarla).
+- **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
+  globales, las variables y los colores y tipografía del Kit afectan a todo el
+  sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
+  diseño de Elementor», **apagado por defecto**, marcado como sensible), su
+  capacidad `nexo_mcp_design_system` (administrador; se agrega también al
+  actualizar un sitio ya instalado) y su scope OAuth `mcp:design_system`
+  («Cambiar clases, variables, colores y tipografía globales de Elementor
+  (afecta a todo el sitio)»). Exigen además `manage_options` y respetan «Solo
+  revisar». Toda escritura de este grupo valida antes de escribir, corre bajo el
+  bloqueo del Kit activo, guarda como único «último cambio» el estado previo de
+  lo que toca (opción `nexo_mcp_design_system_backup`, sin autocarga), limpia el
+  CSS generado de Elementor y queda en **Actividad** (`design-system-<operación>`).
+  Si la escritura falla a mitad, se restaura ese estado y se responde el error.
+  `undo-design-system-change` restaura el último cambio con los mismos ids y
+  borra el respaldo. Restaura la colección completa que el cambio tocó (todas las
+  clases, todas las variables, o las listas de colores y tipografía del Kit):
+  lo que se haya cambiado después en ella desde el editor de Elementor también
+  se pierde. Un respaldo con forma inválida se trata como «sin respaldo» y no se
+  restaura; si el respaldo no se puede guardar, la escritura se rechaza con
+  `nexo_mcp_design_backup_failed` y no se escribe nada (un solo nivel: sin cambio que deshacer responde
+  `nexo_mcp_design_no_backup` y no cambia nada). Clases y variables exigen el
+  Editor V4; los colores y la tipografía del Kit sólo requieren Elementor.
 - **Acciones irreversibles**: `delete-product` exige `"confirmation": "DELETE"`
   y `restore-revision` exige `"confirmation": "RESTORE"`; los cambios de
   plugins van en dos pasos (`prepare-plugin-action` → `execute-plugin-action`).

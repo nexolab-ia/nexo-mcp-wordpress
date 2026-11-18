@@ -44,49 +44,55 @@ $site_host          = (string) wp_parse_url( $oauth_site_url, PHP_URL_HOST );
  * `risk` dice en qué estado es riesgosa: `on` al encenderla, `off` al apagarla.
  */
 $sensitive_options = array(
-	'read_only'                  => array(
+	'read_only'                   => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'lectura', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres apagar el modo sólo lectura?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear y modificar contenido de este sitio desde ahora, sin volver a pedirte permiso.', 'nexo-mcp' ),
 	),
-	'drafts_only'                => array(
+	'drafts_only'                 => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'borradores', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres dejar de limitar la IA a borradores?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá modificar páginas y entradas ya publicadas desde ahora, y tus visitantes verán esos cambios de inmediato.', 'nexo-mcp' ),
 	),
-	'publishing_enabled'         => array(
+	'publishing_enabled'          => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'publicar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar la publicación remota?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá publicar, despublicar y enviar contenido a la papelera desde ahora, sin volver a pedirte permiso.', 'nexo-mcp' ),
 	),
-	'maintenance_tools_enabled'  => array(
+	'maintenance_tools_enabled'   => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'plugins', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar el mantenimiento de plugins?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá instalar, actualizar, activar y desactivar plugins y temas desde ahora. Un plugin defectuoso puede dejar el sitio fuera de servicio.', 'nexo-mcp' ),
 	),
-	'extension_deletion_enabled' => array(
+	'design_system_tools_enabled' => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'diseño', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres activar los cambios al sistema de diseño?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá cambiar las clases, variables, colores y tipografía globales de Elementor de todo el sitio, y tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer el último.', 'nexo-mcp' ),
+	),
+	'extension_deletion_enabled'  => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres permitir que la IA borre plugins y temas?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá borrar plugins y temas desactivados de este sitio. Si un plugin trae desinstalador, también se borran sus datos, y eso no se puede deshacer.', 'nexo-mcp' ),
 	),
-	'working_copy_default'       => array(
+	'working_copy_default'        => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'directo', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres que la IA edite lo publicado directamente?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'Los cambios a páginas y entradas publicadas dejarán de pasar por una copia de trabajo y tus visitantes los verán de inmediato.', 'nexo-mcp' ),
 	),
-	'enforce_connection_scopes'  => array(
+	'enforce_connection_scopes'   => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'alcances', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres dejar de respetar los alcances de cada conexión?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'Cada conexión podrá usar todo lo que permitan los módulos encendidos, aunque al autorizarla le hayas concedido menos permisos.', 'nexo-mcp' ),
 	),
-	'destructive_enabled'        => array(
+	'destructive_enabled'         => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'eliminar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar las acciones destructivas?', 'nexo-mcp' ),
@@ -886,6 +892,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							name="nexo_mcp_settings[builders_tools_enabled]"
 							value="1"
 							<?php checked( ! empty( $settings['builders_tools_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Sistema de diseño de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Cambia clases, variables, colores y tipografía de todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[design_system_tools_enabled]"
+							value="1"
+							<?php $print_sensitive( 'design_system_tools_enabled' ); ?>
+							<?php checked( ! empty( $settings['design_system_tools_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

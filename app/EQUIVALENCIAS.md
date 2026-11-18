@@ -59,7 +59,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Licensing | `SICS\MCPConnector\Licensing\LicenseClient` | `NexoDev\NexoMCP\Licensing\LicenseClient` | completa | Misma estructura; sólo opera con NEXO_MCP_API_URL configurada. |
 | MCP | `SICS\MCPConnector\MCP\AbilityRegistrar` | `NexoDev\NexoMCP\MCP\AbilityRegistrar` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\CodexInitializedCompatibility` | `NexoDev\NexoMCP\MCP\CodexInitializedCompatibility` | completa |  |
-| MCP | `SICS\MCPConnector\MCP\ExtendedAbilityRegistrar` | `NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar` | completa | Ampliada: confirmación DELETE/RESTORE verificada en el servidor; herramientas de Elementor 4 (`get-design-system`, `create-elementor-page`, `edit-elementor-section`). |
+| MCP | `SICS\MCPConnector\MCP\ExtendedAbilityRegistrar` | `NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar` | completa | Ampliada: confirmación DELETE/RESTORE verificada en el servidor; herramientas de Elementor 4 (`get-design-system`, `create-elementor-page`, `edit-elementor-section`, `undo-design-system-change`). |
 | MCP | `SICS\MCPConnector\MCP\ServerRegistrar` | `NexoDev\NexoMCP\MCP\ServerRegistrar` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\ToolExecutor` | `NexoDev\NexoMCP\MCP\ToolExecutor` | completa |  |
 | MCP | `SICS\MCPConnector\MCP\TransportGuard` | `NexoDev\NexoMCP\MCP\TransportGuard` | completa |  |
@@ -113,6 +113,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 |---|---|
 | `NexoDev\NexoMCP\Authorization\IrreversibleActions` | Exige `confirmation` exacta (`DELETE`, `RESTORE`) en el servidor antes de ejecutar acciones irreversibles, y lo audita. |
 | `NexoDev\NexoMCP\Builders\ElementorDesignSystem` | Lee el sistema de diseño de Elementor 4 (clases globales, variables, colores y tipografía del Kit) para `get-design-system`; una lectura que falla se avisa en `warnings` y conserva lo ya leído. |
+| `NexoDev\NexoMCP\Builders\DesignSystemWriter` (+ `DesignSystemStore`, `ElementorDesignStore`) | Base de las escrituras del sistema de diseño: bloqueo por el Kit, respaldo del último cambio, vuelta atrás si falla, limpieza de CSS y Actividad; `undo-design-system-change` lo deshace. Permiso propio (`design_system_tools_enabled`, `nexo_mcp_design_system`, `mcp:design_system`). |
 | `NexoDev\NexoMCP\Builders\ElementorTreeValidator` | Valida en PHP puro el árbol atómico que recibe `create-elementor-page` (tipos, límites, enlaces, imágenes, clases, valores de estilo y regla de raíz). Valida también un subárbol que cuelga de un padre existente (`edit-elementor-section`). |
 | `NexoDev\NexoMCP\Builders\ElementorTreeBuilder` | Convierte el árbol validado al formato de `_elementor_data` con ids generados por el plugin. |
 | `NexoDev\NexoMCP\Builders\ElementorPageCreator` | Crea la página en borrador con los validadores y el guardado de documentos de Elementor; deshace el borrador si algo falla. |

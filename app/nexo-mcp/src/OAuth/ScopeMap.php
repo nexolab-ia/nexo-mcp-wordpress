@@ -46,6 +46,7 @@ final class ScopeMap {
 		'mcp:builder_attrs'    => Capabilities::BUILDER_ATTRS,
 		'mcp:publish'          => Capabilities::PUBLISH,
 		'mcp:destructive'      => Capabilities::DESTRUCTIVE,
+		'mcp:design_system'    => Capabilities::DESIGN_SYSTEM,
 		// Variantes de sólo consulta: apuntan a la misma capacidad que su módulo.
 		'mcp:seo:read'         => Capabilities::SEO,
 		'mcp:maintenance:read' => Capabilities::MAINTENANCE,
@@ -101,6 +102,7 @@ final class ScopeMap {
 		'mcp:builder_attrs' => 'builders_tools_enabled',
 		'mcp:publish'       => 'publishing_enabled',
 		'mcp:destructive'   => 'destructive_enabled',
+		'mcp:design_system' => 'design_system_tools_enabled',
 	);
 
 	/**
@@ -121,6 +123,7 @@ final class ScopeMap {
 		'mcp:builder_attrs'    => 'Cambiar enlaces e imágenes en páginas hechas con constructores visuales',
 		'mcp:publish'          => 'Publicar contenido',
 		'mcp:destructive'      => 'Eliminar contenido de forma permanente',
+		'mcp:design_system'    => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',
 		'mcp:seo:read'         => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
 		'mcp:maintenance:read' => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
 	);
