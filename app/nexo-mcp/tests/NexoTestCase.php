@@ -114,7 +114,7 @@ abstract class NexoTestCase extends TestCase {
 	 * @param bool               $authenticated Si la solicitud llegó con token.
 	 * @param array<int, string> $scopes        Scopes concedidos.
 	 */
-	private function bearer_context( bool $authenticated, array $scopes = array() ): void {
+	protected function bearer_context( bool $authenticated, array $scopes = array() ): void {
 		$values = array(
 			'authenticated' => $authenticated,
 			'scopes'        => $scopes,

@@ -42,6 +42,27 @@ final class IrreversibleActionsTest extends NexoTestCase {
 		$this->assertTrue( IrreversibleActions::check( 'restore-revision', array( 'id' => 9, 'confirmation' => 'RESTORE' ) ) );
 	}
 
+	public function test_el_sistema_de_diseno_pide_su_palabra(): void {
+		foreach ( array( 'delete-global-class', 'delete-design-variable' ) as $tool ) {
+			$this->assertInstanceOf( \WP_Error::class, IrreversibleActions::check( $tool, array( 'id' => 'x' ) ), $tool );
+			$this->assertTrue( IrreversibleActions::check( $tool, array( 'confirmation' => 'DELETE' ) ), $tool );
+		}
+
+		$this->assertInstanceOf( \WP_Error::class, IrreversibleActions::check( 'undo-design-system-change', array() ) );
+		$this->assertInstanceOf( \WP_Error::class, IrreversibleActions::check( 'undo-design-system-change', array( 'confirmation' => 'DELETE' ) ) );
+		$this->assertTrue( IrreversibleActions::check( 'undo-design-system-change', array( 'confirmation' => 'UNDO' ) ) );
+	}
+
+	public function test_el_kit_pide_la_palabra_solo_si_delete_trae_algo(): void {
+		$this->assertTrue( IrreversibleActions::check( 'update-kit-globals', array( 'colors' => array() ) ) );
+		$this->assertTrue( IrreversibleActions::check( 'update-kit-globals', array( 'delete' => array() ) ) );
+		$this->assertInstanceOf( \WP_Error::class, IrreversibleActions::check( 'update-kit-globals', array( 'delete' => array( 'a1b2c3d' ) ) ) );
+		$this->assertTrue( IrreversibleActions::check( 'update-kit-globals', array( 'delete' => array( 'a1b2c3d' ), 'confirmation' => 'DELETE' ) ) );
+		$this->assertSame( 'DELETE', IrreversibleActions::word_for( 'update-kit-globals' ) );
+		$this->assertNull( IrreversibleActions::word_for( 'update-kit-globals', array() ) );
+		$this->assertContains( 'update-kit-globals', IrreversibleActions::tools() );
+	}
+
 	public function test_herramientas_reversibles_no_piden_confirmacion(): void {
 		$this->assertTrue( IrreversibleActions::check( 'update-post-seo', array() ) );
 		$this->assertNull( IrreversibleActions::word_for( 'list-media' ) );
