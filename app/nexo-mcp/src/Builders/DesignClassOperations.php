@@ -355,7 +355,7 @@ final class DesignClassOperations {
 	private function check_label( $label, array $items, string $own ) {
 		if ( ! is_string( $label ) || strlen( $label ) > self::MAX_LABEL || 1 !== preg_match( self::LABEL_PATTERN, $label ) ) {
 			return new \WP_Error(
-				'nexo_mcp_design_label_invalid',
+				'nexo_mcp_design_invalid',
 				__( 'label: debe empezar con una letra, usar sólo letras, números, guiones y guiones bajos, y tener como máximo 50 caracteres.', 'nexo-mcp' ),
 				array( 'path' => 'label' )
 			);
@@ -433,7 +433,22 @@ final class DesignClassOperations {
 			}
 		}
 
-		return $this->backend->parse_style( $style );
+		$parsed = $this->backend->parse_style( $style );
+
+		if ( is_wp_error( $parsed ) ) {
+			return $this->as_invalid( $parsed );
+		}
+
+		return $parsed;
+	}
+
+	/**
+	 * Un error de validación de un tercero con el código único `nexo_mcp_design_invalid`.
+	 *
+	 * @param \WP_Error $error Error con mensaje `ruta: motivo` y `path` en los datos.
+	 */
+	private function as_invalid( \WP_Error $error ): \WP_Error {
+		return new \WP_Error( 'nexo_mcp_design_invalid', $error->get_error_message(), $error->get_error_data() );
 	}
 
 	/**
@@ -447,7 +462,7 @@ final class DesignClassOperations {
 		$data    = $error->get_error_data();
 
 		if ( ! str_starts_with( $message, $prefix ) ) {
-			return $error;
+			return $this->as_invalid( $error );
 		}
 
 		$path = is_array( $data ) && isset( $data['path'] ) && is_string( $data['path'] ) && str_starts_with( $data['path'], $prefix )
@@ -455,7 +470,7 @@ final class DesignClassOperations {
 			: substr( $message, strlen( $prefix ), (int) strpos( $message, ':', strlen( $prefix ) ) - strlen( $prefix ) );
 
 		return new \WP_Error(
-			$error->get_error_code(),
+			'nexo_mcp_design_invalid',
 			substr( $message, strlen( $prefix ) ),
 			array( 'path' => $path )
 		);
@@ -553,7 +568,7 @@ final class DesignClassOperations {
 	 */
 	private function params_error( string $path, string $reason, bool $prefix = true ): \WP_Error {
 		return new \WP_Error(
-			'nexo_mcp_design_params_invalid',
+			'nexo_mcp_design_invalid',
 			$prefix ? $path . ': ' . $reason : $reason,
 			array( 'path' => $path )
 		);

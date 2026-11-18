@@ -1022,4 +1022,17 @@ final class ElementorTreeValidatorTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_elementor_too_many_nodes', $result->get_error_code() );
 	}
+
+	/**
+	 * La comprobación de hojas de CSS es pública y la comparten las variables globales.
+	 */
+	public function test_css_text_problem_comparte_la_regla_de_las_hojas(): void {
+		$this->assertNull( ElementorTreeValidator::css_text_problem( 'clamp(1rem, 2vw, 3rem)' ) );
+		$this->assertNull( ElementorTreeValidator::css_text_problem( '"a (" b' ) );
+		$this->assertStringContainsString( 'caracteres o funciones', (string) ElementorTreeValidator::css_text_problem( 'red; color: blue' ) );
+		$this->assertStringContainsString( 'caracteres o funciones', (string) ElementorTreeValidator::css_text_problem( 'url(x)' ) );
+		$this->assertSame( 'el valor tiene comillas sin cerrar.', ElementorTreeValidator::css_text_problem( '"abc' ) );
+		$this->assertSame( 'el valor tiene paréntesis sin cerrar.', ElementorTreeValidator::css_text_problem( 'calc(1px' ) );
+		$this->assertSame( 'el valor tiene paréntesis sin cerrar.', ElementorTreeValidator::css_text_problem( '1px)' ) );
+	}
 }

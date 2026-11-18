@@ -26,6 +26,11 @@ final class DesignVariableOperations {
 	public const MAX_LABEL = 50;
 
 	/**
+	 * Etiqueta segura como nombre de propiedad CSS personalizada.
+	 */
+	private const LABEL_PATTERN = '/^[a-zA-Z0-9_-]+$/D';
+
+	/**
 	 * Tipos entre los que se puede cambiar una variable existente.
 	 *
 	 * @var array<int, string>
@@ -136,7 +141,7 @@ final class DesignVariableOperations {
 				$has = static fn( string $key ): bool => isset( $params[ $key ] );
 
 				if ( ! $has( 'label' ) && ! $has( 'value' ) && ! $has( 'type' ) ) {
-					return $this->invalid( 'id', __( 'Indicá qué cambiar: label, value o type.', 'nexo-mcp' ), true );
+					return $this->invalid( 'id', __( 'indicá qué cambiar: label, value o type.', 'nexo-mcp' ) );
 				}
 
 				$changes = array();
@@ -269,13 +274,16 @@ final class DesignVariableOperations {
 					return new \WP_Error(
 						'nexo_mcp_design_in_use',
 						sprintf( $message, $all[ $id ]['label'], count( $used ) ),
-						array( 'used_in' => $used )
+						array(
+							'id'      => $id,
+							'used_in' => $used,
+						)
 					);
 				}
 
 				return array(
 					'id'    => $id,
-					'pages' => count( $used ),
+					'pages' => $used,
 				);
 			},
 			function ( array $plan ) {
@@ -286,7 +294,7 @@ final class DesignVariableOperations {
 					'pages_affected' => $plan['pages'],
 				);
 
-				if ( $plan['pages'] > 0 ) {
+				if ( array() !== $plan['pages'] ) {
 					$result['undo_note'] = __( 'Las páginas que usaban la variable conservan una referencia a una variable borrada hasta que se deshaga el cambio: deshacer la restaura.', 'nexo-mcp' );
 				}
 
@@ -323,7 +331,7 @@ final class DesignVariableOperations {
 	}
 
 	/**
-	 * Etiqueta: texto sin espacios, de 1 a 50 caracteres.
+	 * Etiqueta: identificador CSS seguro (letras, números, - y _), de 1 a 50 caracteres.
 	 *
 	 * @param mixed $label Etiqueta pedida.
 	 *
@@ -334,8 +342,10 @@ final class DesignVariableOperations {
 			return $this->invalid( 'label', __( 'es obligatoria y tiene que ser texto.', 'nexo-mcp' ) );
 		}
 
-		if ( 1 === preg_match( '/\s/u', $label ) ) {
-			return $this->invalid( 'label', __( 'no puede tener espacios.', 'nexo-mcp' ) );
+		// Elementor escribe `--{label}:{valor};` dentro de `:root {}` del CSS del Kit y sólo le pasa
+		// `sanitize_text_field`: la etiqueta tiene que ser un identificador de propiedad CSS seguro.
+		if ( 1 !== preg_match( self::LABEL_PATTERN, $label ) || str_starts_with( $label, '--' ) ) {
+			return $this->invalid( 'label', __( 'sólo puede tener letras sin tildes, números, guiones y guiones bajos (se usa como nombre de la propiedad CSS --etiqueta) y no puede empezar con «--».', 'nexo-mcp' ) );
 		}
 
 		if ( mb_strlen( $label ) > self::MAX_LABEL ) {
@@ -391,10 +401,13 @@ final class DesignVariableOperations {
 					'nexo_mcp_design_label_taken',
 					sprintf(
 						/* translators: %s: etiqueta. */
-						__( 'Ya existe una variable con la etiqueta «%s». Elegí otra.', 'nexo-mcp' ),
+						__( 'label: ya existe una variable con la etiqueta «%s». Elegí otra.', 'nexo-mcp' ),
 						$label
 					),
-					array( 'field' => 'label' )
+					array(
+						'path' => 'label',
+						'id'   => (string) $id,
+					)
 				);
 			}
 		}
@@ -427,17 +440,16 @@ final class DesignVariableOperations {
 	}
 
 	/**
-	 * Error de formato de un campo.
+	 * Error de validación: mensaje `ruta: motivo` y la ruta en los datos.
 	 *
-	 * @param string $field   Campo.
-	 * @param string $reason  Motivo.
-	 * @param bool   $verbatim Si es `true`, el motivo es el mensaje entero.
+	 * @param string $path   Campo.
+	 * @param string $reason Motivo.
 	 */
-	private function invalid( string $field, string $reason, bool $verbatim = false ): \WP_Error {
+	private function invalid( string $path, string $reason ): \WP_Error {
 		return new \WP_Error(
-			'nexo_mcp_design_variable_invalid',
-			$verbatim ? $reason : '«' . $field . '» ' . $reason,
-			array( 'field' => $field )
+			'nexo_mcp_design_invalid',
+			$path . ': ' . $reason,
+			array( 'path' => $path )
 		);
 	}
 
