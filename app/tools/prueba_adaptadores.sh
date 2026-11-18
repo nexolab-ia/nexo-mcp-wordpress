@@ -304,7 +304,9 @@ $arbol = array( array(
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
 echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-[ "$guardado" = "guardado" ] || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
+# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
+# basta con que la salida empiece por la marca.
+case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
 echo "Página atómica borrador: $atomic_page_id"
 
 echo
@@ -627,7 +629,9 @@ $arbol = array( array(
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
 echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-[ "$guardado" = "guardado" ] || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
+# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
+# basta con que la salida empiece por la marca.
+case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
 echo "Páginas publicadas: v3 $secciones_v3_id, atómica $secciones_atomica_id, una raíz $secciones_una_id"
 
 python3 -I - "$suffix" "$secciones_v3_id" "$secciones_atomica_id" "$secciones_una_id" <<'PY'
