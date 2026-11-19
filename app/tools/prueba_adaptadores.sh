@@ -28,6 +28,12 @@
 # 8c. Sistema de diseño: round-trip de ElementorDesignStore (foto → mutar → restaurar de
 #    clases, variables y Kit, mismos ids) y undo-design-system-change por MCP sin
 #    respaldo (error y nada cambia).
+# 8d. Sistema de diseño, herramientas de escritura por MCP (create/update/delete-global-class,
+#    create/update/delete-design-variable, update-kit-globals): cada una se comprueba con
+#    get-design-system y con lo guardado, y undo-design-system-change devuelve la huella exacta
+#    del estado anterior; los rechazos, el permiso apagado, «Solo revisar» y la falta del permiso
+#    destructivo no cambian nada; borrar en uso se rechaza con la lista y con force borra. Se
+#    guarda una foto del estado antes y se restaura al final: sin restos, respaldo ni bloqueo.
 # 9. Limpia lo que creó (páginas a la papelera, recuperable; clase, variable e
 #    imagen de prueba se quitan) y restaura los ajustes y el estado del experimento.
 #
@@ -92,6 +98,135 @@ echo md5( wp_json_encode( $estado ) );' --user=admin
 	exit 0
 fi
 
+# Subcomandos del bloque de herramientas de escritura del sistema de diseño (fuera de MCP).
+#   --diseno-huella            huella estable del estado (clases, orden de la vista previa, variables sin la
+#                              marca de agua, listas del Kit) y si hay respaldo guardado
+#   --diseno-clase <id>        lo guardado de una clase: existencia, orden (publicado y vista previa) y variantes
+#   --diseno-variable <id>     lo guardado de una variable: existencia, tipo, etiqueta y si está borrada
+#   --diseno-kit-lista <lista> lista cruda del Kit (system_colors, custom_colors…) en JSON
+#   --ajuste <clave> <valor>   cambia un interruptor de nexo_mcp_settings (true/false)
+#   --ajuste-valor <clave>     lee un interruptor (true/false)
+#   --diseno-foto              guarda el estado de clases, variables y Kit para restaurarlo al final
+#   --diseno-restaurar         devuelve ese estado, borra el respaldo, el bloqueo del Kit y la foto
+#   --diseno-barrer <sufijo> <clase> <variable>
+#                              quita restos con etiqueta nexo-prueba- (salvo la clase y variable de esta
+#                              corrida) y manda a la papelera las páginas elementor-mcp- de corridas cortadas
+diseno_php_canon='$canon = static function ( $v ) use ( &$canon ) { if ( ! is_array( $v ) ) { return $v; } $v = array_map( $canon, $v ); if ( ! array_is_list( $v ) ) { ksort( $v ); } return $v; };'
+restaurar_diseno() {
+	wp eval "$diseno_php_canon"'
+$guardado = get_option( "nexo_prueba_diseno_foto", false );
+if ( ! is_array( $guardado ) ) { echo "sin foto"; return; }
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$cambiados = array();
+foreach ( $guardado as $tipo => $estado ) {
+	$a = $estado; $b = $store->snapshot( $tipo );
+	if ( "variables" === $tipo ) { unset( $a["watermark"], $b["watermark"] ); }
+	if ( wp_json_encode( $canon( $a ) ) !== wp_json_encode( $canon( $b ) ) ) { $store->restore( $tipo, $estado ); $cambiados[] = $tipo; }
+}
+delete_option( "nexo_mcp_design_system_backup" );
+delete_option( "nexo_prueba_diseno_foto" );
+delete_option( "nexo_mcp_lock_" . \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id() );
+$store->clear_cache();
+echo "restaurado: " . implode( ",", $cambiados );' --user=admin
+}
+if [ "${1:-}" = "--diseno-huella" ]; then
+	wpr eval "$diseno_php_canon"'
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$variables = $store->snapshot( "variables" );
+unset( $variables["watermark"] );
+$vista = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )->set_preview( true );
+echo "clases=" . md5( wp_json_encode( $canon( $store->snapshot( "classes" ) ) ) );
+echo " vista=" . md5( wp_json_encode( array_values( (array) $vista->get_order() ) ) );
+echo " variables=" . md5( wp_json_encode( $canon( $variables ) ) );
+echo " kit=" . md5( wp_json_encode( $canon( $store->snapshot( "kit" ) ) ) );
+echo " respaldo=" . ( false !== get_option( "nexo_mcp_design_system_backup", false ) ? "si" : "no" );' --user=admin
+	exit 0
+fi
+if [ "${1:-}" = "--diseno-clase" ]; then
+	wpr eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
+$id = "'"$2"'";
+$estado = $store->snapshot( "classes" );
+$vista = array_values( (array) \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )->set_preview( true )->get_order() );
+$item = $estado["items"][ $id ] ?? null;
+echo wp_json_encode( array(
+	"existe" => null !== $item,
+	"label" => $item["label"] ?? null,
+	"publicada_ultima" => array() !== $estado["order"] && end( $estado["order"] ) === $id,
+	"vista_ultima" => array() !== $vista && end( $vista ) === $id,
+	"vista" => in_array( $id, $vista, true ),
+	"variantes" => array_map( static fn( $v ) => array( "breakpoint" => $v["meta"]["breakpoint"] ?? null, "state" => $v["meta"]["state"] ?? null, "props" => array_keys( $v["props"] ?? array() ) ), $item["variants"] ?? array() ),
+) );' --user=admin
+	exit 0
+fi
+if [ "${1:-}" = "--diseno-variable" ]; then
+	wpr eval '
+$estado = ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "variables" );
+$v = $estado["data"]["'"$2"'"] ?? null;
+echo wp_json_encode( array( "existe" => null !== $v, "type" => $v["type"] ?? null, "label" => $v["label"] ?? null, "borrada" => ! empty( $v["deleted_at"] ) ) );' --user=admin
+	exit 0
+fi
+if [ "${1:-}" = "--diseno-kit-lista" ]; then
+	wpr eval 'echo wp_json_encode( ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "kit" )["'"$2"'"] ?? array() );' --user=admin
+	exit 0
+fi
+if [ "${1:-}" = "--ajuste" ]; then
+	wp eval '$s = get_option( "nexo_mcp_settings" ); $s["'"$2"'"] = "true" === "'"$3"'"; update_option( "nexo_mcp_settings", $s );' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--ajuste-valor" ]; then
+	wpr eval '$s = get_option( "nexo_mcp_settings" ); echo ! empty( $s["'"$2"'"] ) ? "true" : "false";'
+	exit 0
+fi
+if [ "${1:-}" = "--diseno-foto" ]; then
+	wp eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$foto = array();
+foreach ( array( "classes", "variables", "kit" ) as $tipo ) { $foto[ $tipo ] = $store->snapshot( $tipo ); }
+update_option( "nexo_prueba_diseno_foto", $foto, false );
+echo "foto guardada";' --user=admin
+	exit 0
+fi
+if [ "${1:-}" = "--diseno-restaurar" ]; then restaurar_diseno; exit 0; fi
+if [ "${1:-}" = "--diseno-barrer" ]; then
+	wp eval '
+$store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
+$sufijo = "'"$2"'";
+$salida = array();
+$clases = $store->snapshot( "classes" );
+$quitar = array();
+foreach ( $clases["items"] as $id => $item ) {
+	if ( 0 === strpos( (string) ( $item["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== "'"$3"'" ) { $quitar[] = (string) $id; }
+}
+if ( array() !== $quitar ) {
+	foreach ( $quitar as $id ) { unset( $clases["items"][ $id ] ); }
+	$clases["order"] = array_values( array_diff( $clases["order"], $quitar ) );
+	$store->restore( "classes", $clases );
+	$salida[] = "clases: " . implode( ",", $quitar );
+}
+$variables = $store->snapshot( "variables" );
+$quitar = array();
+foreach ( $variables["data"] ?? array() as $id => $entrada ) {
+	if ( 0 === strpos( (string) ( $entrada["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== "'"$4"'" ) { $quitar[] = (string) $id; }
+}
+if ( array() !== $quitar ) {
+	foreach ( $quitar as $id ) { unset( $variables["data"][ $id ] ); }
+	$store->restore( "variables", $variables );
+	$salida[] = "variables: " . implode( ",", $quitar );
+}
+$paginas = array();
+foreach ( get_posts( array( "post_type" => "page", "post_status" => "any", "numberposts" => -1, "s" => "elementor-mcp-", "fields" => "ids" ) ) as $id ) {
+	$titulo = get_the_title( $id );
+	if ( false !== strpos( $titulo, "elementor-mcp-" ) && false === strpos( $titulo, "elementor-mcp-" . $sufijo ) && "trash" !== get_post_status( $id ) ) { wp_trash_post( $id ); $paginas[] = $id; }
+}
+if ( array() !== $paginas ) { $salida[] = "páginas: " . implode( ",", $paginas ); }
+$store->clear_cache();
+echo array() === $salida ? "sin restos" : implode( "; ", $salida );' --user=admin
+	exit 0
+fi
+
 # Subcomandos para el bloque de concurrencia.
 #   --copias <id>       IDs de las copias de trabajo enlazadas al original (en cualquier estado)
 #   --bloqueos          opciones nexo_mcp_lock_* que quedan en la base (debe ser ninguna)
@@ -123,6 +258,7 @@ media_id=""
 class_id=""
 variable_id=""
 kit_id=""
+diseno_foto_tomada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -184,6 +320,11 @@ cleanup() {
 	if [ -n "$media_id" ]; then
 		wp eval "wp_delete_attachment( $media_id, true );" >/dev/null
 		echo "Imagen de prueba quitada: $media_id"
+	fi
+	# Si el bloque de herramientas de escritura se cortó a medias, se devuelve el sistema de diseño a como estaba.
+	if [ -n "$diseno_foto_tomada" ]; then
+		echo "Sistema de diseño: $(restaurar_diseno)"
+		diseno_foto_tomada=""
 	fi
 	remove_design_fixtures
 	if [ -n "$class_id" ] && wpr eval 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );' | grep -q "$class_id"; then
@@ -1469,6 +1610,442 @@ fi
 [ "$(wpr eval 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')" = "$diseno_respaldo_previo" ] \
 	&& ok "diseño: el sitio quedó sin respaldo nuevo" || falla "diseño: quedó un respaldo que no existía"
 
+
+echo
+echo "### Sistema de diseño: herramientas de escritura por MCP (clases, variables, colores y tipografía del Kit)"
+# Cada herramienta se prueba contra el Elementor real: el cambio se ve en get-design-system y en lo guardado, y
+# undo-design-system-change devuelve la huella exacta del estado anterior. Los rechazos no cambian nada. Antes se
+# guarda una foto del estado y al final se restaura (también si la prueba se corta a medias: lo hace cleanup), así
+# que el sitio queda como estaba, sin respaldo ni bloqueo. Se activa el permiso destructivo sólo durante el bloque.
+if [ "$diseno_respaldo_previo" = "si" ]; then
+	echo "AVISO: el sitio ya tenía un respaldo del sistema de diseño; no se prueban las herramientas de escritura para no pisarlo."
+else
+	echo "Restos de corridas cortadas: $(tools/prueba_adaptadores.sh --diseno-barrer "$suffix" "$class_id" "$variable_id")"
+	destructivo_previo="$(tools/prueba_adaptadores.sh --ajuste-valor destructive_enabled)"
+	tools/prueba_adaptadores.sh --diseno-foto >/dev/null
+	diseno_foto_tomada=1
+	huella_inicio="$(tools/prueba_adaptadores.sh --diseno-huella)"
+	echo "Huella inicial: $huella_inicio"
+	tools/prueba_adaptadores.sh --ajuste destructive_enabled true
+python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, subprocess, sys
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+etq = f"nexo-prueba-dd-{suffix}"
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *args], capture_output=True, text=True).stdout.strip()
+
+def huella():
+    out = script("--diseno-huella")
+    partes = dict(p.split("=", 1) for p in out.split())
+    assert set(partes) == {"clases", "vista", "variables", "kit", "respaldo"}, f"huella: {out!r}"
+    return partes
+
+def prop(tipo, valor):
+    return {"$$type": tipo, "value": valor}
+
+def sistema():
+    _, d = cli.ok("get-design-system", {})
+    return d
+
+def deshacer():
+    _, d = cli.ok("undo-design-system-change", {"confirmation": "UNDO"})
+    return d
+
+def rechaza(short, args, fragmento, antes):
+    es_error, texto, _ = cli.call(short, args)
+    assert es_error, f"{short} debía rechazarse: {texto[:200]}"
+    assert fragmento in texto, f"mensaje: {texto[:400]!r} (se esperaba «{fragmento}»)"
+    assert huella() == antes, f"{short}: el rechazo cambió el estado"
+
+def restaurado(antes, mensaje="deshacer no devolvió la huella exacta"):
+    """Tras deshacer: misma huella que `antes` (sin contar el respaldo) y ya sin respaldo guardado."""
+    ahora = huella()
+    assert ahora["respaldo"] == "no", f"quedó un respaldo tras deshacer: {ahora}"
+    assert {k: v for k, v in antes.items() if k != "respaldo"} == {k: v for k, v in ahora.items() if k != "respaldo"}, f"{mensaje}: {antes} / {ahora}"
+
+def clase_guardada(id_):
+    return json.loads(script("--diseno-clase", id_))
+
+def variable_guardada(id_):
+    return json.loads(script("--diseno-variable", id_))
+
+def lista_kit(nombre):
+    return json.loads(script("--diseno-kit-lista", nombre))
+
+# ------------------------------------------------------------------ Clases
+variantes = [
+    {"meta": {"breakpoint": "desktop", "state": None}, "props": {"color": prop("color", "#112233"), "gap": prop("size", {"size": 8, "unit": "px"})}},
+    {"meta": {"breakpoint": "desktop", "state": "hover"}, "props": {"color": prop("color", "#445566")}},
+    {"meta": {"breakpoint": "tablet", "state": None}, "props": {"gap": prop("size", {"size": 4, "unit": "px"})}},
+]
+clase = {}
+
+def clase_crear_y_deshacer():
+    h0 = huella()
+    assert h0["respaldo"] == "no", f"había un respaldo antes de empezar: {h0}"
+    _, d = cli.ok("create-global-class", {"label": f"{etq}-a", "variants": variantes})
+    assert d["id"].startswith("g-") and d["label"] == f"{etq}-a" and d["undo_available"] is True, d
+    g = clase_guardada(d["id"])
+    assert g["existe"] and g["label"] == f"{etq}-a", g
+    assert [(v["breakpoint"], v["state"]) for v in g["variantes"]] == [("desktop", None), ("desktop", "hover"), ("tablet", None)], g["variantes"]
+    assert g["publicada_ultima"], "la clase debía quedar al final del orden"
+    assert g["vista"] and g["vista_ultima"], f"la clase debía estar al final del orden de la vista previa del editor: {g}"
+    assert {"id": d["id"], "label": f"{etq}-a"} in sistema()["classes"], "get-design-system no la muestra"
+    assert huella()["clases"] != h0["clases"] and huella()["respaldo"] == "si"
+    u = deshacer()
+    assert u["kind"] == "classes" and u["operation"] == "create-class", u
+    restaurado(h0, "deshacer no devolvió la huella exacta")
+    g = clase_guardada(d["id"])
+    assert not g["existe"] and not g["vista"], f"la clase debía desaparecer también de la vista previa: {g}"
+    assert not any(c["id"] == d["id"] for c in sistema()["classes"])
+    es_error, texto, _ = cli.call("undo-design-system-change", {"confirmation": "UNDO"})
+    assert es_error and "No hay ningún cambio del sistema de diseño para deshacer." in texto, texto[:200]
+    restaurado(h0, "deshacer dos veces cambió el estado")
+    _, d = cli.ok("create-global-class", {"label": f"{etq}-a", "variants": variantes})
+    clase["id"] = d["id"]
+
+def clase_modificar():
+    id_ = clase["id"]
+    h1 = huella()
+    nuevas = variantes + [{"meta": {"breakpoint": "mobile", "state": None}, "props": {"gap": prop("size", {"size": 2, "unit": "px"})}}]
+    _, d = cli.ok("update-global-class", {"id": id_, "label": f"{etq}-b", "variants": nuevas})
+    assert d["id"] == id_ and d["label"] == f"{etq}-b", d
+    g = clase_guardada(id_)
+    assert g["label"] == f"{etq}-b" and len(g["variantes"]) == 4 and g["vista"], g
+    assert {"id": id_, "label": f"{etq}-b"} in sistema()["classes"]
+    deshacer()
+    restaurado(h1, "deshacer la modificación no devolvió la huella exacta")
+    # Sólo el label: las variantes se conservan.
+    cli.ok("update-global-class", {"id": id_, "label": f"{etq}-c"})
+    g = clase_guardada(id_)
+    assert g["label"] == f"{etq}-c" and len(g["variantes"]) == 3, g
+    deshacer()
+    restaurado(h1)
+
+def clase_rechazos():
+    h = huella()
+    id_ = clase["id"]
+    rechaza("create-global-class", {"label": f"{etq}-A", "variants": []}, "ya existe una clase", h)
+    rechaza("create-global-class", {"label": "1mala", "variants": []}, "label:", h)
+    rechaza("create-global-class", {"label": f"{etq}-x", "variants": [{"meta": {"breakpoint": "desktop", "state": None}, "props": {"color": prop("color", "url(http://evil.example/x)")}}]}, "variants[0].props.color.value", h)
+    rechaza("create-global-class", {"label": f"{etq}-x", "variants": [{"meta": {"breakpoint": "enorme", "state": None}, "props": {}}]}, "breakpoint", h)
+    rechaza("create-global-class", {"label": f"{etq}-x", "variants": [{"meta": {"breakpoint": "desktop", "state": None}, "props": {"colour": prop("color", "red")}}]}, "colour", h)
+    rechaza("create-global-class", {"label": f"{etq}-x", "variants": [], "extra": 1}, "extra", h)
+    rechaza("update-global-class", {"id": "g-noexiste", "label": f"{etq}-x"}, "No existe ninguna clase global", h)
+    rechaza("update-global-class", {"id": id_}, "nada que modificar", h)
+
+def clase_borrar_sin_uso():
+    id_ = clase["id"]
+    h = huella()
+    es_error, texto, _ = cli.call("delete-global-class", {"id": id_})
+    assert es_error and "confirmation" in texto, texto[:300]
+    assert huella() == h, "borrar sin confirmación cambió el estado"
+    _, d = cli.ok("delete-global-class", {"id": id_, "confirmation": "DELETE"})
+    assert d["deleted"] == id_ and d["pages_affected"] == [], d
+    assert not clase_guardada(id_)["existe"] and not clase_guardada(id_)["vista"]
+    assert not any(c["id"] == id_ for c in sistema()["classes"])
+    deshacer()
+    restaurado(h, "deshacer el borrado no devolvió la huella exacta")
+    g = clase_guardada(id_)
+    assert g["existe"] and g["vista"] and len(g["variantes"]) == 3, g
+
+def clase_borrar_en_uso():
+    id_ = clase["id"]
+    titulo = f"Prueba diseño clase elementor-mcp-{suffix}"
+    arbol = [{"type": "e-flexbox", "settings": {"classes": prop("classes", [id_])},
+              "elements": [{"type": "e-heading", "settings": {"title": prop("escaped-html", "Usa la clase")}}]}]
+    _, pagina = cli.ok("create-elementor-page", {"title": titulo, "elements": arbol})
+    h = huella()
+    es_error, texto, _ = cli.call("delete-global-class", {"id": id_, "confirmation": "DELETE"})
+    assert es_error and "en uso" in texto and titulo in texto, texto[:400]
+    assert huella() == h and clase_guardada(id_)["existe"], "el rechazo por uso cambió el estado"
+    _, d = cli.ok("delete-global-class", {"id": id_, "force": True, "confirmation": "DELETE"})
+    assert d["deleted"] == id_ and {"id": pagina["id"], "title": titulo} in d["pages_affected"], d
+    assert not clase_guardada(id_)["existe"]
+    assert id_ not in script("--meta", str(pagina["id"]), "_elementor_data"), "Elementor debía quitar la clase de la página"
+    u = deshacer()
+    assert u.get("warnings") and "no vuelve a ponerla" in u["warnings"][0], u
+    after = huella()
+    assert after["clases"] == h["clases"] and after["vista"] == h["vista"] and after["respaldo"] == "no", (after, h)
+
+comprobar("clases: crear (variantes con breakpoint y estado, orden de la vista previa), ver y deshacer", clase_crear_y_deshacer)
+comprobar("clases: modificar (label y variantes; sólo label) y deshacer", clase_modificar)
+comprobar("clases: rechazos (label repetido/inválido, CSS, breakpoint, propiedad, parámetro, id) no cambian nada", clase_rechazos)
+comprobar("clases: borrar sin uso (pide DELETE) y deshacer", clase_borrar_sin_uso)
+comprobar("clases: borrar en uso se rechaza con la lista; con force borra y deshacer avisa", clase_borrar_en_uso)
+
+# --------------------------------------------------------------- Variables
+tipos = [
+    ("color", "global-color-variable", "#112233", "#445566"),
+    ("fuente", "global-font-variable", "Roboto, sans-serif", "Open Sans"),
+    ("tamano", "global-size-variable", "24px", "2rem"),
+    ("tamano-libre", "global-custom-size-variable", "clamp(1rem, 2vw, 3rem)", "calc(100% - 2rem)"),
+]
+variables = {}
+
+def variable_crear(corto, tipo, valor, _nuevo):
+    def fn():
+        h0 = huella()
+        _, d = cli.ok("create-design-variable", {"type": tipo, "label": f"{etq}-{corto}", "value": valor})
+        assert d["id"] and d["type"] == tipo and d["label"] == f"{etq}-{corto}" and d["value"] == valor and d["undo_available"] is True, d
+        v = next((x for x in sistema()["variables"] if x["id"] == d["id"]), None)
+        assert v and v["type"] == tipo and v["value"] == valor and v["label"] == f"{etq}-{corto}", f"get-design-system: {v}"
+        g = variable_guardada(d["id"])
+        # Elementor guarda el tamaño libre como tamaño con unidad `custom`: el tipo propio sale al leerlo.
+        guardado = "global-size-variable" if tipo == "global-custom-size-variable" else tipo
+        assert g["existe"] and g["type"] == guardado and not g["borrada"], g
+        u = deshacer()
+        assert u["kind"] == "variables" and u["operation"] == "create-variable", u
+        restaurado(h0, "deshacer no devolvió la huella exacta")
+        assert not variable_guardada(d["id"])["existe"]
+        _, d = cli.ok("create-design-variable", {"type": tipo, "label": f"{etq}-{corto}", "value": valor})
+        variables[corto] = d["id"]
+    return fn
+
+def variable_modificar(corto, tipo, valor, nuevo):
+    def fn():
+        id_ = variables[corto]
+        h = huella()
+        _, d = cli.ok("update-design-variable", {"id": id_, "value": nuevo})
+        assert d["id"] == id_ and d["value"] == nuevo, d
+        v = next(x for x in sistema()["variables"] if x["id"] == id_)
+        assert v["value"] == nuevo, v
+        deshacer()
+        restaurado(h, "deshacer el valor no devolvió la huella exacta")
+        v = next(x for x in sistema()["variables"] if x["id"] == id_)
+        assert v["value"] == valor, v
+        cli.ok("update-design-variable", {"id": id_, "label": f"{etq}-{corto}-2"})
+        assert any(x["id"] == id_ and x["label"] == f"{etq}-{corto}-2" for x in sistema()["variables"])
+        deshacer()
+        restaurado(h)
+    return fn
+
+def variable_cambiar_tipo():
+    id_ = variables["tamano"]
+    h = huella()
+    _, d = cli.ok("update-design-variable", {"id": id_, "type": "global-custom-size-variable", "value": "calc(1px + 1px)"})
+    assert d["type"] == "global-custom-size-variable" and d["value"] == "calc(1px + 1px)", d
+    v = next(x for x in sistema()["variables"] if x["id"] == id_)
+    assert v["type"] == "global-custom-size-variable", v
+    deshacer()
+    restaurado(h, "deshacer el cambio de tipo no devolvió la huella exacta")
+    v = next(x for x in sistema()["variables"] if x["id"] == id_)
+    assert v["type"] == "global-size-variable" and v["value"] == "24px", v
+
+def variable_rechazos():
+    h = huella()
+    ids = variables
+    rechaza("create-design-variable", {"type": "global-color-variable", "label": f"{etq}-nuevo", "value": "rojo"}, "value:", h)
+    rechaza("create-design-variable", {"type": "global-color-variable", "label": f"{etq}-nuevo", "value": "url(http://evil.example/x)"}, "value:", h)
+    rechaza("create-design-variable", {"type": "global-size-variable", "label": f"{etq}-nuevo", "value": "calc(1px + 1px)"}, "value:", h)
+    rechaza("create-design-variable", {"type": "global-custom-size-variable", "label": f"{etq}-nuevo", "value": "calc(1px"}, "paréntesis", h)
+    rechaza("create-design-variable", {"type": "global-font-variable", "label": f"{etq}-nuevo", "value": "a;b"}, "value:", h)
+    rechaza("create-design-variable", {"type": "global-color-variable", "label": "con espacio", "value": "#fff"}, "label:", h)
+    rechaza("create-design-variable", {"type": "global-color-variable", "label": "x:red;}body{display:none;--y", "value": "#fff"}, "label:", h)
+    rechaza("update-design-variable", {"id": ids["color"], "label": "a{}"}, "label:", h)
+    rechaza("create-design-variable", {"type": "global-color-variable", "label": f"{etq}-COLOR", "value": "#fff"}, "ya existe una variable", h)
+    rechaza("create-design-variable", {"type": "otra", "label": f"{etq}-nuevo", "value": "#fff"}, "type", h)
+    rechaza("update-design-variable", {"id": ids["color"], "type": "global-custom-size-variable"}, "type:", h)
+    rechaza("update-design-variable", {"id": ids["color"], "value": "10px"}, "value:", h)
+    rechaza("update-design-variable", {"id": "e-gv-noexiste", "value": "#fff"}, "No existe una variable", h)
+    rechaza("update-design-variable", {"id": ids["color"]}, "indicá qué cambiar", h)
+
+def variable_borrar_sin_uso():
+    id_ = variables["fuente"]
+    h = huella()
+    es_error, texto, _ = cli.call("delete-design-variable", {"id": id_})
+    assert es_error and "confirmation" in texto, texto[:300]
+    assert huella() == h
+    _, d = cli.ok("delete-design-variable", {"id": id_, "confirmation": "DELETE"})
+    assert d["deleted"] == id_ and d["pages_affected"] == [], d
+    assert variable_guardada(id_)["borrada"]
+    assert not any(x["id"] == id_ for x in sistema()["variables"])
+    deshacer()
+    restaurado(h, "deshacer el borrado no devolvió la huella exacta")
+    assert not variable_guardada(id_)["borrada"] and any(x["id"] == id_ for x in sistema()["variables"])
+
+def variable_borrar_en_uso():
+    id_ = variables["color"]
+    titulo = f"Prueba diseño variable elementor-mcp-{suffix}"
+    estilo = {"id": "caja", "type": "class", "label": "caja-variable", "variants": [
+        {"meta": {"breakpoint": "desktop", "state": None}, "props": {"color": prop("global-color-variable", id_)}}]}
+    arbol = [{"type": "e-flexbox", "settings": {"classes": prop("classes", ["caja"])}, "styles": {"caja": estilo},
+              "elements": [{"type": "e-heading", "settings": {"title": prop("escaped-html", "Usa la variable")}}]}]
+    _, pagina = cli.ok("create-elementor-page", {"title": titulo, "elements": arbol})
+    h = huella()
+    es_error, texto, _ = cli.call("delete-design-variable", {"id": id_, "confirmation": "DELETE"})
+    assert es_error and "se usa en" in texto, texto[:400]
+    assert huella() == h and not variable_guardada(id_)["borrada"], "el rechazo por uso cambió el estado"
+    _, d = cli.ok("delete-design-variable", {"id": id_, "force": True, "confirmation": "DELETE"})
+    assert d["deleted"] == id_ and {"id": pagina["id"], "title": titulo} in d["pages_affected"], d
+    assert variable_guardada(id_)["borrada"]
+    u = deshacer()
+    assert u.get("warnings"), u
+    restaurado(h, "deshacer el borrado forzado no devolvió la huella exacta")
+
+for corto, tipo, valor, nuevo in tipos:
+    comprobar(f"variables ({tipo}): crear, ver y deshacer", variable_crear(corto, tipo, valor, nuevo))
+for corto, tipo, valor, nuevo in tipos:
+    comprobar(f"variables ({tipo}): modificar valor y label y deshacer", variable_modificar(corto, tipo, valor, nuevo))
+comprobar("variables: cambiar el tipo entre tamaño y tamaño libre y deshacer", variable_cambiar_tipo)
+comprobar("variables: rechazos (valor por tipo, CSS, label, tipo, id) no cambian nada", variable_rechazos)
+comprobar("variables: borrar sin uso (pide DELETE) y deshacer", variable_borrar_sin_uso)
+comprobar("variables: borrar en uso se rechaza con la lista; con force borra y deshacer avisa", variable_borrar_en_uso)
+
+# --------------------------------------------------------------------- Kit
+kit = {}
+
+def item(lista, id_):
+    return next(x for x in lista if x["id"] == id_)
+
+def kit_colores():
+    h = huella()
+    d0 = sistema()
+    primario = item(d0["colors"], "primary")
+    _, r = cli.ok("update-kit-globals", {"colors": [{"id": "primary", "color": "#123456"}]})
+    assert item(r["colors"], "primary")["color"].lower() == "#123456", r["colors"]
+    assert item(sistema()["colors"], "primary")["color"].lower() == "#123456"
+    assert any(x.get("_id") == "primary" and x.get("color", "").lower() == "#123456" for x in lista_kit("system_colors"))
+    u = deshacer()
+    assert u["kind"] == "kit" and u["operation"] == "update", u
+    restaurado(h, "deshacer el color system no devolvió la huella exacta")
+    assert item(sistema()["colors"], "primary")["color"] == primario["color"]
+    _, r = cli.ok("update-kit-globals", {"colors": [{"title": f"{etq}-color", "color": "#abcdef"}]})
+    nuevo = next(x for x in r["colors"] if x["title"] == f"{etq}-color")
+    assert nuevo["color"].lower() == "#abcdef" and nuevo["id"], nuevo
+    assert any(x.get("_id") == nuevo["id"] for x in lista_kit("custom_colors")), "el color nuevo debía quedar en custom_colors"
+    deshacer()
+    restaurado(h, "deshacer el color nuevo no devolvió la huella exacta")
+    _, r = cli.ok("update-kit-globals", {"colors": [{"title": f"{etq}-color", "color": "#abcdef"}]})
+    kit["color"] = next(x for x in r["colors"] if x["title"] == f"{etq}-color")["id"]
+
+def kit_tipografia():
+    h = huella()
+    d0 = sistema()
+    primaria = item(d0["typography"], "primary")
+    _, r = cli.ok("update-kit-globals", {"typography": [{"id": "primary", "typography_font_family": "Lora", "typography_font_weight": "700"}]})
+    t = item(r["typography"], "primary")
+    assert t.get("font_family") == "Lora" and t.get("font_weight") == "700", t
+    t = item(sistema()["typography"], "primary")
+    assert t.get("font_family") == "Lora" and t.get("font_weight") == "700", t
+    deshacer()
+    restaurado(h, "deshacer la tipografía system no devolvió la huella exacta")
+    assert item(sistema()["typography"], "primary").get("font_family") == primaria.get("font_family")
+    nueva = {"title": f"{etq}-tipo", "typography_typography": "custom", "typography_font_family": "Lora",
+             "typography_font_size": {"unit": "px", "size": 30}, "typography_font_size_mobile": {"unit": "px", "size": 22}}
+    _, r = cli.ok("update-kit-globals", {"typography": [nueva]})
+    creada = next(x for x in r["typography"] if x["title"] == f"{etq}-tipo")
+    guardada = next(x for x in lista_kit("custom_typography") if x.get("_id") == creada["id"])
+    assert guardada["typography_font_family"] == "Lora" and guardada["typography_font_size"]["size"] == 30 and guardada["typography_font_size_mobile"]["size"] == 22, guardada
+    deshacer()
+    restaurado(h, "deshacer la tipografía nueva no devolvió la huella exacta")
+    _, r = cli.ok("update-kit-globals", {"typography": [nueva]})
+    kit["tipo"] = next(x for x in r["typography"] if x["title"] == f"{etq}-tipo")["id"]
+
+def kit_borrar():
+    for clave, lista in (("color", "colors"), ("tipo", "typography")):
+        h = huella()
+        id_ = kit[clave]
+        es_error, texto, _ = cli.call("update-kit-globals", {"delete": [id_]})
+        assert es_error and "DELETE" in texto, texto[:300]
+        assert huella() == h, "borrar sin confirmación cambió el estado"
+        _, r = cli.ok("update-kit-globals", {"delete": [id_], "confirmation": "DELETE"})
+        assert not any(x["id"] == id_ for x in r[lista]), r[lista]
+        assert not any(x["id"] == id_ for x in sistema()[lista])
+        deshacer()
+        restaurado(h, f"deshacer el borrado de {lista} no devolvió la huella exacta")
+        assert any(x["id"] == id_ for x in sistema()[lista])
+
+def kit_rechazos():
+    h = huella()
+    rechaza("update-kit-globals", {"colors": [{"id": "primary", "color": "rojo"}]}, "colors[0].color", h)
+    rechaza("update-kit-globals", {"colors": [{"title": "sin color"}]}, "colors[0]", h)
+    rechaza("update-kit-globals", {"typography": [{"id": "primary", "typography_font_size": {"unit": "parsec", "size": 1}}]}, "typography_font_size", h)
+    rechaza("update-kit-globals", {"typography": [{"id": "primary", "typography_inventada": "x"}]}, "typography_inventada", h)
+    rechaza("update-kit-globals", {"typography": [{"id": "primary", "typography_font_size": {"unit": "custom", "size": "calc(1rem /* x"}}]}, "typography[0].typography_font_size", h)
+    rechaza("update-kit-globals", {"colors": [{"id": "no-existe", "color": "#fff"}]}, "no-existe", h)
+    rechaza("update-kit-globals", {}, "nada", h)
+    rechaza("update-kit-globals", {"delete": ["primary"], "confirmation": "DELETE"}, "primary", h)
+
+comprobar("Kit: colores (system y custom): modificar, crear y deshacer", kit_colores)
+comprobar("Kit: tipografía (system y custom con tamaños por dispositivo): modificar, crear y deshacer", kit_tipografia)
+comprobar("Kit: borrar custom (pide DELETE) y deshacer", kit_borrar)
+comprobar("Kit: rechazos (color, tamaño, clave, id, vacío, borrar system) no cambian nada", kit_rechazos)
+
+# ---------------------------------------------------------------- Permisos
+def permisos():
+    h = huella()
+    id_clase, id_var = clase["id"], variables["color"]
+    entradas = {
+        "create-global-class": {"label": f"{etq}-p", "variants": []},
+        "update-global-class": {"id": id_clase, "label": f"{etq}-p"},
+        "delete-global-class": {"id": id_clase, "confirmation": "DELETE"},
+        "create-design-variable": {"type": "global-color-variable", "label": f"{etq}-p", "value": "#fff"},
+        "update-design-variable": {"id": id_var, "value": "#fff"},
+        "delete-design-variable": {"id": id_var, "confirmation": "DELETE"},
+        "update-kit-globals": {"colors": [{"id": "primary", "color": "#123456"}]},
+        "undo-design-system-change": {"confirmation": "UNDO"},
+    }
+    try:
+        script("--ajuste", "design_system_tools_enabled", "false")
+        for nombre, args in entradas.items():
+            es_error, texto, _ = cli.call(nombre, args)
+            assert es_error, f"{nombre} con el permiso apagado debía denegarse: {texto[:200]}"
+        assert huella() == h, "con el permiso apagado cambió el estado"
+    finally:
+        script("--ajuste", "design_system_tools_enabled", "true")
+    try:
+        script("--ajuste", "read_only", "true")
+        for nombre, args in entradas.items():
+            es_error, texto, _ = cli.call(nombre, args)
+            assert es_error, f"{nombre} en «Solo revisar» debía denegarse: {texto[:200]}"
+        assert huella() == h, "en «Solo revisar» cambió el estado"
+    finally:
+        script("--ajuste", "read_only", "false")
+    try:
+        script("--ajuste", "destructive_enabled", "false")
+        for nombre in ("delete-global-class", "delete-design-variable"):
+            es_error, texto, _ = cli.call(nombre, entradas[nombre])
+            assert es_error, f"{nombre} sin el permiso destructivo debía denegarse: {texto[:200]}"
+        es_error, texto, _ = cli.call("update-kit-globals", {"delete": [kit["color"]], "confirmation": "DELETE"})
+        assert es_error, f"update-kit-globals con delete sin el permiso destructivo debía denegarse: {texto[:200]}"
+        assert huella() == h, "sin el permiso destructivo cambió el estado"
+        # Lo que no borra sigue permitido.
+        cli.ok("update-kit-globals", entradas["update-kit-globals"])
+        deshacer()
+        restaurado(h)
+    finally:
+        script("--ajuste", "destructive_enabled", "true")
+
+comprobar("permisos: apagado, «Solo revisar» y sin permiso destructivo se deniegan y no cambian nada", permisos)
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de escritura del sistema de diseño OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "las herramientas de escritura del sistema de diseño tuvieron comprobaciones fallidas"
+	tools/prueba_adaptadores.sh --ajuste destructive_enabled "$destructivo_previo"
+	echo "Restauración del estado: $(restaurar_diseno)"
+	diseno_foto_tomada=""
+	check_eq "diseño: la huella final es la inicial" "$huella_inicio" "$(tools/prueba_adaptadores.sh --diseno-huella)"
+	check_eq "diseño: el permiso destructivo quedó como estaba" "$destructivo_previo" "$(tools/prueba_adaptadores.sh --ajuste-valor destructive_enabled)"
+	check_eq "diseño: sin bloqueos del sistema de diseño" "" "$(tools/prueba_adaptadores.sh --bloqueos)"
+fi
 echo
 echo "### Verificación con wp-cli"
 check_eq "Yoast título (_yoast_wpseo_title)" "$titulo_seo" "$(wpr post meta get "$page_id" _yoast_wpseo_title)"
