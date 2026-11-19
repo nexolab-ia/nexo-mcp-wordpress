@@ -19,6 +19,9 @@ namespace NexoDev\NexoMCP\Authorization;
  *
  * - delete-product: `DELETE` (con `force` el producto se borra para siempre).
  * - restore-revision: `RESTORE` (reemplaza el contenido actual por otro).
+ * - delete-global-class y delete-design-variable: `DELETE` (quitan la clase o variable de todo el sitio).
+ * - update-kit-globals: `DELETE`, sólo si `delete` trae algo (borra colores o tipografías personalizadas).
+ * - undo-design-system-change: `UNDO` (sobrescribe la colección completa con el respaldo).
  * - execute-plugin-action: no usa palabra; su confirmación es el token de
  *   aprobación de un solo uso que entrega prepare-plugin-action.
  */
@@ -35,8 +38,20 @@ final class IrreversibleActions {
 	 * @var array<string, string>
 	 */
 	private const WORDS = array(
-		'delete-product'   => 'DELETE',
-		'restore-revision' => 'RESTORE',
+		'delete-product'            => 'DELETE',
+		'restore-revision'          => 'RESTORE',
+		'delete-global-class'       => 'DELETE',
+		'delete-design-variable'    => 'DELETE',
+		'undo-design-system-change' => 'UNDO',
+	);
+
+	/**
+	 * Herramientas que piden palabra sólo si un parámetro trae algo: herramienta => [parámetro, palabra].
+	 *
+	 * @var array<string, array{0: string, 1: string}>
+	 */
+	private const CONDITIONAL = array(
+		'update-kit-globals' => array( 'delete', 'DELETE' ),
 	);
 
 	/**
@@ -48,10 +63,28 @@ final class IrreversibleActions {
 	/**
 	 * Palabra que exige una herramienta, o null si no exige ninguna.
 	 *
-	 * @param string $tool Nombre corto de la herramienta.
+	 * Una herramienta condicional (`update-kit-globals`) devuelve su palabra sin `$input`
+	 * (para el esquema) y, con `$input`, sólo si el parámetro que la dispara trae algo.
+	 *
+	 * @param string                    $tool  Nombre corto de la herramienta.
+	 * @param array<string, mixed>|null $input Parámetros recibidos, si se evalúa una llamada.
 	 */
-	public static function word_for( string $tool ): ?string {
-		return self::WORDS[ $tool ] ?? null;
+	public static function word_for( string $tool, ?array $input = null ): ?string {
+		if ( isset( self::WORDS[ $tool ] ) ) {
+			return self::WORDS[ $tool ];
+		}
+
+		if ( ! isset( self::CONDITIONAL[ $tool ] ) ) {
+			return null;
+		}
+
+		[ $param, $word ] = self::CONDITIONAL[ $tool ];
+
+		if ( null === $input ) {
+			return $word;
+		}
+
+		return isset( $input[ $param ] ) && array() !== $input[ $param ] && '' !== $input[ $param ] ? $word : null;
 	}
 
 	/**
@@ -60,7 +93,7 @@ final class IrreversibleActions {
 	 * @return array<int, string>
 	 */
 	public static function tools(): array {
-		return array_keys( self::WORDS );
+		return array_merge( array_keys( self::WORDS ), array_keys( self::CONDITIONAL ) );
 	}
 
 	/**
@@ -72,7 +105,7 @@ final class IrreversibleActions {
 	 * @return true|\WP_Error
 	 */
 	public static function check( string $tool, array $input ) {
-		$word = self::word_for( $tool );
+		$word = self::word_for( $tool, $input );
 
 		if ( null === $word ) {
 			return true;

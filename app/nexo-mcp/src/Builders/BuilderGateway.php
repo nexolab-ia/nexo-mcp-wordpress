@@ -48,16 +48,63 @@ final class BuilderGateway {
 	private Settings $settings;
 
 	/**
+	 * Escritor del sistema de diseño (bloqueo, respaldo, deshacer); se crea al usarlo.
+	 *
+	 * @var DesignSystemWriter|null
+	 */
+	private ?DesignSystemWriter $design_writer;
+
+	/**
+	 * Operaciones de clases globales; se crean al usarlas.
+	 *
+	 * @var DesignClassOperations|null
+	 */
+	private ?DesignClassOperations $design_classes;
+
+	/**
+	 * Operaciones de variables globales; se crean al usarlas.
+	 *
+	 * @var DesignVariableOperations|null
+	 */
+	private ?DesignVariableOperations $design_variables;
+
+	/**
+	 * Operaciones de colores y tipografía del Kit; se crean al usarlas.
+	 *
+	 * @var DesignKitOperations|null
+	 */
+	private ?DesignKitOperations $design_kit;
+
+	/**
 	 * Construye el gateway.
 	 *
-	 * @param BuilderRegistry|null $registry Registro de adaptadores.
-	 * @param BuilderBackup|null   $backup   Gestor de respaldos.
-	 * @param Settings|null        $settings Configuración operativa.
+	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
+	 * omisión se crean con los almacenes reales de Elementor, y comparten el escritor.
+	 *
+	 * @param BuilderRegistry|null          $registry         Registro de adaptadores.
+	 * @param BuilderBackup|null            $backup           Gestor de respaldos.
+	 * @param Settings|null                 $settings         Configuración operativa.
+	 * @param DesignSystemWriter|null       $design_writer    Escritor del sistema de diseño.
+	 * @param DesignClassOperations|null    $design_classes   Operaciones de clases globales.
+	 * @param DesignVariableOperations|null $design_variables Operaciones de variables globales.
+	 * @param DesignKitOperations|null      $design_kit       Operaciones del Kit.
 	 */
-	public function __construct( ?BuilderRegistry $registry = null, ?BuilderBackup $backup = null, ?Settings $settings = null ) {
-		$this->registry = $registry ?? new BuilderRegistry();
-		$this->backup   = $backup ?? new BuilderBackup();
-		$this->settings = $settings ?? new Settings();
+	public function __construct(
+		?BuilderRegistry $registry = null,
+		?BuilderBackup $backup = null,
+		?Settings $settings = null,
+		?DesignSystemWriter $design_writer = null,
+		?DesignClassOperations $design_classes = null,
+		?DesignVariableOperations $design_variables = null,
+		?DesignKitOperations $design_kit = null
+	) {
+		$this->registry         = $registry ?? new BuilderRegistry();
+		$this->backup           = $backup ?? new BuilderBackup();
+		$this->settings         = $settings ?? new Settings();
+		$this->design_writer    = $design_writer;
+		$this->design_classes   = $design_classes;
+		$this->design_variables = $design_variables;
+		$this->design_kit       = $design_kit;
 	}
 
 	/**
@@ -140,7 +187,133 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function undo_design_system_change() {
-		return ( new DesignSystemWriter() )->undo();
+		return $this->design_writer()->undo();
+	}
+
+	/**
+	 * Crea una clase global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{label, variants}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_global_class( array $input ) {
+		return $this->design_classes()->create( $input );
+	}
+
+	/**
+	 * Modifica una clase global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{id, label?, variants?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function update_global_class( array $input ) {
+		return $this->design_classes()->update( $input );
+	}
+
+	/**
+	 * Borra una clase global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{id, force?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_global_class( array $input ) {
+		return $this->design_classes()->delete( $this->without_confirmation( $input ) );
+	}
+
+	/**
+	 * Crea una variable global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{type, label, value}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_design_variable( array $input ) {
+		return $this->design_variables()->create( $input );
+	}
+
+	/**
+	 * Modifica una variable global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{id, label?, value?, type?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function update_design_variable( array $input ) {
+		return $this->design_variables()->update( $input );
+	}
+
+	/**
+	 * Borra una variable global de Elementor.
+	 *
+	 * @param array<string, mixed> $input `{id, force?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_design_variable( array $input ) {
+		return $this->design_variables()->delete( $this->without_confirmation( $input ) );
+	}
+
+	/**
+	 * Modifica los colores y la tipografía globales del Kit activo.
+	 *
+	 * @param array<string, mixed> $input `{colors?, typography?, delete?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function update_kit_globals( array $input ) {
+		return $this->design_kit()->update( $this->without_confirmation( $input ) );
+	}
+
+	/**
+	 * Quita la palabra de confirmación: ya la comprobó `IrreversibleActions` y no es un parámetro de la operación.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function without_confirmation( array $input ): array {
+		unset( $input['confirmation'] );
+
+		return $input;
+	}
+
+	/**
+	 * Escritor compartido por todas las escrituras del sistema de diseño.
+	 */
+	private function design_writer(): DesignSystemWriter {
+		$this->design_writer ??= new DesignSystemWriter();
+
+		return $this->design_writer;
+	}
+
+	/**
+	 * Operaciones de clases globales.
+	 */
+	private function design_classes(): DesignClassOperations {
+		$this->design_classes ??= new DesignClassOperations( $this->design_writer() );
+
+		return $this->design_classes;
+	}
+
+	/**
+	 * Operaciones de variables globales.
+	 */
+	private function design_variables(): DesignVariableOperations {
+		$this->design_variables ??= new DesignVariableOperations( $this->design_writer() );
+
+		return $this->design_variables;
+	}
+
+	/**
+	 * Operaciones del Kit.
+	 */
+	private function design_kit(): DesignKitOperations {
+		$this->design_kit ??= new DesignKitOperations( $this->design_writer() );
+
+		return $this->design_kit;
 	}
 
 	/**

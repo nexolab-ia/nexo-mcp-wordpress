@@ -49,16 +49,18 @@ final class UndoDesignSystemToolTest extends NexoTestCase {
 		return \WP_Test_State::$abilities[ self::TOOL ];
 	}
 
-	public function test_es_una_herramienta_de_escritura_no_destructiva_sin_entrada(): void {
+	public function test_es_una_herramienta_de_escritura_destructiva_que_pide_confirmacion(): void {
 		$ability = $this->ability();
 
 		$this->assertContains( self::TOOL, ExtendedAbilityRegistrar::ABILITIES );
 		$this->assertFalse( $ability['meta']['annotations']['readonly'] );
-		$this->assertFalse( $ability['meta']['annotations']['destructive'] );
-		$this->assertInstanceOf( \stdClass::class, $ability['input_schema']['properties'] );
-		$this->assertArrayNotHasKey( 'required', $ability['input_schema'] );
+		$this->assertTrue( $ability['meta']['annotations']['destructive'] );
+		$this->assertSame( array( 'confirmation' ), array_keys( $ability['input_schema']['properties'] ) );
+		$this->assertSame( array( 'UNDO' ), $ability['input_schema']['properties']['confirmation']['enum'] );
+		$this->assertSame( array( 'confirmation' ), $ability['input_schema']['required'] );
+		$this->assertFalse( $ability['input_schema']['additionalProperties'] );
 
-		foreach ( array( 'nexo_mcp_design_no_backup', 'un nivel', 'mismos ids', 'colección completa', 'desde el editor de Elementor también se pierde' ) as $needle ) {
+		foreach ( array( 'nexo_mcp_design_no_backup', 'nexo_mcp_design_kit_changed', '"confirmation": "UNDO"', 'un nivel', 'mismos ids', 'colección completa', 'desde el editor de Elementor también se pierde' ) as $needle ) {
 			$this->assertStringContainsString( $needle, $ability['description'], $needle );
 		}
 	}
@@ -84,7 +86,7 @@ final class UndoDesignSystemToolTest extends NexoTestCase {
 	public function test_sin_respaldo_responde_el_error_y_no_cambia_nada(): void {
 		$options = \WP_Test_State::$options;
 
-		$result = $this->ability()['execute_callback']( array() );
+		$result = $this->ability()['execute_callback']( array( 'confirmation' => 'UNDO' ) );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_design_no_backup', $result->get_error_code() );
@@ -95,10 +97,24 @@ final class UndoDesignSystemToolTest extends NexoTestCase {
 	public function test_un_respaldo_malformado_tambien_responde_sin_respaldo(): void {
 		update_option( DesignSystemWriter::BACKUP_OPTION, array( 'kind' => 'pages' ), false );
 
-		$result = $this->ability()['execute_callback']( array() );
+		$result = $this->ability()['execute_callback']( array( 'confirmation' => 'UNDO' ) );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_design_no_backup', $result->get_error_code() );
 		$this->assertSame( array( 'kind' => 'pages' ), \WP_Test_State::$options[ DesignSystemWriter::BACKUP_OPTION ] );
+	}
+
+	public function test_sin_confirmacion_no_se_ejecuta_ni_se_toca_el_respaldo(): void {
+		$stored = array( 'kind' => 'pages' );
+		update_option( DesignSystemWriter::BACKUP_OPTION, $stored, false );
+
+		foreach ( array( array(), array( 'confirmation' => 'undo' ), array( 'confirmation' => 'DELETE' ) ) as $input ) {
+			$result = $this->ability()['execute_callback']( $input );
+
+			$this->assertInstanceOf( \WP_Error::class, $result );
+			$this->assertSame( 'nexo_mcp_confirmation_required', $result->get_error_code() );
+		}
+
+		$this->assertSame( $stored, \WP_Test_State::$options[ DesignSystemWriter::BACKUP_OPTION ] );
 	}
 }

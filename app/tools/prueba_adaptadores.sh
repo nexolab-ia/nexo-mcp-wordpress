@@ -1458,7 +1458,7 @@ def sin_respaldo():
     antes = script("--diseno-estado")
     assert len(antes) == 32, f"huella del estado: {antes!r}"
     for _ in range(2):  # deshacer dos veces seguidas no cambia más
-        error, texto, _ = cli.call("undo-design-system-change", {})
+        error, texto, _ = cli.call("undo-design-system-change", {"confirmation": "UNDO"})
         assert error and "No hay ningún cambio del sistema de diseño para deshacer." in texto, texto[:300]
         assert script("--diseno-estado") == antes, "deshacer sin respaldo cambió el estado"
 comprobar("undo-design-system-change sin respaldo: error y nada cambia (dos veces)", sin_respaldo)

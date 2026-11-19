@@ -14,6 +14,9 @@ use NexoDev\NexoMCP\Authorization\DenialExplainer;
 use NexoDev\NexoMCP\Authorization\IrreversibleActions;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
+use NexoDev\NexoMCP\Builders\DesignKitOperations;
+use NexoDev\NexoMCP\Builders\DesignVariableValue;
+use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
 use NexoDev\NexoMCP\Fields\FieldGateway;
 use NexoDev\NexoMCP\Support\Settings;
 use NexoDev\NexoMCP\WooCommerce\ProductGateway;
@@ -61,6 +64,13 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/get-page-structure',
 		'nexo-mcp/get-design-system',
 		'nexo-mcp/undo-design-system-change',
+		'nexo-mcp/create-global-class',
+		'nexo-mcp/update-global-class',
+		'nexo-mcp/delete-global-class',
+		'nexo-mcp/create-design-variable',
+		'nexo-mcp/update-design-variable',
+		'nexo-mcp/delete-design-variable',
+		'nexo-mcp/update-kit-globals',
 		'nexo-mcp/create-elementor-page',
 		'nexo-mcp/edit-elementor-section',
 		'nexo-mcp/update-node-text',
@@ -274,11 +284,75 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'undo-design-system-change',
 			'Deshacer el último cambio del sistema de diseño de Elementor',
-			'Restaura el estado previo al último cambio hecho al sistema de diseño de Elementor por este conector (clases globales, variables, o colores y tipografía del Kit), con los mismos ids, y borra ese respaldo. Restaura la colección completa que el cambio tocó (todas las clases, todas las variables, o las listas de colores y tipografía del Kit) tal como estaba antes del último cambio: lo que se haya cambiado después en esa colección desde el editor de Elementor también se pierde. Sólo hay un nivel: el último cambio; deshacer dos veces seguidas no cambia más. Sin cambio que deshacer responde nexo_mcp_design_no_backup y no cambia nada. Si el cambio había quitado una clase de las páginas que la usaban, deshacer la devuelve a la lista de clases pero no vuelve a ponerla en esas páginas (la respuesta lo avisa en warnings). Requiere el permiso del sistema de diseño y, para clases y variables, el Editor V4 activo.',
+			'Restaura el estado previo al último cambio hecho al sistema de diseño de Elementor por este conector (clases globales, variables, o colores y tipografía del Kit), con los mismos ids, y borra ese respaldo. Restaura la colección completa que el cambio tocó (todas las clases, todas las variables, o las listas de colores y tipografía del Kit) tal como estaba antes del último cambio: lo que se haya cambiado después en esa colección desde el editor de Elementor también se pierde. Sólo hay un nivel: el último cambio; deshacer dos veces seguidas no cambia más. Sin cambio que deshacer responde nexo_mcp_design_no_backup y no cambia nada. Si el cambio había quitado una clase de las páginas que la usaban, deshacer la devuelve a la lista de clases pero no vuelve a ponerla en esas páginas (la respuesta lo avisa en warnings). Si el Kit activo cambió desde el último cambio responde nexo_mcp_design_kit_changed y no restaura nada. Pide confirmación explícita de la persona: repetir la llamada con "confirmation": "UNDO". Requiere el permiso del sistema de diseño y, para clases y variables, el Editor V4 activo.',
 			'write',
-			$this->empty_schema(),
+			$this->confirmation_schema( 'undo-design-system-change' ),
 			fn() => $this->builders->undo_design_system_change(),
 			fn() => $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' )
+		);
+		$this->ability(
+			'create-global-class',
+			'Crear clase global de Elementor 4',
+			'Crea una clase global de Elementor 4 (estilos reutilizables con variantes por breakpoint y estado). CAMBIA TODO EL SITIO EN VIVO: la clase queda disponible en el editor al instante. Antes llamar a nexo-mcp-get-design-system para ver las clases y variables que ya existen y no duplicarlas. Se puede deshacer con nexo-mcp-undo-design-system-change (un solo nivel: el último cambio). Reglas: label con formato /^[a-z][a-z-_0-9]*$/i, de hasta 50 caracteres y único sin distinguir mayúsculas (si ya existe se rechaza con nexo_mcp_design_label_taken: no se renombra solo); máximo 1000 clases (nexo_mcp_design_limit_reached). ' . $this->class_variants_rules() . ' Devuelve {id, label}: el id (g-…) es el que se lista en settings.classes de los nodos. Todo error de validación es nexo_mcp_design_invalid con «ruta: motivo» y data.path, y no escribe nada. Requiere el permiso del sistema de diseño y el Editor V4 activo (nexo_mcp_elementor_v4_required).',
+			'write',
+			$this->class_create_schema(),
+			fn( array $input ) => $this->builders->create_global_class( $input ),
+			fn() => $this->design_write()
+		);
+		$this->ability(
+			'update-global-class',
+			'Modificar clase global de Elementor 4',
+			'Cambia el label y/o las variantes de una clase global existente, con el mismo id. CAMBIA TODO EL SITIO EN VIVO: las páginas que usan la clase cambian de estilo. Antes llamar a nexo-mcp-get-design-system. Se puede deshacer con nexo-mcp-undo-design-system-change. variants REEMPLAZA todas las variantes de la clase (mandar la lista completa); sin variants se conservan las actuales. ' . $this->class_variants_rules() . ' El label nuevo sigue las reglas de create-global-class y no puede repetir el de otra clase (nexo_mcp_design_label_taken). Id inexistente: nexo_mcp_design_not_found. Sin label ni variants responde nexo_mcp_design_invalid. Devuelve {id, label}. Requiere el permiso del sistema de diseño y el Editor V4 activo.',
+			'write',
+			$this->class_update_schema(),
+			fn( array $input ) => $this->builders->update_global_class( $input ),
+			fn() => $this->design_write()
+		);
+		$this->ability(
+			'delete-global-class',
+			'Eliminar clase global de Elementor 4',
+			'Elimina una clase global. CAMBIA TODO EL SITIO EN VIVO: las páginas que la usan pierden ese estilo. Antes llamar a nexo-mcp-get-design-system. Si la clase está en uso se rechaza con nexo_mcp_design_in_use y data.used_in [{id, title}] sin borrar nada; sólo con force: true se borra igual y Elementor la quita de esas páginas. Deshacer con nexo-mcp-undo-design-system-change restaura la clase (mismo id) pero NO vuelve a ponerla en las páginas de las que se quitó (la respuesta lo avisa). Pide confirmación explícita de la persona: repetir la llamada con "confirmation": "DELETE". Devuelve {deleted, pages_affected: [{id, title}]}. Requiere el permiso del sistema de diseño, el permiso destructivo y el Editor V4 activo.',
+			'write',
+			$this->confirmed_delete_schema( 'delete-global-class', 'Id de la clase global (g-…).' ),
+			fn( array $input ) => $this->builders->delete_global_class( $input ),
+			fn() => $this->design_destroy()
+		);
+		$this->ability(
+			'create-design-variable',
+			'Crear variable global de Elementor 4',
+			'Crea una variable global de Elementor 4. CAMBIA TODO EL SITIO EN VIVO. Antes llamar a nexo-mcp-get-design-system para ver las variables existentes. Se puede deshacer con nexo-mcp-undo-design-system-change (un solo nivel). type: global-color-variable (hex #rgb/#rrggbb/#rrggbbaa o rgb()/rgba()/hsl()/hsla() con números), global-font-variable (nombres de familia separados por comas), global-size-variable (número + unidad en minúsculas, sin espacios: 16px, 1.5rem, 50%) o global-custom-size-variable (texto CSS como calc() o clamp(), con las mismas restricciones de valores de estilo que las clases: sin ; { } < > \ @ , url(), var() ni !important, comillas y paréntesis cerrados). label de letras sin tildes, números, guiones y guiones bajos (se usa como nombre de la propiedad CSS --label; sin espacios ni otros símbolos, no empieza con --), de hasta 50 caracteres y único sin distinguir mayúsculas entre las variables no borradas (nexo_mcp_design_label_taken); máximo 1000 variables activas (nexo_mcp_design_limit_reached). value no vacío, de hasta 512 caracteres y validado según el tipo. Devuelve {id, type, label, value}. Todo error de validación es nexo_mcp_design_invalid con «ruta: motivo» y data.path, y no escribe nada. Requiere el permiso del sistema de diseño y el Editor V4 activo.',
+			'write',
+			$this->variable_create_schema(),
+			fn( array $input ) => $this->builders->create_design_variable( $input ),
+			fn() => $this->design_write()
+		);
+		$this->ability(
+			'update-design-variable',
+			'Modificar variable global de Elementor 4',
+			'Cambia el label, el valor y/o el tipo de una variable global existente, con el mismo id. CAMBIA TODO EL SITIO EN VIVO: lo que usa la variable cambia de aspecto. Antes llamar a nexo-mcp-get-design-system. Se puede deshacer con nexo-mcp-undo-design-system-change. El tipo sólo se puede cambiar entre global-size-variable y global-custom-size-variable; el valor se valida contra el tipo resultante y el label sigue las reglas de create-design-variable. Id inexistente o ya borrado: nexo_mcp_design_not_found. Sin label, value ni type responde nexo_mcp_design_invalid. Devuelve {id, type, label, value}. Requiere el permiso del sistema de diseño y el Editor V4 activo.',
+			'write',
+			$this->variable_update_schema(),
+			fn( array $input ) => $this->builders->update_design_variable( $input ),
+			fn() => $this->design_write()
+		);
+		$this->ability(
+			'delete-design-variable',
+			'Eliminar variable global de Elementor 4',
+			'Elimina una variable global (borrado lógico de Elementor). CAMBIA TODO EL SITIO EN VIVO: lo que usa la variable pierde ese valor. Antes llamar a nexo-mcp-get-design-system. Si la variable está en uso se rechaza con nexo_mcp_design_in_use y data.used_in [{id, title}] (de los contenidos de Elementor y el Kit donde aparece) sin borrar nada; sólo con force: true se borra igual. Deshacer con nexo-mcp-undo-design-system-change restaura la variable con el mismo id. Pide confirmación explícita de la persona: repetir la llamada con "confirmation": "DELETE". Devuelve {deleted, pages_affected: [{id, title}]}. Requiere el permiso del sistema de diseño, el permiso destructivo y el Editor V4 activo.',
+			'write',
+			$this->confirmed_delete_schema( 'delete-design-variable', 'Id de la variable global (e-gv-…).' ),
+			fn( array $input ) => $this->builders->delete_design_variable( $input ),
+			fn() => $this->design_destroy()
+		);
+		$this->ability(
+			'update-kit-globals',
+			'Modificar colores y tipografía globales del Kit',
+			'Modifica, crea y borra los colores y las tipografías globales del Kit activo de Elementor (system y custom). CAMBIA TODO EL SITIO EN VIVO. Antes llamar a nexo-mcp-get-design-system para ver los ids actuales. Se puede deshacer con nexo-mcp-undo-design-system-change (un solo nivel: restaura las cuatro listas del Kit). Cada item de colors ({id?, title?, color?}) y de typography ({id?, title?, typography_*}) con id modifica ese item (system o custom); sin id crea uno custom con id nuevo (colors pide title y color; typography pide title). color en hex #rgb, #rrggbb o #rrggbbaa. typography sólo admite las claves typography_* del control de tipografía de Elementor (familia, tamaño, peso, altura de línea, espaciado… con sus variantes por dispositivo); un valor null quita esa clave. delete es una lista de ids de items custom a borrar: uno system se rechaza con nexo_mcp_design_system_item, y borrar pide confirmación explícita de la persona (repetir con "confirmation": "DELETE") y el permiso destructivo. Sin nada que cambiar responde nexo_mcp_design_nothing_to_change; un id inexistente, nexo_mcp_design_not_found; todo error de validación es nexo_mcp_design_invalid con «ruta: motivo» y data.path, y no escribe nada. Devuelve {colors, typography} con la forma de nexo-mcp-get-design-system. Requiere el permiso del sistema de diseño (no necesita el Editor V4).',
+			'write',
+			$this->kit_globals_schema(),
+			fn( array $input ) => $this->builders->update_kit_globals( $input ),
+			fn( array $input ) => $this->design_write()
+				&& ( null === IrreversibleActions::word_for( 'update-kit-globals', $input ) || $this->design_destroy() )
 		);
 		$this->ability(
 			'create-elementor-page',
@@ -1247,7 +1321,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),
@@ -1277,6 +1351,314 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function module_write( string $setting, string $nexo_cap, string $wp_cap, ...$args ): bool {
 		return $this->policy->can_module_write( $setting, $nexo_cap, $wp_cap, ...$args );
+	}
+
+	/**
+	 * Permiso de escritura del sistema de diseño (cambia todo el sitio en vivo).
+	 */
+	private function design_write(): bool {
+		return $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de borrar en el sistema de diseño: el de escritura más el destructivo.
+	 */
+	private function design_destroy(): bool {
+		return $this->design_write() && $this->policy->can_destroy( 'manage_options' );
+	}
+
+	/**
+	 * Reglas de las variantes de una clase global, compartidas por crear y modificar.
+	 */
+	private function class_variants_rules(): string {
+		return 'variants es una lista (puede ir vacía) de {meta: {breakpoint, state}, props, custom_css: null} con las mismas validaciones que los estilos locales de nexo-mcp-create-elementor-page: meta.breakpoint es uno de ' . implode( ', ', ElementorTreeValidator::BREAKPOINTS ) . '; meta.state es null (base), ' . implode( ', ', array_filter( ElementorTreeValidator::STATES ) ) . '; props sólo admite propiedades de estilo del esquema de Elementor con sus claves conocidas ({"gap":{"$$type":"size","value":{"size":16,"unit":"px"}},"color":{"$$type":"color","value":"#112233"}}); los valores de texto no pueden llevar ; { } < > \ @, saltos de línea, /*, url(), image-set(), var() ni !important, ni comillas o paréntesis sin cerrar (las variables globales van como $$type global-color-variable, etc.). No hay CSS personalizado (custom_css debe ser null).';
+	}
+
+	/**
+	 * Esquema del campo de confirmación de una acción irreversible, obligatorio o no.
+	 *
+	 * @param string $tool Nombre corto de la herramienta.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function confirmation_schema( string $tool ): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'confirmation' => IrreversibleActions::schema_for( $tool ),
+			),
+			'required'             => array( 'confirmation' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de borrar una clase o variable global: id, force y confirmación.
+	 *
+	 * @param string $tool        Nombre corto de la herramienta.
+	 * @param string $id_describe Descripción del id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function confirmed_delete_schema( string $tool, string $id_describe ): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'           => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'description' => $id_describe,
+				),
+				'force'        => array(
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'true borra aunque esté en uso (sin force, en uso se rechaza con la lista de dónde).',
+				),
+				'confirmation' => IrreversibleActions::schema_for( $tool ),
+			),
+			'required'             => array( 'id', 'confirmation' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de la lista de variantes de una clase global.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function class_variants_schema(): array {
+		return array(
+			'type'        => 'array',
+			'description' => 'Variantes de estilo: [{meta:{breakpoint,state}, props:{…}, custom_css:null}].',
+			'items'       => array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'meta'       => array(
+						'type'                 => 'object',
+						'properties'           => array(
+							'breakpoint' => array(
+								'type' => 'string',
+								'enum' => ElementorTreeValidator::BREAKPOINTS,
+							),
+							'state'      => array(
+								'type' => array( 'string', 'null' ),
+								'enum' => ElementorTreeValidator::STATES,
+							),
+						),
+						'additionalProperties' => false,
+					),
+					'props'      => array(
+						'type'                 => 'object',
+						'description'          => 'Propiedades de estilo de Elementor: {propiedad: {"$$type": …, "value": …}}.',
+						'additionalProperties' => true,
+					),
+					'custom_css' => array(
+						'type' => 'null',
+					),
+				),
+				'additionalProperties' => false,
+			),
+		);
+	}
+
+	/**
+	 * Esquema de crear una clase global.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function class_create_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'label'    => array(
+					'type'        => 'string',
+					'maxLength'   => 50,
+					'description' => 'Nombre de la clase: empieza con letra; letras, números, guiones y guiones bajos.',
+				),
+				'variants' => $this->class_variants_schema(),
+			),
+			'required'             => array( 'label', 'variants' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de modificar una clase global.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function class_update_schema(): array {
+		$schema = $this->class_create_schema();
+
+		$schema['properties'] = array_merge(
+			array(
+				'id' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'description' => 'Id de la clase global (g-…).',
+				),
+			),
+			$schema['properties']
+		);
+		$schema['required']   = array( 'id' );
+
+		return $schema;
+	}
+
+	/**
+	 * Propiedades comunes de las variables globales.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function variable_properties(): array {
+		return array(
+			'type'  => array(
+				'type'        => 'string',
+				'enum'        => DesignVariableValue::types(),
+				'description' => 'Tipo de variable. Al modificar sólo se puede cambiar entre global-size-variable y global-custom-size-variable.',
+			),
+			'label' => array(
+				'type'        => 'string',
+				'minLength'   => 1,
+				'maxLength'   => 50,
+				'description' => 'Etiqueta: letras sin tildes, números, guiones y guiones bajos (nombre de la propiedad CSS --etiqueta); no empieza con --.',
+			),
+			'value' => array(
+				'type'        => 'string',
+				'minLength'   => 1,
+				'maxLength'   => 512,
+				'description' => 'Valor según el tipo: #112233, Open Sans, 16px, clamp(1rem, 2vw, 3rem).',
+			),
+		);
+	}
+
+	/**
+	 * Esquema de crear una variable global.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function variable_create_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => $this->variable_properties(),
+			'required'             => array( 'type', 'label', 'value' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de modificar una variable global.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function variable_update_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array_merge(
+				array(
+					'id' => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Id de la variable global (e-gv-…).',
+					),
+				),
+				$this->variable_properties()
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de los colores y la tipografía del Kit.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function kit_globals_schema(): array {
+		$typography = array(
+			'id'    => array(
+				'type'        => 'string',
+				'description' => 'Id del item existente (system o custom); sin id se crea uno custom.',
+			),
+			'title' => array(
+				'type'      => 'string',
+				'maxLength' => 100,
+			),
+		);
+
+		foreach ( DesignKitOperations::typography_keys() as $key => $spec ) {
+			if ( 'select' === $spec['type'] ) {
+				$typography[ $key ] = array(
+					'type' => array( 'string', 'integer', 'null' ),
+					'enum' => array_merge( $spec['options'] ?? array(), array( null ) ),
+				);
+			} elseif ( 'size' === $spec['type'] ) {
+				$typography[ $key ] = array(
+					'type'                 => array( 'object', 'null' ),
+					'properties'           => array(
+						'unit' => array(
+							'type' => 'string',
+							'enum' => $spec['units'] ?? array(),
+						),
+						'size' => array(
+							'type' => array( 'number', 'string' ),
+						),
+					),
+					'required'             => array( 'unit', 'size' ),
+					'additionalProperties' => false,
+				);
+			} else {
+				$typography[ $key ] = array(
+					'type' => array( 'string', 'null' ),
+				);
+			}
+		}
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'colors'       => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'                 => 'object',
+						'properties'           => array(
+							'id'    => array(
+								'type'        => 'string',
+								'description' => 'Id del color existente (system o custom); sin id se crea uno custom.',
+							),
+							'title' => array(
+								'type'      => 'string',
+								'maxLength' => 100,
+							),
+							'color' => array(
+								'type'        => 'string',
+								'description' => 'Hex: #rgb, #rrggbb o #rrggbbaa.',
+							),
+						),
+						'additionalProperties' => false,
+					),
+				),
+				'typography'   => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'                 => 'object',
+						'properties'           => $typography,
+						'additionalProperties' => false,
+					),
+				),
+				'delete'       => array(
+					'type'        => 'array',
+					'items'       => array( 'type' => 'string' ),
+					'description' => 'Ids de colores o tipografías custom a borrar (los system no se borran). Pide confirmation.',
+				),
+				'confirmation' => array(
+					'type'        => 'string',
+					'enum'        => array( 'DELETE' ),
+					'description' => 'Obligatoria si delete trae ids: escribe DELETE sólo después de que la persona lo apruebe.',
+				),
+			),
+			'additionalProperties' => false,
+		);
 	}
 
 	/**
