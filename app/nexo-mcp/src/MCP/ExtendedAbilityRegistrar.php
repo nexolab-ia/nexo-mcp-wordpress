@@ -526,7 +526,7 @@ final class ExtendedAbilityRegistrar {
 		return implode(
 			"\n",
 			array(
-				'Migra una página de Elementor 3 (v3) a elementos atómicos de la versión 4, la página entera en una sola operación. Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica.',
+				'Migra una página de Elementor 3 (v3) a elementos atómicos de la versión 4, la página entera en una sola operación. Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no migrar la página publicada en vivo (sin draft se escribe en vivo con respaldo, como edit-elementor-section).',
 				'',
 				'SE MIGRA: section → e-flexbox en fila (html_tag → tag); column → e-div-block con su ancho en %; container flex → e-flexbox (dirección, justificación, alineación, wrap y gap); heading → e-heading (h1-h6 y span; con div o p queda v3); text-editor → un e-paragraph por párrafo cuando el HTML sólo tiene párrafos, enlaces y spans; button → e-button; image → e-image; divider → e-divider (la línea pasa a estilo). Los ids de los nodos convertidos son nuevos; los nodos que ya eran atómicos quedan igual.',
 				'',

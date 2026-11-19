@@ -163,7 +163,10 @@ Reglas que siempre se cumplen:
   `migrate-elementor-page` migra una página de Elementor 3 **entera** a
   elementos atómicos, en una sola operación y con el mismo camino de escritura
   que `edit-elementor-section` (misma capacidad, copia de trabajo, respaldo,
-  bloqueo y CSS invalidado; el original publicado no cambia y nunca publica).
+  bloqueo y CSS invalidado; nunca publica). Con la copia de trabajo por defecto
+  (ajuste de fábrica) o `draft: true`, el original publicado no cambia; si el
+  sitio apagó la copia de trabajo por defecto y no se pide `draft`, migra la
+  página en vivo con respaldo, igual que `edit-elementor-section`.
   Se migran `section` → `e-flexbox`, `column` → `e-div-block` (con su ancho),
   `container` flex → `e-flexbox`, `heading` → `e-heading`, `text-editor` → un
   `e-paragraph` por párrafo (sólo si el HTML tiene párrafos, enlaces y spans),
