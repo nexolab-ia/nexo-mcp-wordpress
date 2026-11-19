@@ -18,6 +18,11 @@
 #    una atómica publicadas: cada edición cae en una copia de trabajo (el original
 #    no cambia), se revisa con get-working-copy-diff, se renderiza y se publica
 #    (fusión); y cada rechazo no crea copia ni cambia el original.
+# 7b. Migra una página v3 entera a atómicos por MCP con migrate-elementor-page (F5): va a la
+#    copia de trabajo (el original no cambia), los nodos sin equivalente quedan v3 idénticos y
+#    listados en kept_v3, Elementor carga el árbol guardado y la copia renderiza; publicada, el
+#    frontend responde 200 con el texto; los rechazos (nada que migrar, Editor V4 apagado) no
+#    crean copia.
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -83,6 +88,20 @@ if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
 if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
 if [ "${1:-}" = "--render" ]; then
 	wp eval 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$2"', true );' --user=admin
+	exit 0
+fi
+
+# Subcomando del bloque de migrate-elementor-page: lo que Elementor carga de un contenido,
+# como lista JSON de tipos (widgetType o elType) en orden de documento.
+if [ "${1:-}" = "--documento" ]; then
+	wpr eval '
+$doc = \Elementor\Plugin::$instance->documents->get( '"$2"', false );
+$tipos = array();
+$recorrer = function ( $nodos ) use ( &$recorrer, &$tipos ) {
+	foreach ( $nodos as $n ) { $tipos[] = ( $n["widgetType"] ?? "" ) ?: $n["elType"]; $recorrer( $n["elements"] ?? array() ); }
+};
+$recorrer( $doc ? $doc->get_elements_data() : array() );
+echo wp_json_encode( $tipos );' --user=admin
 	exit 0
 fi
 
@@ -1008,6 +1027,199 @@ sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "la prueba de edit-elementor-section tuvo comprobaciones fallidas"
 
+echo
+echo "### Migración v3 → atómico por MCP (migrate-elementor-page)"
+migrar_titulo="Prueba migrar v3 elementor-mcp-$suffix"
+migrar_id="$(wp post create --post_type=page --post_status=publish --post_title="$migrar_titulo" --porcelain)"
+[ -n "$migrar_id" ] || { echo "FALLA: no se pudo crear la página de prueba de migración"; exit 1; }
+migrar_tree="$(python3 -I - "$suffix" "$media_id" "$version_elementor" <<'PY'
+import json, sys
+suffix, media, _ = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+def w(id_, tipo, ajustes):
+    return {"id": id_, "elType": "widget", "widgetType": tipo, "settings": ajustes, "elements": []}
+caja4 = lambda: {"unit": "px", "top": "20", "right": "20", "bottom": "20", "left": "20", "isLinked": True}
+arbol = [
+    {"id": "sec7000", "elType": "section", "settings": {"background_background": "classic", "background_color": "#f5f5f5", "padding": caja4()}, "elements": [
+        {"id": "col7000", "elType": "column", "settings": {"_column_size": 50, "_inline_size": 50}, "elements": [
+            w("hd7000", "heading", {"title": f"Migrar titulo {suffix}", "header_size": "h1", "align": "center", "title_color": "#112233",
+                                     "typography_typography": "custom", "typography_font_size": {"unit": "px", "size": 32}, "typography_font_size_tablet": {"unit": "px", "size": 24}}),
+            w("tx7000", "text-editor", {"editor": f"<p>Primer parrafo plano {suffix}</p><p>Segundo parrafo plano</p>"}),
+            w("tx7001", "text-editor", {"editor": "<p>Texto con <strong>negrita</strong> y formato</p>"}),
+            w("bt7000", "button", {"text": f"Boton migrado {suffix}", "link": {"url": "https://example.com/migrar", "is_external": "", "nofollow": ""}, "button_text_color": "#ffffff"}),
+        ]},
+        {"id": "col7001", "elType": "column", "settings": {"_column_size": 50, "_inline_size": 50}, "elements": [
+            w("im7000", "image", {"image": {"id": media, "url": ""}, "image_size": "full"}),
+            w("dv7000", "divider", {"style": "solid", "weight": {"unit": "px", "size": 2}, "color": "#cccccc"}),
+            w("sp7000", "spacer", {"space": {"unit": "px", "size": 40}}),
+        ]},
+    ]},
+    {"id": "cn7000", "elType": "container", "settings": {"container_type": "flex", "flex_direction": "row", "flex_justify_content": "center", "flex_align_items": "center", "flex_gap": {"unit": "px", "column": "12", "row": "12", "isLinked": True}}, "elements": [
+        w("hd7001", "heading", {"title": f"Heading en contenedor flex {suffix}", "header_size": "h3",
+                                 "__globals__": {"title_color": "globals/colors?id=primary", "typography_typography": "globals/typography?id=primary"}}),
+    ]},
+]
+print(json.dumps(arbol))
+PY
+)"
+wp post meta update "$migrar_id" _elementor_edit_mode builder >/dev/null
+wp post meta update "$migrar_id" _elementor_version "$version_elementor" >/dev/null
+wp post meta update "$migrar_id" _elementor_data "$migrar_tree" >/dev/null
+echo "Página v3 publicada: $migrar_id (imagen $media_id)"
+
+python3 -I - "$suffix" "$migrar_id" "$secciones_atomica_id" "$media_id" <<'PY'
+import importlib.util, json, pathlib, subprocess, sys, urllib.request
+
+suffix, pagina, atomica_id, media = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def crudo(i):
+    return script("--meta", i, "_elementor_data")
+
+def arbol(i):
+    return json.loads(crudo(i))
+
+def indice(nodos, salida=None):
+    salida = {} if salida is None else salida
+    for n in nodos:
+        salida[n["id"]] = n
+        indice(n.get("elements", []), salida)
+    return salida
+
+def tipo(n):
+    return n.get("widgetType") or n["elType"]
+
+orig = crudo(pagina)
+orig_arbol = json.loads(orig)
+orig_idx = indice(orig_arbol)
+res = {}
+copias_antes = script("--contar-paginas")
+
+def migrar():
+    _, d = cli.ok("migrate-elementor-page", {"id": pagina})
+    res.update(d)
+    assert set(d) == {"id", "draft_of", "preview_url", "migrated", "kept_v3", "unmapped"}, sorted(d)
+    assert d["draft_of"] == pagina and d["id"] != pagina, d
+    assert d["preview_url"], d
+    assert d["migrated"] == 10, f"migrated={d['migrated']}"
+    assert int(script("--contar-paginas")) == int(copias_antes) + 1, "debía nacer una sola copia"
+
+def original_intacto():
+    assert crudo(pagina) == orig, "el original cambió"
+    assert script("--estado", pagina) == "publish" and script("--estado", res["id"]) == "draft"
+
+def copia_atomica():
+    copia = arbol(res["id"])
+    idx = indice(copia)
+    por_tipo = {}
+    for n in idx.values():
+        por_tipo.setdefault(tipo(n), []).append(n)
+    assert [tipo(n) for n in copia] == ["e-flexbox", "e-flexbox"], [tipo(n) for n in copia]
+    assert len(por_tipo["e-div-block"]) == 2, por_tipo.keys()
+    assert len(por_tipo["e-heading"]) == 2 and len(por_tipo["e-paragraph"]) == 2, {k: len(v) for k, v in por_tipo.items()}
+    assert len(por_tipo["e-button"]) == 1 and len(por_tipo["e-image"]) == 1 and len(por_tipo["e-divider"]) == 1
+    assert "heading" not in por_tipo and "button" not in por_tipo and "section" not in por_tipo and "column" not in por_tipo
+    titulo = next(n for n in por_tipo["e-heading"] if f"Migrar titulo {suffix}" in json.dumps(n["settings"]))
+    assert titulo["settings"]["tag"]["value"] == "h1", titulo["settings"]
+    estilos = [v for st in titulo["styles"].values() for v in st["variants"]]
+    props = {k for v in estilos for k in v["props"]}
+    assert {"color", "font-size", "text-align"} <= props, props
+    assert {v["meta"]["breakpoint"] for v in estilos} >= {"desktop", "tablet"}, estilos
+    imagen = por_tipo["e-image"][0]["settings"]["image"]["value"]["src"]["value"]
+    assert imagen["id"]["value"] == media, imagen
+    glob = next(n for n in por_tipo["e-heading"] if "contenedor flex" in json.dumps(n["settings"]))
+    gprops = {k for st in glob["styles"].values() for v in st["variants"] for k in v["props"]}
+    assert "color" in gprops, f"el color global no se trasladó: {gprops}"
+    flex = copia[1]
+    fprops = {k for st in flex["styles"].values() for v in st["variants"] for k in v["props"]}
+    assert {"flex-direction", "justify-content", "align-items", "gap"} <= fprops, fprops
+
+def kept_v3():
+    ids = sorted(k["id"] for k in res["kept_v3"])
+    assert ids == ["sp7000", "tx7001"], res["kept_v3"]
+    assert all(set(k) == {"id", "type", "reason"} and k["reason"] for k in res["kept_v3"]), res["kept_v3"]
+    copia = indice(arbol(res["id"]))
+    for i in ids:
+        assert copia[i] == orig_idx[i], f"el nodo v3 conservado {i} cambió"
+    assert tipo(copia["sp7000"]) == "spacer" and tipo(copia["tx7001"]) == "text-editor"
+
+def elementor_carga():
+    copia = arbol(res["id"])
+    esperado = []
+    def rec(nodos):
+        for n in nodos:
+            esperado.append(tipo(n))
+            rec(n.get("elements", []))
+    rec(copia)
+    cargado = json.loads(script("--documento", res["id"]))
+    assert cargado == esperado, f"Elementor cargó {cargado} y se guardó {esperado}"
+    assert len(cargado) == len(indice(copia)) and "spacer" in cargado and "e-heading" in cargado, cargado
+
+def copia_renderiza():
+    html = script("--render", res["id"])
+    for t in (f"Migrar titulo {suffix}", f"Primer parrafo plano {suffix}", f"Boton migrado {suffix}", f"Heading en contenedor flex {suffix}", "negrita"):
+        assert t in html, f"la copia no renderiza «{t}»"
+    assert "e-heading" in html or "e-con" in html or "e-flexbox" in html, "el render no trae elementos atómicos"
+
+def diff_y_publicar():
+    _, d = cli.ok("get-working-copy-diff", {"id": pagina})
+    assert d["copy_id"] == res["id"] and any(e["key"] == "_elementor_data" for e in d["meta"]["changed"]), d
+    datos = crudo(res["id"])
+    _, m = cli.ok("set-content-status", {"id": res["id"], "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (pagina, res["id"]), m
+    assert json.loads(crudo(pagina)) == json.loads(datos), "el original no trae el árbol migrado"
+    with urllib.request.urlopen(f"http://localhost:8080/?page_id={pagina}") as r:
+        cuerpo = r.read().decode("utf-8", "replace")
+        assert r.status == 200, r.status
+    assert f"Migrar titulo {suffix}" in cuerpo and f"Boton migrado {suffix}" in cuerpo, "el frontend no muestra el contenido migrado"
+
+def rechazo(nombre, id_, esperado, antes_fn=None, despues_fn=None):
+    def fn():
+        datos, cuenta = crudo(id_), script("--contar-paginas")
+        if antes_fn:
+            antes_fn()
+        try:
+            es_error, msg, _ = cli.call("migrate-elementor-page", {"id": id_})
+        finally:
+            if despues_fn:
+                despues_fn()
+        assert es_error and msg.startswith(esperado), f"mensaje: {msg[:300]!r}"
+        assert crudo(id_) == datos, "cambió el original"
+        assert script("--contar-paginas") == cuenta, "cambió la cantidad de páginas (¿se creó una copia?)"
+    comprobar(f"rechazo: {nombre}", fn)
+
+comprobar("migrar: va a la copia con la respuesta acordada", migrar)
+comprobar("migrar: el original publicado no cambia", original_intacto)
+comprobar("migrar: la copia es atómica donde corresponde (tipos, estilos, imagen, global, flex)", copia_atomica)
+comprobar("migrar: kept_v3 lista el spacer y el text-editor con formato, idénticos al original", kept_v3)
+comprobar("migrar: Elementor carga el árbol guardado (Document::get_elements_data)", elementor_carga)
+comprobar("migrar: la copia renderiza el contenido", copia_renderiza)
+comprobar("migrar: diff, publicar (fusión) y el frontend responde 200 con el texto", diff_y_publicar)
+rechazo("una página atómica no tiene nada que migrar", atomica_id, "La página no tiene elementos de Elementor 3 que se puedan convertir")
+rechazo("la página ya migrada no tiene nada que convertir", pagina, "La página no tiene elementos de Elementor 3 que se puedan convertir")
+rechazo("sin elementos atómicos activos", pagina, "Los elementos atómicos de Elementor 4 no están activos.",
+        antes_fn=lambda: script("--experimentos", "inactive"), despues_fn=lambda: script("--experimentos", "active"))
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de migrate-elementor-page OK.")
+sys.exit(1 if fallas else 0)
+PY
+[ $? -eq 0 ] || falla "la prueba de migrate-elementor-page tuvo comprobaciones fallidas"
 echo
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
 # Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page
