@@ -23,6 +23,13 @@ class FakeSchemaGuard extends ElementorSchemaGuard {
 
 	public int $sanitized = 0;
 
+	/**
+	 * Propiedades de estilo que admite el validador (vacío: ninguna, como antes).
+	 *
+	 * @var array<int, string>
+	 */
+	public array $style_props = array();
+
 	public function require_v4() {
 		return $this->v4 ? true : new \WP_Error( 'nexo_mcp_elementor_v4_required', 'Editor V4 apagado.' );
 	}
@@ -40,7 +47,10 @@ class FakeSchemaGuard extends ElementorSchemaGuard {
 				'e-button'    => $text,
 				'e-image'     => $text,
 				'e-divider'   => array( 'classes', '_cssid' ),
-			)
+			),
+			array(),
+			null,
+			$this->style_props
 		);
 	}
 
