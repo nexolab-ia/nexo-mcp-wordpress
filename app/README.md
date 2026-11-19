@@ -160,6 +160,28 @@ Reglas que siempre se cumplen:
   elementos para la página resultante; una página v3 que ya los pasa admite
   `replace` e `insert` mientras el documento resultante no supere
   `max(200, elementos actuales)` (se puede reemplazar sin agrandarla).
+  `migrate-elementor-page` migra una página de Elementor 3 **entera** a
+  elementos atómicos, en una sola operación y con el mismo camino de escritura
+  que `edit-elementor-section` (misma capacidad, copia de trabajo, respaldo,
+  bloqueo y CSS invalidado; el original publicado no cambia y nunca publica).
+  Se migran `section` → `e-flexbox`, `column` → `e-div-block` (con su ancho),
+  `container` flex → `e-flexbox`, `heading` → `e-heading`, `text-editor` → un
+  `e-paragraph` por párrafo (sólo si el HTML tiene párrafos, enlaces y spans),
+  `button` → `e-button`, `image` → `e-image` y `divider` → `e-divider`, con un
+  estilo local por nodo (tipografía, color, fondo, margen y relleno, borde, con
+  variantes `tablet` y `mobile`; los colores y tipografías globales del Kit pasan
+  a la variable de color con el mismo nombre o a su valor literal). Lo demás
+  (spacer, compuestos, text-editor con formato, container grid, etc.) se
+  conserva como v3 idéntico y la respuesta lo lista en `kept_v3`; los ajustes
+  v3 que no se trasladan van en `unmapped`. La respuesta es `{id, draft_of,
+  preview_url, migrated, kept_v3, unmapped}`. Exige Editor V4 activo
+  (`nexo_mcp_elementor_v4_required`); una página sin nada que convertir responde
+  `nexo_mcp_nothing_to_migrate` sin escribir. Antes de guardar, el árbol migrado
+  pasa la validación de siempre en cada nodo atómico nuevo, y sólo se aceptan
+  nodos v3 idénticos (id, tipo y ajustes) a los de la página original leída bajo
+  el bloqueo; cualquier otro v3 se rechaza sin escribir. Mismo tope de
+  elementos: `max(200, elementos actuales)`. Parámetro `id` (como en
+  `edit-elementor-section`) y `draft` opcional.
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de

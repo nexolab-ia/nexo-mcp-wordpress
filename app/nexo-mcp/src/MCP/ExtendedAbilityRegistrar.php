@@ -73,6 +73,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/update-kit-globals',
 		'nexo-mcp/create-elementor-page',
 		'nexo-mcp/edit-elementor-section',
+		'nexo-mcp/migrate-elementor-page',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -382,6 +383,22 @@ final class ExtendedAbilityRegistrar {
 			)
 		);
 		$this->ability(
+			'migrate-elementor-page',
+			'Migrar página de Elementor 3 a elementos atómicos',
+			$this->elementor_migrate_description(),
+			'write',
+			$this->elementor_migrate_schema(),
+			fn( array $input ) => $this->builders->migrate_elementor_page( $input ),
+			// Escribe en la copia de trabajo del original, como edit-elementor-section: el
+			// permiso se pide sobre el original aunque la llamada traiga el id de la copia.
+			fn( array $input ) => $this->module_write(
+				'builders_tools_enabled',
+				Capabilities::BUILDERS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			)
+		);
+		$this->ability(
 			'update-node-text',
 			'Editar texto del constructor',
 			'Reemplaza el texto de un elemento sin alterar la estructura de la página.' .
@@ -499,6 +516,54 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, node_ids (ids creados, en insert y replace) y removed (ids quitados, en replace y delete). Requiere el Editor V4 activo para replace e insert. Los nodos que no se tocan quedan idénticos; se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
 			)
+		);
+	}
+
+	/**
+	 * Descripción de migrate-elementor-page.
+	 */
+	private function elementor_migrate_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Migra una página de Elementor 3 (v3) a elementos atómicos de la versión 4, la página entera en una sola operación. Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica.',
+				'',
+				'SE MIGRA: section → e-flexbox en fila (html_tag → tag); column → e-div-block con su ancho en %; container flex → e-flexbox (dirección, justificación, alineación, wrap y gap); heading → e-heading (h1-h6 y span; con div o p queda v3); text-editor → un e-paragraph por párrafo cuando el HTML sólo tiene párrafos, enlaces y spans; button → e-button; image → e-image; divider → e-divider (la línea pasa a estilo). Los ids de los nodos convertidos son nuevos; los nodos que ya eran atómicos quedan igual.',
+				'',
+				'ESTILOS: cada nodo convertido recibe un estilo local con variantes desktop, tablet y mobile: tipografía (familia, tamaño, peso, alto de línea, espaciado, transformación) y alineación, color de texto, fondo de color clásico, margen y relleno, borde (ancho, color, radio). Los colores globales del Kit pasan a la variable de color con el mismo nombre si existe, si no al color literal del Kit; las tipografías globales, a los valores literales del Kit.',
+				'',
+				'SE CONSERVA v3 (Elementor 4 lo sigue mostrando, idéntico y con el mismo id): cualquier otro widget (spacer, icon-box, testimonial, compuestos…), un text-editor con formato (negrita, listas, saltos de línea…), un container grid (sus hijos sí se migran), un heading con div o p, un botón con icono, una imagen sin id o con pie de foto, un divisor con texto o icono y lo que lleve un enlace que el validador no admite. La respuesta los lista en kept_v3.',
+				'',
+				'ENTRADA: id (página o su copia de trabajo), draft (opcional: si el sitio no usa copia de trabajo por defecto, pide migrar en la copia de una página publicada). Revisa antes con nexo-mcp-get-page-structure; después con nexo-mcp-get-working-copy-diff y la vista previa, y publica con nexo-mcp-set-content-status. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+				'',
+				'SALIDA: id (la copia), draft_of (el original), preview_url, migrated (cantidad de nodos v3 convertidos), kept_v3 [{id, type, reason}] (nodos que quedaron v3 y por qué) y unmapped [{id, keys}] (ajustes v3 que no se trasladaron al nodo nuevo).',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_elementor_v4_required (el Editor V4 / elementos atómicos está apagado), nexo_mcp_nothing_to_migrate (la página no tiene elementos v3 que convertir), nexo_mcp_elementor_v3_not_identical (un nodo v3 del resultado no es idéntico al original), nexo_mcp_elementor_migration_id_clash (ids repetidos en la página o un nodo cambiado que reusa un id original), y los de validación de nexo-mcp-create-elementor-page con el id del nodo. Tope de elementos: max(200, elementos actuales).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de migrate-elementor-page.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function elementor_migrate_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'    => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Elementor o su copia de trabajo.',
+				),
+				'draft' => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide migrar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
 		);
 	}
 

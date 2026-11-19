@@ -374,6 +374,44 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Migra una página de Elementor 3 a elementos atómicos, en la copia de trabajo.
+	 *
+	 * Mismo permiso y mismo camino de escritura que {@see self::edit_elementor_section()}.
+	 * Ver {@see ElementorPageMigrator}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function migrate_elementor_page( array $input ) {
+		$post = $this->resolve_post( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		// Migrar la copia es migrar el original: el permiso se pide sobre el original.
+		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
+			return new \WP_Error(
+				'nexo_mcp_builder_forbidden',
+				__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
+			);
+		}
+
+		$migrator = new ElementorPageMigrator(
+			$this->settings,
+			new ElementorAdapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new ElementorSchemaGuard(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			static fn( array $tree ): array => ( new ElementorV3Migrator( new ElementorV3StyleMapper( new ElementorV3StyleSource() ) ) )->migrate( $tree )
+		);
+
+		return $migrator->migrate( $post, array( 'draft' => $input['draft'] ?? false ) );
+	}
+
+	/**
 	 * Reemplaza el texto de un nodo del constructor.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
