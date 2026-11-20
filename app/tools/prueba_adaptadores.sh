@@ -294,6 +294,8 @@ ok() { echo "OK: $*"; }
 
 echo "### Ayudante php_wp (sin docker)"
 tools/prueba_php_wp.sh || falla "el ayudante php_wp no pasó su prueba (tools/prueba_php_wp.sh)"
+echo "### Limpieza y señales (sin docker)"
+tools/prueba_limpieza.sh || falla "la limpieza no pasó su prueba (tools/prueba_limpieza.sh)"
 
 tools/instalar_plugins_prueba.sh || { echo "FALLA: no se pudieron instalar los plugins"; exit 1; }
 
@@ -348,9 +350,14 @@ elseif ( 0 === strpos( $prev, "datos:" ) ) { update_post_meta( $kit->get_main_id
 		*) echo "AVISO: no hay captura válida de las variables del Kit; no se restauraron (puede quedar la variable de prueba $variable_label)." ;;
 	esac
 }
+# Comprueba en el sitio que la clase global de prueba ya no está: 0 quitada, 1 sigue ahí, 2 no se pudo leer.
+clase_global_quitada() {
+	local etiquetas
+	etiquetas="$(php_wpr 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );')" || return 2
+	if printf '%s' "$etiquetas" | grep -q "$1"; then return 1; fi
+	return 0
+}
 cleanup() {
-	# Un segundo Ctrl-C no corta la limpieza a medias.
-	trap '' INT TERM HUP
 	echo
 	echo "### Limpieza (a la papelera)"
 	local fallidas=0 id
@@ -380,21 +387,33 @@ cleanup() {
 		diseno_foto_tomada=""
 	fi
 	remove_design_fixtures
-	if [ -n "$class_id" ] && php_wpr 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );' | grep -q "$class_id"; then
-		echo "FALLA: la clase global $class_id sigue ahí"; fallidas=$((fallidas + 1))
-	elif [ -n "$class_id" ]; then
-		echo "Clase global y variable quitadas."
+	if [ -n "$class_id" ]; then
+		clase_global_quitada "$class_id"
+		case $? in
+			0) echo "Clase global y variable quitadas." ;;
+			1) echo "FALLA: la clase global $class_id sigue ahí"; fallidas=$((fallidas + 1)) ;;
+			*) echo "FALLA: no se pudo comprobar que la clase global $class_id se quitó (falló la lectura)"; fallidas=$((fallidas + 1)) ;;
+		esac
 	fi
 	restore_experiments || fallidas=$((fallidas + 1))
 	restore || { echo "FALLA: no se pudieron restaurar los ajustes"; fallidas=$((fallidas + 1)); }
 	[ "$fallidas" -eq 0 ]
 }
-trap cleanup EXIT
 # Una corrida cortada (Ctrl-C, kill, cierre de la terminal) sale por EXIT: la limpieza devuelve también los ajustes
 # (incluido destructive_enabled, que el bloque del sistema de diseño enciende), los experimentos y el sistema de diseño.
-trap 'exit 130' INT
-trap 'exit 143' TERM
-trap 'exit 129' HUP
+# Mientras limpia se ignoran las señales, así un segundo Ctrl-C no la corta a medias. Se prueba sin docker con
+# tools/prueba_limpieza.sh.
+limpiar_al_salir() {
+	trap '' INT TERM HUP
+	cleanup
+}
+atrapar_senales() {
+	trap limpiar_al_salir EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
+}
+atrapar_senales
 
 # Módulos necesarios activos y sin «Solo revisar».
 needed="$(printf '%s' "$original" | python3 -I -c '
@@ -1920,5 +1939,5 @@ fi
 # La limpieza corre por el trap; el código de salida refleja las fallas.
 exit_code=$([ "$fallas" -eq 0 ] && echo 0 || echo 1)
 trap - EXIT
-cleanup || exit_code=1
+limpiar_al_salir || exit_code=1
 exit "$exit_code"
