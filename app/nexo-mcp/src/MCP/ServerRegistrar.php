@@ -45,6 +45,8 @@ final class ServerRegistrar {
 	public function register(): void {
 		add_action( 'mcp_adapter_init', array( $this, 'create_server' ) );
 		add_filter( 'mcp_adapter_tools_list', array( $this, 'slim_tools_list' ), 10, 2 );
+		// Antes del desafío de BearerTokenGuard (prioridad 10), que sólo mira 401 y 403.
+		add_filter( 'rest_post_dispatch', array( $this, 'limit_response' ), 9, 3 );
 		McpAdapter::instance();
 	}
 
@@ -69,6 +71,54 @@ final class ServerRegistrar {
 			array(),
 			array( $this->guard, 'authorize' )
 		);
+	}
+
+	/**
+	 * Convierte el rechazo por límite del transporte en 429 con Retry-After.
+	 *
+	 * El adaptador reduce el `WP_Error` del guardia a `false` y WordPress
+	 * responde `rest_forbidden` 403, sin decir cuánto esperar. Las demás
+	 * denegaciones no se tocan.
+	 *
+	 * @param mixed $response Respuesta generada.
+	 * @param mixed $server   Servidor REST.
+	 * @param mixed $request  Pedido atendido.
+	 *
+	 * @return mixed
+	 */
+	public function limit_response( $response, $server, $request = null ) {
+		unset( $server );
+
+		if ( ! $response instanceof \WP_REST_Response
+			|| ! $request instanceof \WP_REST_Request
+			|| '/nexo-mcp/v1/mcp' !== $request->get_route()
+		) {
+			return $response;
+		}
+
+		$error = $this->guard->rate_limit_error( $request );
+
+		if ( null === $error ) {
+			return $response;
+		}
+
+		$data        = $error->get_error_data();
+		$retry_after = is_array( $data ) && isset( $data['retry_after'] ) ? max( 1, (int) $data['retry_after'] ) : 1;
+
+		$response->set_status( 429 );
+		$response->set_data(
+			array(
+				'code'    => $error->get_error_code(),
+				'message' => $error->get_error_message(),
+				'data'    => array(
+					'status'      => 429,
+					'retry_after' => $retry_after,
+				),
+			)
+		);
+		$response->header( 'Retry-After', (string) $retry_after );
+
+		return $response;
 	}
 
 	/**

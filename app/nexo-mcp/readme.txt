@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,9 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.4.3 =
+* Corrección: el límite de solicitudes del transporte (240 por minuto por usuario e IP) contaba cada pedido MCP 4 veces, porque WordPress evalúa el permiso de la ruta una vez al despachar y otra por cada método al armar la cabecera `Allow`; el límite real quedaba en unos 60 pedidos por minuto y cada denegación se auditaba 4 veces. Ahora cada pedido consume una sola unidad. Además, al pasar el límite el endpoint responde `429` con el código `nexo_mcp_rate_limit_exceeded`, `data.retry_after` y la cabecera `Retry-After` con los segundos de espera, en vez de un `403 rest_forbidden` sin indicación. El resto de las denegaciones del transporte no cambia.
 
 = 1.4.2 =
 * Corrección: `update-node-text`, `update-node-attribute`, `edit-structure` y `restore-builder-backup` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original, aunque su permiso de entrada ya lo pedía sólo sobre el original. Ahora el permiso se pide sólo sobre el original: quien puede editar la página puede trabajar con su copia vigente aunque la haya creado otro usuario. Un borrador que el original no reconoce como su copia sigue pidiendo permiso sobre sí mismo. `get-page-structure` no cambia: es de lectura y pide permiso sobre el contenido indicado.
