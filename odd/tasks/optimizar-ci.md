@@ -21,7 +21,7 @@ público desde el 2026-11-20, así que los minutos ya no se cobran: se optimiza 
 
 ## Tasks
 
-- [ ] T1 (S2) `ci.yml`: disparadores, `paths-ignore`, concurrencia. Ruta: inline + verify (Risk: item 5). Commit: —
+- [x] T1 (S2) `ci.yml`: disparadores, `paths-ignore`, concurrencia. Ruta: inline + verify (Risk: item 5). Commit: abacaa2
 - [ ] T2 (S3) `tools/wpcli.sh` + los 4 scripts + prueba sin docker + e2e medido. Ruta: inline. Commit: —
 
 ## Log
@@ -29,3 +29,7 @@ público desde el 2026-11-20, así que los minutos ya no se cobran: se optimiza 
 - L1 (2026-11-20): «Optimicemos el CI». Exploración: `main` sin protección ni rulesets; release v1.4.2 con el .zip de la
   corrida de `main` (c2a61c4); CI de #20: quality < 1 min, e2e 32 min; wp-cli 1,9 s (`run --rm`) contra 0,4 s (`exec`);
   `prueba_adaptadores.sh` concentra las llamadas (los otros scripts 4-8 cada uno).
+- L2 (2026-11-20): T1 en abacaa2; actionlint sin errores. Verificador independiente (Risk: item 5): S2 PASS en los 6
+  puntos, sin bloqueantes. Notas: con tres merges a `main` en menos de ~33 min, la corrida del medio (en espera) se
+  cancela igual (una sola en espera por grupo) — antes era peor, se acepta; un cambio sólo a `app/nexo-mcp/NOTICE.md`
+  (va en el .zip) no corre CI, inofensivo porque toda release cambia la versión en `.php`/`readme.txt`.
