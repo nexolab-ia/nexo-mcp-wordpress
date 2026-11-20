@@ -344,4 +344,29 @@ final class ElementorPageMigratorTest extends NexoTestCase {
 		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
 		$this->assertSame( self::ORIGINAL, $result['draft_of'] );
 	}
+
+	public function test_con_la_copia_por_defecto_apagada_draft_true_migra_a_la_copia(): void {
+		$this->cfg = $this->settings( array( 'read_only' => false, 'working_copy_default' => false ) );
+		$before    = (string) get_post_meta( self::ORIGINAL, '_elementor_data', true );
+
+		$result = $this->run_migration( self::ORIGINAL, array( 'draft' => true ) );
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( self::ORIGINAL, $result['draft_of'] );
+		$this->assertSame( $this->live_copies(), array( $result['id'] ) );
+		$this->assertSame( 'e-flexbox', $this->data( $result['id'] )[0]['elType'] );
+		$this->assertSame( $before, get_post_meta( self::ORIGINAL, '_elementor_data', true ), 'el original no cambia' );
+	}
+
+	public function test_con_la_copia_por_defecto_apagada_y_sin_draft_migra_en_vivo(): void {
+		$this->cfg = $this->settings( array( 'read_only' => false, 'working_copy_default' => false ) );
+
+		$result = $this->run_migration();
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( self::ORIGINAL, $result['id'] );
+		$this->assertArrayNotHasKey( 'draft_of', $result );
+		$this->assertSame( array(), $this->live_copies() );
+		$this->assertSame( 'e-flexbox', $this->data( self::ORIGINAL )[0]['elType'] );
+	}
 }

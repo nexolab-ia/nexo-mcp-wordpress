@@ -399,6 +399,26 @@ final class ElementorV3Migrator {
 	 * @return array<int, array<string, mixed>>
 	 */
 	private function widget( array $node, string $widget ): array {
+		$kept_before = count( $this->kept );
+		$out         = $this->convert_widget( $node, $widget );
+
+		// Un widget v3 convertido cuenta una vez, aunque dé varios nodos (un text-editor da un e-paragraph por párrafo).
+		if ( count( $this->kept ) === $kept_before ) {
+			++$this->migrated;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Despacha la conversión según el tipo de widget v3.
+	 *
+	 * @param array<string, mixed> $node   Nodo.
+	 * @param string               $widget Tipo de widget.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function convert_widget( array $node, string $widget ): array {
 		switch ( $widget ) {
 			case 'heading':
 				return $this->heading( $node );
@@ -649,9 +669,6 @@ final class ElementorV3Migrator {
 			$out[] = $this->atomic_widget( 'e-paragraph', 'text-editor', $s, array( 'editor' ), $settings, array(), array(), 0 === $index );
 		}
 
-		// Un text-editor cuenta como un solo nodo v3 convertido, aunque dé varios párrafos.
-		$this->migrated -= count( $out ) - 1;
-
 		return $out;
 	}
 
@@ -750,8 +767,6 @@ final class ElementorV3Migrator {
 		$id     = $this->next_id();
 		$passed = array_diff_key( $v3_settings, array_flip( $consumed ) );
 		$built  = $this->attach_style( $v3_type, $id, $passed, $props, $settings, $report ? $extra : array(), $report );
-
-		++$this->migrated;
 
 		return array(
 			'id'         => $id,

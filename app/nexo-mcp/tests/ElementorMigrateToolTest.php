@@ -20,6 +20,7 @@ use NexoDev\NexoMCP\WordPress\AppearanceGateway;
 use NexoDev\NexoMCP\WordPress\ContentAdminGateway;
 use NexoDev\NexoMCP\WordPress\MaintenanceGateway;
 use NexoDev\NexoMCP\WordPress\SeoGateway;
+use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
 final class ElementorMigrateToolTest extends NexoTestCase {
 
@@ -49,6 +50,14 @@ final class ElementorMigrateToolTest extends NexoTestCase {
 		\WP_Test_State::$posts[100] = new \WP_Post( array( 'ID' => 100, 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Inicio' ) );
 		update_post_meta( 100, '_elementor_edit_mode', 'builder' );
 		update_post_meta( 100, '_elementor_data', (string) wp_json_encode( ElementorSectionFixtures::v3() ) );
+	}
+
+	private function put_copy_of_page(): void {
+		\WP_Test_State::$posts[101] = new \WP_Post( array( 'ID' => 101, 'post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Inicio' ) );
+		update_post_meta( 101, WorkingCopy::META_DRAFT_OF, 100 );
+		update_post_meta( 100, WorkingCopy::META_DRAFT, 101 );
+		update_post_meta( 101, '_elementor_edit_mode', 'builder' );
+		update_post_meta( 101, '_elementor_data', (string) wp_json_encode( ElementorSectionFixtures::v3() ) );
 	}
 
 	public function test_es_una_herramienta_de_escritura_en_la_allowlist_con_su_esquema(): void {
@@ -123,5 +132,46 @@ final class ElementorMigrateToolTest extends NexoTestCase {
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+	}
+
+	public function test_con_el_id_de_la_copia_el_permiso_se_pide_sobre_el_original(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		\WP_Test_State::$denied_edit_posts = array( 100 );
+		$input = array( 'id' => 101 );
+
+		$this->assertNotTrue( $this->ability()['permission_callback']( $input ) );
+
+		$result = $this->ability()['execute_callback']( $input );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+	}
+
+	public function test_con_el_id_de_la_copia_no_importa_el_permiso_sobre_la_copia(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+		$input = array( 'id' => 101 );
+
+		$this->assertTrue( $this->ability()['permission_callback']( $input ) );
+
+		$result = $this->ability()['execute_callback']( $input );
+
+		$this->assertFalse( $result instanceof \WP_Error && 'nexo_mcp_builder_forbidden' === $result->get_error_code(), 'migra' );
+	}
+
+	public function test_un_borrador_que_el_original_no_reconoce_como_copia_pide_permiso_sobre_si_mismo(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		delete_post_meta( 100, WorkingCopy::META_DRAFT );
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+		$before = serialize( array( \WP_Test_State::$posts, \WP_Test_State::$meta ) );
+
+		$result = $this->ability()['execute_callback']( array( 'id' => 101 ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+		$this->assertSame( $before, serialize( array( \WP_Test_State::$posts, \WP_Test_State::$meta ) ) );
 	}
 }

@@ -373,14 +373,7 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->elementor_section_schema(),
 			fn( array $input ) => $this->builders->edit_elementor_section( $input ),
-			// Escribe en la copia de trabajo del original: el permiso se pide sobre el
-			// original aunque la llamada traiga el id de la copia. Nunca publica.
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
-			)
+			fn( array $input ) => $this->elementor_page_permission( $input )
 		);
 		$this->ability(
 			'migrate-elementor-page',
@@ -389,14 +382,7 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->elementor_migrate_schema(),
 			fn( array $input ) => $this->builders->migrate_elementor_page( $input ),
-			// Escribe en la copia de trabajo del original, como edit-elementor-section: el
-			// permiso se pide sobre el original aunque la llamada traiga el id de la copia.
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
-			)
+			fn( array $input ) => $this->elementor_page_permission( $input )
 		);
 		$this->ability(
 			'update-node-text',
@@ -892,6 +878,23 @@ final class ExtendedAbilityRegistrar {
 			$this->id_schema(),
 			fn( array $input ) => $this->content->get_working_copy_diff( (int) $input['id'] ),
 			fn( array $input ) => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+		);
+	}
+
+	/**
+	 * Permiso de las herramientas que escriben una página de Elementor o su copia.
+	 *
+	 * Escriben en la copia de trabajo del original: el permiso se pide sobre el
+	 * original aunque la llamada traiga el id de la copia. Nunca publican.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 */
+	private function elementor_page_permission( array $input ): bool {
+		return $this->module_write(
+			'builders_tools_enabled',
+			Capabilities::BUILDERS,
+			'edit_post',
+			WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
 		);
 	}
 
