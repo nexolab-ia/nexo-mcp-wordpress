@@ -36,8 +36,8 @@ del CI (`odd/tasks/optimizar-ci.md`, L4-L5). Rama `fix/limite-transporte` desde 
 
 ## Tasks
 
-- [ ] T1 (S2-S7) Guardia con una evaluación por pedido, 429 + Retry-After, PHPUnit, comprobación en vivo, 1.4.3. Ruta:
-  worker + verify (Risk: item 2, un guardia de seguridad). Commit: —
+- [x] T1 (S2-S7) Guardia con una evaluación por pedido, 429 + Retry-After, PHPUnit, comprobación en vivo, 1.4.3. Ruta:
+  worker + verify (Risk: item 2, un guardia de seguridad). Commit: 341f6e6 y el siguiente (L4)
 
 ## Log
 
@@ -59,3 +59,13 @@ del CI (`odd/tasks/optimizar-ci.md`, L4-L5). Rama `fix/limite-transporte` desde 
 - L3 (2026-11-20): el changelog de `readme.txt` está en español («Corrección:»); el worker siguió la convención del
   archivo y no el «en inglés» de S7, que era un error de la especificación. `tools/prueba_reglas.sh` (OAuth, 401/403,
   solo lectura, confirmaciones) contra el docker con el cambio: exit 0, sin FALLA.
+- L4 (2026-11-20): verificador independiente (Risk: item 2): S2-S7 PASS, sin bloqueantes; RED reproducido con el código
+  de origin/main (3 fallas + 3 errores); en vivo +10 por 10 pedidos y 429 con `Retry-After`; 401/403 de las demás
+  denegaciones sin cambio. Review nativa (riesgo, resiliencia, fiabilidad) aprobada, lineage review-7528f3569cd71f34.
+  Por sus avisos: prueba de que `register()` engancha `limit_response` en `rest_post_dispatch` (prioridad 9, 3
+  argumentos; el `add_filter` del bootstrap ahora registra las llamadas; mutante sin la línea → falla) y cuatro casos de
+  seguridad del memo (una denegación no se vuelve permiso en el mismo pedido, un permiso no pasa a otro pedido, pedidos
+  intercalados se reevalúan, sin pedido no toca la decisión recordada). Aceptado sin cambio: el memo es de un solo
+  lugar (un pedido intercalado vuelve a contar y queda en 403, falla segura) y un mismo objeto de pedido reusado tras
+  cambiar de usuario en un proceso largo conserva la decisión (no pasa en HTTP: cada pedido es un objeto nuevo).
+  PHPUnit 888 OK, PHPCS y PHPStan sin errores.

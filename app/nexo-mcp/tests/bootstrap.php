@@ -60,6 +60,8 @@ final class WP_Test_State {
 
 	/** @var array<string, int> Contador de `nexo_mcp_rate_limits` por bucket_key. */
 	public static array $rate_hits = array();
+	/** Filtros agregados con add_filter: lista de [hook, callback, prioridad, argumentos]. */
+	public static array $hooks = array();
 
 	/** @var array<string, mixed> Valor fijo que devuelve `apply_filters()` para un gancho. */
 	public static array $filters = array();
@@ -105,6 +107,7 @@ final class WP_Test_State {
 		self::$terms     = array();
 		self::$audit     = array();
 		self::$rate_hits = array();
+		self::$hooks     = array();
 		self::$filters   = array();
 		self::$user_id   = 1;
 		self::$option_autoload = array();
@@ -353,7 +356,10 @@ function is_wp_error( $thing ): bool { return $thing instanceof WP_Error; }
 function apply_filters( $hook, $value, ...$args ) { return array_key_exists( $hook, WP_Test_State::$filters ) ? WP_Test_State::$filters[ $hook ] : $value; }
 function do_action( $hook, ...$args ): void {}
 function add_action( ...$args ): bool { return true; }
-function add_filter( ...$args ): bool { return true; }
+function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ): bool {
+	WP_Test_State::$hooks[] = array( $hook, $callback, $priority, $accepted_args );
+	return true;
+}
 function did_action( $hook ): int { return 0; }
 function current_time( $type, $gmt = false ) { return gmdate( 'Y-m-d H:i:s' ); }
 function wp_salt( $scheme = 'auth' ) { return 'test-salt'; }

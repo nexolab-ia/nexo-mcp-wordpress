@@ -185,4 +185,61 @@ final class TransportGuardTest extends NexoTestCase {
 		$this->assertTrue( $guard->authorize_upload_ticket() );
 		$this->assertSame( 2, $this->units() );
 	}
+
+	public function test_register_engancha_el_429_en_rest_post_dispatch(): void {
+		$registrar = new ServerRegistrar( $this->guard() );
+		$registrar->register();
+
+		$this->assertContains(
+			array( 'rest_post_dispatch', array( $registrar, 'limit_response' ), 9, 3 ),
+			\WP_Test_State::$hooks,
+			'register() tiene que enganchar limit_response antes del desafío de BearerTokenGuard (prioridad 10)'
+		);
+	}
+
+	public function test_una_denegacion_no_se_vuelve_permiso_en_el_mismo_pedido(): void {
+		$guard   = $this->guard();
+		$request = $this->request();
+		\WP_Test_State::$user_id = 0;
+		$this->assertSame( 'nexo_mcp_authentication_required', $guard->authorize( $request )->get_error_code() );
+
+		\WP_Test_State::$user_id = 1;
+		$this->assertInstanceOf( \WP_Error::class, $guard->authorize( $request ) );
+		$this->assertTrue( $guard->authorize( $this->request() ), 'un pedido nuevo se evalúa de cero' );
+	}
+
+	public function test_un_permiso_no_pasa_a_otro_pedido(): void {
+		$guard = $this->guard();
+		$this->assertTrue( $guard->authorize( $this->request() ) );
+
+		\WP_Test_State::$user_id = 0;
+		$this->assertSame( 'nexo_mcp_authentication_required', $guard->authorize( $this->request() )->get_error_code() );
+	}
+
+	public function test_pedidos_intercalados_se_reevaluan(): void {
+		$guard = $this->guard();
+		$a     = $this->request();
+		$b     = $this->request();
+		$guard->authorize( $a );
+		$guard->authorize( $b );
+		$guard->authorize( $a );
+
+		$this->assertSame( 3, $this->units() );
+		$this->assertNull( $guard->rate_limit_error( $b ) );
+	}
+
+	public function test_sin_pedido_no_toca_la_decision_recordada(): void {
+		\WP_Test_State::$filters['nexo_mcp_transport_rate_limit'] = 1;
+		$guard = $this->guard();
+		$guard->authorize( $this->request() );
+		$limitado = $this->request();
+		$guard->authorize( $limitado );
+		$guard->authorize();
+		$guard->authorize_upload_ticket();
+
+		$this->assertSame( 4, $this->units() );
+		$this->assertNotNull( $guard->rate_limit_error( $limitado ) );
+		$this->assertNull( $guard->rate_limit_error( null ) );
+		$this->assertNull( $guard->rate_limit_error( $this->request() ) );
+	}
 }
