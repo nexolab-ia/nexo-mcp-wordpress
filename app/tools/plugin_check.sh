@@ -24,7 +24,9 @@ ALLOWED=(
 	outdated_tested_upto_header
 )
 
-wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
+# shellcheck source=wpcli.sh
+source tools/wpcli.sh
+wp() { wpcli "$@" 2>/dev/null; }
 
 if ! wp plugin is-active plugin-check; then
 	wp plugin install plugin-check --activate >/dev/null

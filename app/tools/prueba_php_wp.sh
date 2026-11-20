@@ -7,9 +7,12 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
+# shellcheck source=wpcli.sh
+source tools/wpcli.sh
 # Desde `php_wp() {` hasta la llave que cierra `php_wpr`.
 eval "$(awk '/^php_wp\(\) \{/ { dentro = 1 } dentro { print } /^php_wpr\(\)/ { ultima = 1 } ultima && /^\}/ { exit }' tools/prueba_adaptadores.sh)"
-declare -F php_wp >/dev/null && declare -F php_wpr >/dev/null || { echo "FALLA: no se encontró php_wp/php_wpr"; exit 1; }
+for f in php_wp php_wpr wpcli wpcli_levantar wpcli_bajar; do declare -F "$f" >/dev/null || { echo "FALLA: no se encontró $f"; exit 1; }; done
+unset NEXO_WPCLI
 
 fallas=0
 falla() { echo "FALLA: $*"; fallas=$((fallas + 1)); }
@@ -84,6 +87,47 @@ salida="$(php_wpr 'X' 2>/dev/null)"; codigo=$?
 responder "255|x" "255|x" "0|$(marcada 'tercera')"
 salida="$(php_wpr 'X' 2>/dev/null)"; codigo=$?
 [ -z "$salida" ] && [ "$codigo" -ne 0 ] && ok "php_wpr no reintenta más de una vez" || falla "php_wpr dos fallas: «${salida}» (código $codigo)"
+
+# Cómo llega a docker: sin NEXO_WPCLI, un contenedor nuevo por llamada; con él, un exec en el contenedor vivo.
+linea() { tr '\n' ' ' <"$argumentos"; }
+: >"$argumentos"
+responder "0|$(marcada '')"
+php_wp 'X' 'v1' >/dev/null
+case "$(linea)" in
+	"<compose> <run> <--rm> <-T> <-e> <NEXO_A1=v1> <--entrypoint> <wp> <setup> <eval> <--user=admin> "*) ok "sin NEXO_WPCLI: docker compose run por llamada" ;;
+	*) falla "sin NEXO_WPCLI: $(linea)" ;;
+esac
+: >"$argumentos"
+responder "0|$(marcada '')"
+NEXO_WPCLI=c123 php_wp 'X' 'v1' >/dev/null
+case "$(linea)" in
+	"<exec> <-i> <-w> </var/www/html> <-e> <NEXO_A1=v1> <c123> <wp> <eval> <--user=admin> "*) ok "con NEXO_WPCLI: docker exec en ese contenedor" ;;
+	*) falla "con NEXO_WPCLI: $(linea)" ;;
+esac
+
+# wpcli_levantar/wpcli_bajar: crea y exporta el contenedor; sólo baja el propio.
+: >"$argumentos"
+responder "0|c-nuevo"
+wpcli_levantar
+[ "${NEXO_WPCLI:-}" = c-nuevo ] && [ "$(linea)" = "<compose> <run> <-d> <--rm> <--entrypoint> <sleep> <setup> <7200> " ] \
+	&& bash -c '[ "$NEXO_WPCLI" = c-nuevo ]' && ok "wpcli_levantar crea el contenedor (2 h como máximo) y lo exporta" \
+	|| falla "wpcli_levantar: NEXO_WPCLI=«${NEXO_WPCLI:-}», docker: $(linea)"
+: >"$argumentos"
+wpcli_bajar
+[ -z "${NEXO_WPCLI:-}" ] && [ "$(linea)" = "<rm> <-f> <c-nuevo> " ] && ok "wpcli_bajar quita el contenedor propio" \
+	|| falla "wpcli_bajar: NEXO_WPCLI=«${NEXO_WPCLI:-}», docker: $(linea)"
+: >"$argumentos"
+NEXO_WPCLI=c-ajeno
+wpcli_levantar
+wpcli_bajar
+[ "$NEXO_WPCLI" = c-ajeno ] && [ ! -s "$argumentos" ] && ok "uno que llegó de afuera no se crea ni se baja" \
+	|| falla "contenedor ajeno: NEXO_WPCLI=«$NEXO_WPCLI», docker: $(linea)"
+unset NEXO_WPCLI
+: >"$argumentos"
+responder "1|"
+wpcli_levantar; codigo=$?
+[ "$codigo" -ne 0 ] && [ -z "${NEXO_WPCLI:-}" ] && ok "si no se puede levantar, sale con error y sigue sin contenedor" \
+	|| falla "levantar fallido: código $codigo, NEXO_WPCLI=«${NEXO_WPCLI:-}»"
 
 [ "$fallas" -eq 0 ] && echo "OK: php_wp" || echo "FALLA: $fallas comprobación(es) de php_wp fallaron."
 [ "$fallas" -eq 0 ]

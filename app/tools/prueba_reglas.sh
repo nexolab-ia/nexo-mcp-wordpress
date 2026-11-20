@@ -12,7 +12,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
+# shellcheck source=wpcli.sh
+source tools/wpcli.sh
+wp() { wpcli "$@" 2>/dev/null; }
 count_live() {
 	# Posts con ese título fuera de la papelera.
 	wp post list --post_type=post --post_status=draft,pending,private,publish,future \
