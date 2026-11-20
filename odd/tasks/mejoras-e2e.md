@@ -45,3 +45,9 @@ Rama `chore/e2e-robusto` desde `main` (c2a61c4, v1.4.2).
   grupo) → exit 130; las dos corren la limpieza completa y dejan ajustes, experimentos y huella del sistema de diseño
   iguales a los de antes. Commits: T1+T2 929b108; T3 y este documento en el commit siguiente
   («test(e2e): reject `--` labels and move the design-system write checks to their own file»).
+- L5 (2026-11-20): verificación independiente (Risk: item 6): S1-S6 PASS, sin bloqueantes; sondas reales con comillas,
+  `$` y espacios en los valores, payload multilínea con avisos antes y después, bash 3.2 sin argumentos. Review nativa
+  (resiliencia, fiabilidad) aprobada, lineage review-ac6d27b04904de8b. Alcance de S6: el `wp eval` que queda dentro del
+  heredoc de concurrencia (Python, lee `LOCKED` como flujo y sólo recibe enteros con `%d`) no pasa por `php_wp` porque
+  necesita la salida en vivo. Avisos aparte: R3-php-wp-failure-opaque (sin marca, `php_wp` devuelve vacío con código 0)
+  y A4 (con `| tee` y Ctrl-C, un SIGPIPE en la limpieza; sin reproducir).
