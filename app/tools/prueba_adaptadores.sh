@@ -49,6 +49,23 @@ cd "$(dirname "$0")/.."
 wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
 # Lectura que reintenta una vez: wp-cli devuelve a veces vacío de forma transitoria.
 wpr() { local out; out="$(wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(wp "$@")"; }; printf '%s' "$out"; }
+# PHP dentro de WordPress, como admin. Los valores van como variables de entorno NEXO_A1, NEXO_A2… (el código los lee
+# con getenv), nunca pegados en el código. Lo que el código imprime viaja entre marcas y en base64, así que los avisos
+# de PHP de antes o de después (p. ej. los de Elementor al cerrar) no llegan a la salida. El código corre dentro de una
+# función: puede terminar con `return`.
+#   php_wp '<código>' [valor…]    php_wpr: igual, pero reintenta una vez si la salida queda vacía (sólo lecturas)
+php_wp() {
+	local codigo=$1 i=1 valor
+	local -a entorno=()
+	shift
+	for valor in "$@"; do entorno+=(-e "NEXO_A$i=$valor"); i=$((i + 1)); done
+	docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint wp setup eval --user=admin \
+		'ob_start(); ( function () { '"$codigo"'
+} )(); echo "\n@@NEXO@@" . base64_encode( (string) ob_get_clean() ) . "@@NEXO@@\n";' 2>/dev/null \
+		| sed -n 's/^.*@@NEXO@@\([A-Za-z0-9+\/=]*\)@@NEXO@@.*$/\1/p' | head -n 1 \
+		| python3 -I -c 'import base64, sys; sys.stdout.write(base64.b64decode(sys.stdin.read().strip()).decode())'
+}
+php_wpr() { local out; out="$(php_wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(php_wp "$@")"; }; printf '%s' "$out"; }
 
 # Subcomando para el .py: comprueba con wp-cli, no con MCP, que el enlace del
 # botón quedó guardado en `_elementor_data` antes de restaurar el respaldo.
@@ -76,7 +93,7 @@ if [ "${1:-}" = "--contar-paginas" ]; then
 fi
 if [ "${1:-}" = "--experimentos" ]; then
 	for name in e_opt_in_v4 e_atomic_elements; do wp option update "elementor_experiment-$name" "$2" >/dev/null; done
-	wpr eval 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";'
+	php_wpr 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";'
 	exit 0
 fi
 
@@ -87,33 +104,33 @@ fi
 if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
 if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
 if [ "${1:-}" = "--render" ]; then
-	wp eval 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$2"', true );' --user=admin
+	php_wp 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( (int) getenv( "NEXO_A1" ), true );' "$2"
 	exit 0
 fi
 
 # Subcomando del bloque de migrate-elementor-page: lo que Elementor carga de un contenido,
 # como lista JSON de tipos (widgetType o elType) en orden de documento.
 if [ "${1:-}" = "--documento" ]; then
-	wpr eval '
-$doc = \Elementor\Plugin::$instance->documents->get( '"$2"', false );
+	php_wpr '
+$doc = \Elementor\Plugin::$instance->documents->get( (int) getenv( "NEXO_A1" ), false );
 $tipos = array();
 $recorrer = function ( $nodos ) use ( &$recorrer, &$tipos ) {
 	foreach ( $nodos as $n ) { $tipos[] = ( $n["widgetType"] ?? "" ) ?: $n["elType"]; $recorrer( $n["elements"] ?? array() ); }
 };
 $recorrer( $doc ? $doc->get_elements_data() : array() );
-echo wp_json_encode( $tipos );' --user=admin
+echo wp_json_encode( $tipos );' "$2"
 	exit 0
 fi
 
 # Subcomando para el bloque del sistema de diseño: huella del estado que respalda y
 # restaura ElementorDesignStore (clases, variables y Kit) y si hay un respaldo guardado.
 if [ "${1:-}" = "--diseno-estado" ]; then
-	wpr eval '
+	php_wpr '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $estado = array();
 foreach ( array( "classes", "variables", "kit" ) as $tipo ) { $estado[ $tipo ] = $store->snapshot( $tipo ); }
 $estado["respaldo"] = false !== get_option( "nexo_mcp_design_system_backup", false );
-echo md5( wp_json_encode( $estado ) );' --user=admin
+echo md5( wp_json_encode( $estado ) );'
 	exit 0
 fi
 
@@ -132,7 +149,7 @@ fi
 #                              corrida) y manda a la papelera las páginas elementor-mcp- de corridas cortadas
 diseno_php_canon='$canon = static function ( $v ) use ( &$canon ) { if ( ! is_array( $v ) ) { return $v; } $v = array_map( $canon, $v ); if ( ! array_is_list( $v ) ) { ksort( $v ); } return $v; };'
 restaurar_diseno() {
-	wp eval "$diseno_php_canon"'
+	php_wp "$diseno_php_canon"'
 $guardado = get_option( "nexo_prueba_diseno_foto", false );
 if ( ! is_array( $guardado ) ) { echo "sin foto"; return; }
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
@@ -146,10 +163,10 @@ delete_option( "nexo_mcp_design_system_backup" );
 delete_option( "nexo_prueba_diseno_foto" );
 delete_option( "nexo_mcp_lock_" . \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id() );
 $store->clear_cache();
-echo "restaurado: " . implode( ",", $cambiados );' --user=admin
+echo "restaurado: " . implode( ",", $cambiados );'
 }
 if [ "${1:-}" = "--diseno-huella" ]; then
-	wpr eval "$diseno_php_canon"'
+	php_wpr "$diseno_php_canon"'
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
 $variables = $store->snapshot( "variables" );
@@ -159,14 +176,14 @@ echo "clases=" . md5( wp_json_encode( $canon( $store->snapshot( "classes" ) ) ) 
 echo " vista=" . md5( wp_json_encode( array_values( (array) $vista->get_order() ) ) );
 echo " variables=" . md5( wp_json_encode( $canon( $variables ) ) );
 echo " kit=" . md5( wp_json_encode( $canon( $store->snapshot( "kit" ) ) ) );
-echo " respaldo=" . ( false !== get_option( "nexo_mcp_design_system_backup", false ) ? "si" : "no" );' --user=admin
+echo " respaldo=" . ( false !== get_option( "nexo_mcp_design_system_backup", false ) ? "si" : "no" );'
 	exit 0
 fi
 if [ "${1:-}" = "--diseno-clase" ]; then
-	wpr eval '
+	php_wpr '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
-$id = "'"$2"'";
+$id = (string) getenv( "NEXO_A1" );
 $estado = $store->snapshot( "classes" );
 $vista = array_values( (array) \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit )->set_preview( true )->get_order() );
 $item = $estado["items"][ $id ] ?? null;
@@ -177,47 +194,47 @@ echo wp_json_encode( array(
 	"vista_ultima" => array() !== $vista && end( $vista ) === $id,
 	"vista" => in_array( $id, $vista, true ),
 	"variantes" => array_map( static fn( $v ) => array( "breakpoint" => $v["meta"]["breakpoint"] ?? null, "state" => $v["meta"]["state"] ?? null, "props" => array_keys( $v["props"] ?? array() ) ), $item["variants"] ?? array() ),
-) );' --user=admin
+) );' "$2"
 	exit 0
 fi
 if [ "${1:-}" = "--diseno-variable" ]; then
-	wpr eval '
+	php_wpr '
 $estado = ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "variables" );
-$v = $estado["data"]["'"$2"'"] ?? null;
-echo wp_json_encode( array( "existe" => null !== $v, "type" => $v["type"] ?? null, "label" => $v["label"] ?? null, "borrada" => ! empty( $v["deleted_at"] ) ) );' --user=admin
+$v = $estado["data"][ (string) getenv( "NEXO_A1" ) ] ?? null;
+echo wp_json_encode( array( "existe" => null !== $v, "type" => $v["type"] ?? null, "label" => $v["label"] ?? null, "borrada" => ! empty( $v["deleted_at"] ) ) );' "$2"
 	exit 0
 fi
 if [ "${1:-}" = "--diseno-kit-lista" ]; then
-	wpr eval 'echo wp_json_encode( ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "kit" )["'"$2"'"] ?? array() );' --user=admin
+	php_wpr 'echo wp_json_encode( ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "kit" )[ (string) getenv( "NEXO_A1" ) ] ?? array() );' "$2"
 	exit 0
 fi
 if [ "${1:-}" = "--ajuste" ]; then
-	wp eval '$s = get_option( "nexo_mcp_settings" ); $s["'"$2"'"] = "true" === "'"$3"'"; update_option( "nexo_mcp_settings", $s );' >/dev/null
+	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
 fi
 if [ "${1:-}" = "--ajuste-valor" ]; then
-	wpr eval '$s = get_option( "nexo_mcp_settings" ); echo ! empty( $s["'"$2"'"] ) ? "true" : "false";'
+	php_wpr '$s = get_option( "nexo_mcp_settings" ); echo ! empty( $s[ (string) getenv( "NEXO_A1" ) ] ) ? "true" : "false";' "$2"
 	exit 0
 fi
 if [ "${1:-}" = "--diseno-foto" ]; then
-	wp eval '
+	php_wp '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $foto = array();
 foreach ( array( "classes", "variables", "kit" ) as $tipo ) { $foto[ $tipo ] = $store->snapshot( $tipo ); }
 update_option( "nexo_prueba_diseno_foto", $foto, false );
-echo "foto guardada";' --user=admin
+echo "foto guardada";'
 	exit 0
 fi
 if [ "${1:-}" = "--diseno-restaurar" ]; then restaurar_diseno; exit 0; fi
 if [ "${1:-}" = "--diseno-barrer" ]; then
-	wp eval '
+	php_wp '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
-$sufijo = "'"$2"'";
+$sufijo = (string) getenv( "NEXO_A1" );
 $salida = array();
 $clases = $store->snapshot( "classes" );
 $quitar = array();
 foreach ( $clases["items"] as $id => $item ) {
-	if ( 0 === strpos( (string) ( $item["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== "'"$3"'" ) { $quitar[] = (string) $id; }
+	if ( 0 === strpos( (string) ( $item["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== getenv( "NEXO_A2" ) ) { $quitar[] = (string) $id; }
 }
 if ( array() !== $quitar ) {
 	foreach ( $quitar as $id ) { unset( $clases["items"][ $id ] ); }
@@ -228,7 +245,7 @@ if ( array() !== $quitar ) {
 $variables = $store->snapshot( "variables" );
 $quitar = array();
 foreach ( $variables["data"] ?? array() as $id => $entrada ) {
-	if ( 0 === strpos( (string) ( $entrada["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== "'"$4"'" ) { $quitar[] = (string) $id; }
+	if ( 0 === strpos( (string) ( $entrada["label"] ?? "" ), "nexo-prueba-" ) && (string) $id !== getenv( "NEXO_A3" ) ) { $quitar[] = (string) $id; }
 }
 if ( array() !== $quitar ) {
 	foreach ( $quitar as $id ) { unset( $variables["data"][ $id ] ); }
@@ -242,7 +259,7 @@ foreach ( get_posts( array( "post_type" => "page", "post_status" => "any", "numb
 }
 if ( array() !== $paginas ) { $salida[] = "páginas: " . implode( ",", $paginas ); }
 $store->clear_cache();
-echo array() === $salida ? "sin restos" : implode( "; ", $salida );' --user=admin
+echo array() === $salida ? "sin restos" : implode( "; ", $salida );' "$2" "$3" "$4"
 	exit 0
 fi
 
@@ -301,22 +318,25 @@ restore_experiments() {
 }
 remove_design_fixtures() {
 	[ -n "$class_id$variable_id" ] || return 0
-	wp eval '
+	php_wp '
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
 $repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
 $all = $repo->all()->get();
-unset( $all["items"]["'"$class_id"'"] );
-$repo->put( $all["items"], array_values( array_diff( $all["order"], array( "'"$class_id"'" ) ) ) );
-$prev = "'"$variables_prev"'";
+$clase = (string) getenv( "NEXO_A1" );
+unset( $all["items"][ $clase ] );
+$repo->put( $all["items"], array_values( array_diff( $all["order"], array( $clase ) ) ) );
+$prev = (string) getenv( "NEXO_A2" );
 if ( "__sin__" === $prev ) { delete_post_meta( $kit->get_main_id(), "_elementor_global_variables" ); }
 elseif ( 0 === strpos( $prev, "datos:" ) ) { update_post_meta( $kit->get_main_id(), "_elementor_global_variables", wp_slash( base64_decode( substr( $prev, 6 ) ) ) ); }
-// Sin una captura válida no se toca el meta: mejor dejar la variable de prueba que borrar las del sitio.' >/dev/null
+// Sin una captura válida no se toca el meta: mejor dejar la variable de prueba que borrar las del sitio.' "$class_id" "$variables_prev" >/dev/null
 	case "$variables_prev" in
 		__sin__|datos:*) ;;
 		*) echo "AVISO: no hay captura válida de las variables del Kit; no se restauraron (puede quedar la variable de prueba $variable_label)." ;;
 	esac
 }
 cleanup() {
+	# Un segundo Ctrl-C no corta la limpieza a medias.
+	trap '' INT TERM HUP
 	echo
 	echo "### Limpieza (a la papelera)"
 	local fallidas=0 id
@@ -329,7 +349,7 @@ cleanup() {
 		created_ids="$(wpr post list --post_type=page --post_status=any --field=ID --s="elementor-mcp-$suffix" | tr '\n' ' ')"
 	fi
 	for id in $page_id $atomic_page_id $created_ids $group_ids; do
-		wp eval "wp_trash_post( $id );" >/dev/null
+		php_wp 'wp_trash_post( (int) getenv( "NEXO_A1" ) );' "$id" >/dev/null
 		if [ "$(wpr post get "$id" --field=post_status)" = "trash" ]; then
 			echo "Papelera: $id"
 		else
@@ -337,7 +357,7 @@ cleanup() {
 		fi
 	done
 	if [ -n "$media_id" ]; then
-		wp eval "wp_delete_attachment( $media_id, true );" >/dev/null
+		php_wp 'wp_delete_attachment( (int) getenv( "NEXO_A1" ), true );' "$media_id" >/dev/null
 		echo "Imagen de prueba quitada: $media_id"
 	fi
 	# Si el bloque de herramientas de escritura se cortó a medias, se devuelve el sistema de diseño a como estaba.
@@ -346,7 +366,7 @@ cleanup() {
 		diseno_foto_tomada=""
 	fi
 	remove_design_fixtures
-	if [ -n "$class_id" ] && wpr eval 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );' | grep -q "$class_id"; then
+	if [ -n "$class_id" ] && php_wpr 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );' | grep -q "$class_id"; then
 		echo "FALLA: la clase global $class_id sigue ahí"; fallidas=$((fallidas + 1))
 	elif [ -n "$class_id" ]; then
 		echo "Clase global y variable quitadas."
@@ -356,6 +376,11 @@ cleanup() {
 	[ "$fallidas" -eq 0 ]
 }
 trap cleanup EXIT
+# Una corrida cortada (Ctrl-C, kill, cierre de la terminal) sale por EXIT: la limpieza devuelve también los ajustes
+# (incluido destructive_enabled, que el bloque del sistema de diseño enciende), los experimentos y el sistema de diseño.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 # Módulos necesarios activos y sin «Solo revisar».
 needed="$(printf '%s' "$original" | python3 -I -c '
@@ -387,7 +412,7 @@ echo "Página borrador de Elementor: $page_id"
 
 # Grupo de campos ACF para páginas, guardado en la base de datos (las llamadas
 # MCP son peticiones distintas: un grupo sólo local no existiría para ellas).
-group_ids="$(wp eval '
+group_ids="$(php_wp '
 $grupo = acf_import_field_group( array(
 	"key"      => "group_nexo_prueba_adaptadores",
 	"title"    => "Nexo prueba adaptadores",
@@ -406,16 +431,16 @@ echo "Grupo de campos ACF (ids): $group_ids"
 # salir se deja como estaba. La clase, la variable y el árbol se crean con las
 # APIs PHP de Elementor: nunca se escribe a mano su meta.
 for name in $exp_names; do
-	prev="$(wp eval "echo get_option( 'elementor_experiment-$name', '__sin__' );")"
+	prev="$(php_wp 'echo get_option( "elementor_experiment-" . getenv( "NEXO_A1" ), "__sin__" );' "$name")"
 	exp_prev="$exp_prev$name=$prev"$'\n'
 	wp option update "elementor_experiment-$name" active >/dev/null
 done
-[ "$(wpr eval 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";')" = "si" ] \
+[ "$(php_wpr 'echo \Elementor\Plugin::$instance->experiments->is_feature_active( "e_atomic_elements" ) ? "si" : "no";')" = "si" ] \
 	|| { echo "FALLA: no se pudo activar el experimento atómico"; exit 1; }
 echo "Experimento atómico activo (estado previo: $(printf '%s' "$exp_prev" | tr '\n' ' '))"
 
-kit_id="$(wpr eval 'echo \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id();')"
-variables_prev="$(wpr eval '$id = \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id(); echo metadata_exists( "post", $id, "_elementor_global_variables" ) ? "datos:" . base64_encode( (string) get_post_meta( $id, "_elementor_global_variables", true ) ) : "__sin__";')"
+kit_id="$(php_wpr 'echo \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id();')"
+variables_prev="$(php_wpr '$id = \Elementor\Plugin::$instance->kits_manager->get_active_kit()->get_main_id(); echo metadata_exists( "post", $id, "_elementor_global_variables" ) ? "datos:" . base64_encode( (string) get_post_meta( $id, "_elementor_global_variables", true ) ) : "__sin__";')"
 # Sin una captura válida no se sigue: restaurar un estado vacío borraría las variables del sitio.
 case "$variables_prev" in
 	__sin__|datos:*) ;;
@@ -424,49 +449,49 @@ esac
 class_id="g-nexo$RANDOM"
 class_label="nexo-prueba-clase-$suffix"
 variable_label="nexo-prueba-var-$suffix"
-variable_id="$(wp eval '
+variable_id="$(php_wp '
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
 $repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
 $all = $repo->all()->get();
-$all["items"]["'"$class_id"'"] = array( "id" => "'"$class_id"'", "type" => "class", "label" => "'"$class_label"'", "variants" => array() );
-$all["order"][] = "'"$class_id"'";
+$clase = (string) getenv( "NEXO_A1" );
+$all["items"][ $clase ] = array( "id" => $clase, "type" => "class", "label" => getenv( "NEXO_A2" ), "variants" => array() );
+$all["order"][] = $clase;
 $repo->put( $all["items"], $all["order"] );
 $variables = new \Elementor\Modules\Variables\Storage\Variables_Repository( $kit );
 $coleccion = $variables->load();
 $variable = \Elementor\Modules\Variables\Storage\Entities\Variable::create_new( array(
-	"id" => $coleccion->next_id(), "type" => "global-color-variable", "label" => "'"$variable_label"'",
+	"id" => $coleccion->next_id(), "type" => "global-color-variable", "label" => getenv( "NEXO_A3" ),
 	"value" => "#ff0000", "order" => $coleccion->get_next_order(),
 ) );
 $variable->validate();
 $coleccion->add_variable( $variable );
 $variables->save( $coleccion );
-echo $variable->id();')"
+echo $variable->id();' "$class_id" "$class_label" "$variable_label")"
 [ -n "$variable_id" ] || { echo "FALLA: no se pudo crear la variable"; exit 1; }
 echo "Clase global: $class_id ($class_label); variable: $variable_id ($variable_label); Kit: $kit_id"
 
 atomic_heading="Título atómico $suffix"
 atomic_page_id="$(wp post create --post_type=page --post_status=draft --post_title="Prueba atómica $suffix" --porcelain)"
 [ -n "$atomic_page_id" ] || { echo "FALLA: no se pudo crear la página atómica"; exit 1; }
-guardado="$(wp eval '
-$id = '"$atomic_page_id"';
+guardado="$(php_wp '
+$id = (int) getenv( "NEXO_A1" );
+$clase = (string) getenv( "NEXO_A3" );
 update_post_meta( $id, "_elementor_edit_mode", "builder" );
 $arbol = array( array(
 	"id" => "bbbb0000", "elType" => "e-flexbox", "styles" => array(), "elements" => array(
 		array(
 			"id" => "bbbb0001", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(),
 			"settings" => array(
-				"title"   => array( "\$\$type" => "escaped-html", "value" => "'"$atomic_heading"'" ),
-				"classes" => array( "\$\$type" => "classes", "value" => array( "'"$class_id"'" ) ),
+				"title"   => array( "\$\$type" => "escaped-html", "value" => getenv( "NEXO_A2" ) ),
+				"classes" => array( "\$\$type" => "classes", "value" => array( $clase ) ),
 			),
 		),
 	),
-	"settings" => array( "classes" => array( "\$\$type" => "classes", "value" => array( "'"$class_id"'" ) ) ),
+	"settings" => array( "classes" => array( "\$\$type" => "classes", "value" => array( $clase ) ) ),
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
-echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
-# basta con que la salida empiece por la marca.
-case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' "$atomic_page_id" "$atomic_heading" "$class_id")"
+[ "$guardado" = guardado ] || { echo "FALLA: Document::save no guardó el árbol atómico ($guardado)"; exit 1; }
 echo "Página atómica borrador: $atomic_page_id"
 
 echo
@@ -530,14 +555,14 @@ check_eq() { # nombre esperado obtenido
 echo
 echo "### Creación de página atómica por MCP (create-elementor-page)"
 # Imagen de prueba propia (1×1 PNG) en la biblioteca: la página la referencia por id.
-media_id="$(wp eval '
+media_id="$(php_wp '
 require_once ABSPATH . "wp-admin/includes/file.php";
 require_once ABSPATH . "wp-admin/includes/media.php";
 require_once ABSPATH . "wp-admin/includes/image.php";
 $tmp = wp_tempnam( "nexo-prueba.png" );
 file_put_contents( $tmp, base64_decode( "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" ) );
-$id = media_handle_sideload( array( "name" => "nexo-prueba-'"$suffix"'.png", "tmp_name" => $tmp ), 0 );
-echo is_wp_error( $id ) ? "" : $id;' --user=admin)"
+$id = media_handle_sideload( array( "name" => "nexo-prueba-" . getenv( "NEXO_A1" ) . ".png", "tmp_name" => $tmp ), 0 );
+echo is_wp_error( $id ) ? "" : $id;' "$suffix")"
 [ -n "$media_id" ] || { echo "FALLA: no se pudo crear la imagen de prueba"; exit 1; }
 echo "Imagen de prueba: $media_id"
 
@@ -738,9 +763,9 @@ print("si" if all(len(e["id"]) >= 4 and e["id"] != "id-del-cliente" for e in nod
 	check_eq "_elementor_data enlace del botón" "https://example.com/contacto" "$(printf '%s\n' "$guardado" | sed -n 4p)"
 	check_eq "_elementor_data estilo local enlazado a su clase" "si" "$(printf '%s\n' "$guardado" | sed -n 5p)"
 	check_eq "_elementor_data ids generados por el plugin" "si" "$(printf '%s\n' "$guardado" | sed -n 6p)"
-	render="$(wp eval '
-$html = \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( '"$creado_id"', true );
-echo $html;' --user=admin)"
+	render="$(php_wp '
+$html = \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( (int) getenv( "NEXO_A1" ), true );
+echo $html;' "$creado_id")"
 	for esperado in "$crear_texto" "<h1" "https://example.com/contacto" "<img" "e-flexbox-base"; do
 		case "$render" in
 			*"$esperado"*) ok "Elementor renderiza la página creada (contiene «${esperado}»)" ;;
@@ -762,7 +787,7 @@ echo
 echo "### Reconstrucción de secciones por MCP (edit-elementor-section)"
 # Tres páginas publicadas propias (el título lleva el sufijo, así que la limpieza las barre,
 # y a sus copias): una v3 (sección > columna > widgets), una atómica y una v3 de una sola sección.
-version_elementor="$(wpr eval 'echo ELEMENTOR_VERSION;')"
+version_elementor="$(php_wpr 'echo ELEMENTOR_VERSION;')"
 secciones_v3_titulo="Prueba secciones v3 elementor-mcp-$suffix"
 secciones_atomica_titulo="Prueba secciones atomica elementor-mcp-$suffix"
 secciones_una_titulo="Prueba secciones una raiz elementor-mcp-$suffix"
@@ -777,21 +802,19 @@ for par in "$secciones_v3_id|$v3_tree" "$secciones_una_id|$una_tree"; do
 	wp post meta update "${par%%|*}" _elementor_version "$version_elementor" >/dev/null
 	wp post meta update "${par%%|*}" _elementor_data "${par#*|}" >/dev/null
 done
-guardado="$(wp eval '
-$id = '"$secciones_atomica_id"';
+guardado="$(php_wp '
+$id = (int) getenv( "NEXO_A1" );
 update_post_meta( $id, "_elementor_edit_mode", "builder" );
 $texto = function ( $t ) { return array( "\$\$type" => "escaped-html", "value" => $t ); };
 $arbol = array( array(
 	"id" => "fx4000", "elType" => "e-flexbox", "styles" => array(), "settings" => array(), "elements" => array(
-		array( "id" => "eh4000", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(), "settings" => array( "title" => $texto( "Titulo atomico base '"$suffix"'" ) ) ),
-		array( "id" => "ep4000", "elType" => "widget", "widgetType" => "e-paragraph", "styles" => array(), "elements" => array(), "settings" => array( "paragraph" => $texto( "Parrafo atomico base '"$suffix"'" ) ) ),
+		array( "id" => "eh4000", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(), "settings" => array( "title" => $texto( "Titulo atomico base " . getenv( "NEXO_A2" ) ) ) ),
+		array( "id" => "ep4000", "elType" => "widget", "widgetType" => "e-paragraph", "styles" => array(), "elements" => array(), "settings" => array( "paragraph" => $texto( "Parrafo atomico base " . getenv( "NEXO_A2" ) ) ) ),
 	),
 ) );
 $documento = \Elementor\Plugin::$instance->documents->get( $id );
-echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' --user=admin)"
-# Elementor puede imprimir avisos de PHP al cerrar (p. ej. si no llega a su API remota):
-# basta con que la salida empiece por la marca.
-case "$guardado" in guardado*) ;; *) false ;; esac || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' "$secciones_atomica_id" "$suffix")"
+[ "$guardado" = guardado ] || { echo "FALLA: no se pudo guardar la página atómica de secciones ($guardado)"; exit 1; }
 echo "Páginas publicadas: v3 $secciones_v3_id, atómica $secciones_atomica_id, una raíz $secciones_una_id"
 
 python3 -I - "$suffix" "$secciones_v3_id" "$secciones_atomica_id" "$secciones_una_id" <<'PY'
@@ -1662,8 +1685,8 @@ echo "### Sistema de diseño: ElementorDesignStore (ida y vuelta) y undo-design-
 # El almacén real sobre el Elementor del docker: foto → mutar → restaurar, para clases,
 # variables y Kit. Cada tipo se restaura en un `finally`, así que un fallo a mitad no deja
 # el sitio mutado. Nada de esto toca lo que el sitio ya tenía.
-diseno_respaldo_previo="$(wpr eval 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')"
-viaje="$(wp eval '
+diseno_respaldo_previo="$(php_wpr 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')"
+viaje="$(php_wp '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
 $id = (int) $kit->get_main_id();
@@ -1716,7 +1739,7 @@ try {
 $out["kit"] = $antes === $store->snapshot( "kit" ) ? "igual" : "distinto";
 $out["kit_resto"] = $crudo_antes == get_post_meta( $id, "_elementor_page_settings", true ) ? "igual" : "distinto";
 $store->clear_cache();
-foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }' --user=admin)"
+foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }')"
 dv() { printf '%s\n' "$viaje" | sed -n "s/^$1=//p"; }
 for tipo in classes variables kit; do
 	case "$tipo" in classes) mut=classes_mutada ;; variables) mut=variables_mutada ;; *) mut=kit_mutado ;; esac
@@ -1729,7 +1752,7 @@ check_eq "diseño: resto de ajustes del Kit intacto" "igual" "$(dv kit_resto)"
 
 # Restaurar clases tras un borrado publicado: la clase vuelve también al orden de la vista previa
 # del editor, y la clase que nadie tocó conserva su borrador (meta de vista previa) tal cual.
-viaje="$(wp eval '
+viaje="$(php_wp '
 $store = new \NexoDev\NexoMCP\Builders\ElementorDesignStore();
 $kit = \Elementor\Plugin::$instance->kits_manager->get_active_kit();
 $repo = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( $kit );
@@ -1775,7 +1798,7 @@ try {
 }
 $out["limpio"] = $igual( $base, $store->snapshot( "classes" ) ) && ! in_array( $a, $prev->get_order(), true ) && ! in_array( $b, $prev->get_order(), true ) ? "si" : "no";
 $store->clear_cache();
-foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }' --user=admin)"
+foreach ( $out as $clave => $valor ) { echo $clave . "=" . $valor . "\n"; }')"
 check_eq "diseño: la clase borrada (publicada) se quitó antes de restaurar" "si" "$(dv borrada)"
 check_eq "diseño: restaurar devuelve la clase a lo publicado" "si" "$(dv publicada)"
 check_eq "diseño: restaurar devuelve la clase al orden de la vista previa del editor" "si" "$(dv vista_previa)"
@@ -1819,7 +1842,7 @@ sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "undo-design-system-change tuvo comprobaciones fallidas"
 fi
-[ "$(wpr eval 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')" = "$diseno_respaldo_previo" ] \
+[ "$(php_wpr 'echo false === get_option( "nexo_mcp_design_system_backup", false ) ? "no" : "si";')" = "$diseno_respaldo_previo" ] \
 	&& ok "diseño: el sitio quedó sin respaldo nuevo" || falla "diseño: quedó un respaldo que no existía"
 
 
@@ -2262,7 +2285,7 @@ echo
 echo "### Verificación con wp-cli"
 check_eq "Yoast título (_yoast_wpseo_title)" "$titulo_seo" "$(wpr post meta get "$page_id" _yoast_wpseo_title)"
 check_eq "Yoast descripción (_yoast_wpseo_metadesc)" "$descripcion_seo" "$(wpr post meta get "$page_id" _yoast_wpseo_metadesc)"
-check_eq "ACF $campo" "$valor_campo" "$(wpr eval "echo get_field( '$campo', $page_id );")"
+check_eq "ACF $campo" "$valor_campo" "$(php_wpr 'echo get_field( getenv( "NEXO_A1" ), (int) getenv( "NEXO_A2" ) );' "$campo" "$page_id")"
 check_eq "ACF $campo (post_meta)" "$valor_campo" "$(wpr post meta get "$page_id" "$campo")"
 
 elementor="$(wpr post meta get "$page_id" _elementor_data)"
