@@ -12,6 +12,7 @@ namespace NexoDev\NexoMCP\Tests;
 use NexoDev\NexoMCP\Audit\AuditLogger;
 use NexoDev\NexoMCP\Audit\AuditRepository;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
+use NexoDev\NexoMCP\Builders\BuilderBackup;
 use NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar;
 use NexoDev\NexoMCP\MCP\ToolExecutor;
 use NexoDev\NexoMCP\WooCommerce\ProductGateway;
@@ -28,9 +29,9 @@ final class BuilderCopyPermissionTest extends NexoTestCase {
 	 */
 	public static function tools(): array {
 		return array(
-			'update-node-text'      => array( 'update-node-text' ),
-			'update-node-attribute' => array( 'update-node-attribute' ),
-			'edit-structure'        => array( 'edit-structure' ),
+			'update-node-text'       => array( 'update-node-text' ),
+			'update-node-attribute'  => array( 'update-node-attribute' ),
+			'edit-structure'         => array( 'edit-structure' ),
 			'restore-builder-backup' => array( 'restore-builder-backup' ),
 		);
 	}
@@ -153,6 +154,43 @@ final class BuilderCopyPermissionTest extends NexoTestCase {
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+		$this->assertSame( $before, $this->state() );
+	}
+
+	public function test_editar_por_la_copia_escribe_solo_en_la_copia(): void {
+		$this->put_page_and_copy();
+		$original                           = get_post_meta( 100, '_elementor_data', true );
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+
+		$result = $this->ability( 'update-node-text' )['execute_callback']( $this->input( 'update-node-text', 101 ) );
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( 101, $result['id'] );
+		$this->assertSame( 100, $result['draft_of'] );
+		$this->assertSame( $original, get_post_meta( 100, '_elementor_data', true ), 'el original no cambia' );
+		$this->assertStringContainsString( 'Nuevo', (string) get_post_meta( 101, '_elementor_data', true ) );
+	}
+
+	public function test_restaurar_por_la_copia_nunca_usa_el_respaldo_del_original(): void {
+		$this->put_page_and_copy();
+		update_post_meta(
+			100,
+			BuilderBackup::META_KEY,
+			(string) wp_json_encode(
+				array(
+					'builder'      => 'elementor',
+					'post_content' => 'EVIL',
+					'meta'         => array( '_elementor_data' => '[]' ),
+				)
+			)
+		);
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+		$before                             = $this->state();
+
+		$result = $this->ability( 'restore-builder-backup' )['execute_callback']( array( 'id' => 101 ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_no_backup', $result->get_error_code() );
 		$this->assertSame( $before, $this->state() );
 	}
 }
