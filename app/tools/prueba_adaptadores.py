@@ -36,6 +36,7 @@ import re
 import secrets
 import subprocess
 import sys
+import time
 import traceback
 import urllib.parse
 
@@ -46,6 +47,24 @@ _spec = importlib.util.spec_from_file_location(
 base_test = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(base_test)
 request, build_opener, REDIRECT_URI = base_test.request, base_test.build_opener, base_test.REDIRECT_URI
+
+# El plugin limita el transporte MCP a 240 pedidos por minuto por identidad (TransportGuard; una unidad por pedido
+# desde 1.4.3, que además responde 429 con `Retry-After` al pasarlo). La prueba no debe chocar con el límite: el cliente
+# queda por debajo, con un pedido cada INTERVALO_MINIMO segundos como máximo (~230 por minuto). Con wp-cli lento la
+# prueba nunca llegaba al límite; con el contenedor único (tools/wpcli.sh) sí. Si el límite baja de 240, hay que
+# ajustar INTERVALO_MINIMO. `reloj` y `esperar` se reemplazan en tools/prueba_cliente_limite.py.
+INTERVALO_MINIMO = 0.26
+reloj = time.monotonic
+esperar = time.sleep
+_ultimo_pedido = [None]
+
+
+def _respetar_ritmo():
+    if _ultimo_pedido[0] is not None:
+        falta = INTERVALO_MINIMO - (reloj() - _ultimo_pedido[0])
+        if falta > 0:
+            esperar(falta)
+    _ultimo_pedido[0] = reloj()
 
 
 class Cliente:
@@ -146,6 +165,7 @@ class Cliente:
         if not notify:
             self.next_id += 1
             payload["id"] = self.next_id
+        _respetar_ritmo()
         _, out, body = request(self.plain, "POST", self.endpoint, json.dumps(payload), headers)[0:3]
         if "Mcp-Session-Id" in out:
             self.session["id"] = out["Mcp-Session-Id"]
@@ -157,7 +177,8 @@ class Cliente:
     def call(self, short, arguments):
         """Llama a una herramienta; devuelve (es_error, texto, datos_json_o_None)."""
         _, out = self.rpc("tools/call", {"name": self.tool(short), "arguments": arguments})
-        result = out.get("result", out.get("error"))
+        result = out.get("result", out.get("error")) if isinstance(out, dict) else None
+        assert isinstance(result, dict), f"{short}: respuesta del transporte que no es JSON-RPC: {json.dumps(out, ensure_ascii=False)[:300]}"
         if "content" in result:
             text = "".join(c.get("text", "") for c in result["content"])
         else:

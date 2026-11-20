@@ -46,7 +46,9 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
-wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
+# shellcheck source=wpcli.sh
+source tools/wpcli.sh
+wp() { wpcli "$@" 2>/dev/null; }
 # Lectura que reintenta una vez: wp-cli devuelve a veces vacío de forma transitoria.
 wpr() { local out; out="$(wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(wp "$@")"; }; printf '%s' "$out"; }
 # PHP dentro de WordPress, como admin. Los valores van como variables de entorno NEXO_A1, NEXO_A2… (el código los lee
@@ -61,7 +63,7 @@ php_wp() {
 	local -a entorno=()
 	shift
 	for valor in "$@"; do entorno+=(-e "NEXO_A$i=$valor"); i=$((i + 1)); done
-	marcada="$(docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint wp setup eval --user=admin \
+	marcada="$(wpcli ${entorno[@]+"${entorno[@]}"} eval --user=admin \
 		'ob_start(); ( function () { '"$codigo"'
 } )(); echo "\n@@NEXO@@" . base64_encode( (string) ob_get_clean() ) . "@@NEXO@@\n";' 2>/dev/null \
 		| sed -n 's/^.*@@NEXO@@\([A-Za-z0-9+\/=]*\)@@NEXO@@.*$/@\1/p' | head -n 1)"
@@ -296,6 +298,8 @@ echo "### Ayudante php_wp (sin docker)"
 tools/prueba_php_wp.sh || falla "el ayudante php_wp no pasó su prueba (tools/prueba_php_wp.sh)"
 echo "### Limpieza y señales (sin docker)"
 tools/prueba_limpieza.sh || falla "la limpieza no pasó su prueba (tools/prueba_limpieza.sh)"
+echo "### Cliente MCP frente al límite de pedidos (sin docker)"
+python3 -I tools/prueba_cliente_limite.py || falla "el cliente MCP no pasó su prueba (tools/prueba_cliente_limite.py)"
 
 tools/instalar_plugins_prueba.sh || { echo "FALLA: no se pudieron instalar los plugins"; exit 1; }
 
@@ -408,6 +412,10 @@ cleanup() {
 limpiar_al_salir() {
 	trap '' INT TERM HUP
 	cleanup
+	local resultado=$?
+	# Lo último: la limpieza usa wp-cli.
+	wpcli_bajar
+	return "$resultado"
 }
 atrapar_senales() {
 	trap limpiar_al_salir EXIT
@@ -416,6 +424,8 @@ atrapar_senales() {
 	trap 'exit 129' HUP
 }
 atrapar_senales
+# Un solo contenedor de wp-cli para toda la corrida (ver tools/wpcli.sh); si no se puede, cada llamada crea el suyo.
+wpcli_levantar && echo "Contenedor de wp-cli: ${NEXO_WPCLI:0:12}" || echo "AVISO: no se pudo levantar el contenedor de wp-cli; cada llamada crea uno (más lento)."
 
 # Módulos necesarios activos y sin «Solo revisar».
 needed="$(printf '%s' "$original" | python3 -I -c '

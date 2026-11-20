@@ -28,6 +28,7 @@ cat >"$dir/corrida.sh" <<'EOF'
 set -uo pipefail
 eval "$FUNCIONES"
 cleanup() { echo inicio >>"$MARCAS"; sleep 2; echo fin >>"$MARCAS"; }
+wpcli_bajar() { echo bajado >>"$MARCAS"; }
 atrapar_senales
 echo listo >>"$MARCAS"
 sleep 30 &
@@ -55,7 +56,7 @@ for par in INT:130 TERM:143 HUP:129; do
 	wait "$pid"; codigo=$?
 	kill -KILL -- "-$pid" 2>/dev/null
 	[ "$codigo" -eq "$esperado" ] && ok "$senal: sale con $esperado" || falla "$senal: salió con $codigo, se esperaba $esperado"
-	[ "$(tr '\n' ' ' <"$marcas")" = "listo inicio fin " ] && ok "$senal: la limpieza corrió entera aunque llegó otra $senal" \
+	[ "$(tr '\n' ' ' <"$marcas")" = "listo inicio fin bajado " ] && ok "$senal: la limpieza corrió entera aunque llegó otra $senal, y después se bajó el contenedor de wp-cli" \
 		|| falla "$senal: marcas «$(tr '\n' ' ' <"$marcas")»"
 done
 
@@ -65,6 +66,7 @@ cat >"$dir/final.sh" <<'EOF2'
 set -uo pipefail
 eval "$FUNCIONES"
 cleanup() { echo inicio >>"$MARCAS"; sleep 2; echo fin >>"$MARCAS"; return 1; }
+wpcli_bajar() { echo bajado >>"$MARCAS"; }
 atrapar_senales
 echo listo >>"$MARCAS"
 exit_code=0
@@ -82,7 +84,7 @@ esperar "$marcas" inicio && kill -INT -- "-$pid" 2>/dev/null
 wait "$pid"; codigo=$?
 kill -KILL -- "-$pid" 2>/dev/null
 [ "$codigo" -eq 1 ] && ok "final: sale con 1 si la limpieza falla" || falla "final: salió con $codigo, se esperaba 1"
-[ "$(tr '\n' ' ' <"$marcas")" = "listo inicio fin " ] && ok "final: un Ctrl-C no corta la limpieza" \
+[ "$(tr '\n' ' ' <"$marcas")" = "listo inicio fin bajado " ] && ok "final: un Ctrl-C no corta la limpieza" \
 	|| falla "final: marcas «$(tr '\n' ' ' <"$marcas")»"
 
 # clase_global_quitada con php_wpr simulado (código|salida).
