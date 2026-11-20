@@ -31,7 +31,7 @@ Rama `chore/e2e-robusto` desde `main` (c2a61c4, v1.4.2).
 - [x] T3 (S4, S5) Caso `--` y heredoc a archivo propio. Ruta: inline. Commit: el de L4
 - [x] T4 (S1-S5) e2e completo en docker (exit 0) y corrida cortada. Ruta: inline. Commit: — (evidencia en L3, L4)
 
-- [ ] T5 (S7) `clase_global_quitada` (0/1/2) en la limpieza; `atrapar_senales`/`limpiar_al_salir` + `tools/prueba_limpieza.sh` sin docker. Ruta: inline. Rama `fix/e2e-avisos-review`. Commit: —
+- [x] T5 (S7) `clase_global_quitada` (0/1/2) en la limpieza; `atrapar_senales`/`limpiar_al_salir` + `tools/prueba_limpieza.sh` sin docker. Ruta: inline. Rama `fix/e2e-avisos-review`. Commit: 0e7d438 y el siguiente (L8)
 
 ## Log
 
@@ -66,3 +66,8 @@ Rama `chore/e2e-robusto` desde `main` (c2a61c4, v1.4.2).
   limpia; también al final normal). `tools/prueba_limpieza.sh`: INT/TERM/HUP con segunda señal durante la limpieza y los
   tres casos de la clase; RED (funciones ausentes), GREEN 9/9 en bash 3.2; mutación (sin `trap ''` y TERM → 1) detectada
   en TERM y HUP. El e2e la corre al empezar. e2e completo: exit 0, 165 OK, sin FALLA ni AVISO.
+- L8 (2026-11-20): T5 verificada (verificador independiente: 4/4 PASS, mutantes detectados; review nativa aprobada,
+  lineage review-af00f2560afdf0d2). Ajustes por sus avisos: R3-class-readback-empty-ok → salida vacía también es
+  lectura fallida (2); prueba del final normal con Ctrl-C durante la limpieza (el mutante sin `trap ''` sale con 130).
+  RED: 1 falla (vacía → 0); GREEN 12/12 en bash 3.2; en docker una clase inexistente da 0. El e2e completo de este
+  ajuste lo corre CI.

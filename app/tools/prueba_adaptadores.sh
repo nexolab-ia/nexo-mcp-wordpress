@@ -350,10 +350,12 @@ elseif ( 0 === strpos( $prev, "datos:" ) ) { update_post_meta( $kit->get_main_id
 		*) echo "AVISO: no hay captura válida de las variables del Kit; no se restauraron (puede quedar la variable de prueba $variable_label)." ;;
 	esac
 }
-# Comprueba en el sitio que la clase global de prueba ya no está: 0 quitada, 1 sigue ahí, 2 no se pudo leer.
+# Comprueba en el sitio que la clase global de prueba ya no está: 0 quitada, 1 sigue ahí, 2 no se pudo leer. json_encode
+# siempre imprime algo (como mínimo `[]`), así que una salida vacía también es una lectura fallida.
 clase_global_quitada() {
 	local etiquetas
 	etiquetas="$(php_wpr 'echo json_encode( \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make()->all_labels() );')" || return 2
+	[ -n "$etiquetas" ] || return 2
 	if printf '%s' "$etiquetas" | grep -q "$1"; then return 1; fi
 	return 0
 }

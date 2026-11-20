@@ -59,6 +59,32 @@ for par in INT:130 TERM:143 HUP:129; do
 		|| falla "$senal: marcas «$(tr '\n' ' ' <"$marcas")»"
 done
 
+# Final normal: un Ctrl-C durante la limpieza del final no la corta y el código refleja la limpieza (la falla que
+# importa en la práctica: el INT del bucle de arriba ya llega con la limpieza corriendo dentro de su propio trap).
+cat >"$dir/final.sh" <<'EOF2'
+set -uo pipefail
+eval "$FUNCIONES"
+cleanup() { echo inicio >>"$MARCAS"; sleep 2; echo fin >>"$MARCAS"; return 1; }
+atrapar_senales
+echo listo >>"$MARCAS"
+exit_code=0
+trap - EXIT
+limpiar_al_salir || exit_code=1
+exit "$exit_code"
+EOF2
+marcas="$dir/marcas-final"
+: >"$marcas"
+set -m
+FUNCIONES="$funciones" MARCAS="$marcas" bash "$dir/final.sh" &
+pid=$!
+set +m
+esperar "$marcas" inicio && kill -INT -- "-$pid" 2>/dev/null
+wait "$pid"; codigo=$?
+kill -KILL -- "-$pid" 2>/dev/null
+[ "$codigo" -eq 1 ] && ok "final: sale con 1 si la limpieza falla" || falla "final: salió con $codigo, se esperaba 1"
+[ "$(tr '\n' ' ' <"$marcas")" = "listo inicio fin " ] && ok "final: un Ctrl-C no corta la limpieza" \
+	|| falla "final: marcas «$(tr '\n' ' ' <"$marcas")»"
+
 # clase_global_quitada con php_wpr simulado (código|salida).
 probar_clase() { # nombre respuesta esperado
 	RESPUESTA="$2"
@@ -69,6 +95,7 @@ probar_clase() { # nombre respuesta esperado
 probar_clase "quitada" '0|{"g-otra":"x"}' 0
 probar_clase "sigue" '0|{"g-nexo123":"nexo-prueba-clase"}' 1
 probar_clase "lectura fallida" '1|' 2
+probar_clase "lectura vacía (json_encode siempre imprime algo)" '0|' 2
 
 [ "$fallas" -eq 0 ] && echo "OK: limpieza" || echo "FALLA: $fallas comprobación(es) de la limpieza fallaron."
 [ "$fallas" -eq 0 ]
