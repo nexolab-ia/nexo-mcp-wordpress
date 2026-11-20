@@ -51,3 +51,9 @@ Rama `chore/e2e-robusto` desde `main` (c2a61c4, v1.4.2).
   heredoc de concurrencia (Python, lee `LOCKED` como flujo y sólo recibe enteros con `%d`) no pasa por `php_wp` porque
   necesita la salida en vivo. Avisos aparte: R3-php-wp-failure-opaque (sin marca, `php_wp` devuelve vacío con código 0)
   y A4 (con `| tee` y Ctrl-C, un SIGPIPE en la limpieza; sin reproducir).
+- L6 (2026-11-20): «Empuja rama y arregla el aviso». Rama empujada (`origin/chore/e2e-robusto`, assess: ya revisado).
+  Aviso R3-php-wp-failure-opaque: `php_wp` sin marca no imprime nada, avisa por stderr y sale con 1; una salida vacía
+  pero completa sigue saliendo con 0 (la marca va con `@` delante); lo que no es UTF-8 sale con � sin traceback;
+  `php_wpr` reintenta una vez también si falló y sale con 1 si falla dos veces. Prueba nueva sin docker
+  `app/tools/prueba_php_wp.sh` (9 casos; RED: 4 fallas; GREEN en bash 3.2), que el e2e corre al empezar, así CI la
+  ejecuta sin tocar el workflow. e2e completo: exit 0, 155 OK, sin FALLA ni AVISO.

@@ -52,20 +52,31 @@ wpr() { local out; out="$(wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(wp "$@")
 # PHP dentro de WordPress, como admin. Los valores van como variables de entorno NEXO_A1, NEXO_A2… (el código los lee
 # con getenv), nunca pegados en el código. Lo que el código imprime viaja entre marcas y en base64, así que los avisos
 # de PHP de antes o de después (p. ej. los de Elementor al cerrar) no llegan a la salida. El código corre dentro de una
-# función: puede terminar con `return`.
-#   php_wp '<código>' [valor…]    php_wpr: igual, pero reintenta una vez si la salida queda vacía (sólo lecturas)
+# función: puede terminar con `return`. Si no llega la marca (falló docker, wp-cli o el PHP antes de terminar) no
+# imprime nada, avisa por stderr y sale con 1. Lo que no sea UTF-8 válido sale con � en vez de cortar.
+#   php_wp '<código>' [valor…]    php_wpr: igual, pero reintenta una vez si falló o la salida quedó vacía (lecturas)
+#   Se prueba sin docker con tools/prueba_php_wp.sh.
 php_wp() {
-	local codigo=$1 i=1 valor
+	local codigo=$1 i=1 valor marcada
 	local -a entorno=()
 	shift
 	for valor in "$@"; do entorno+=(-e "NEXO_A$i=$valor"); i=$((i + 1)); done
-	docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint wp setup eval --user=admin \
+	marcada="$(docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint wp setup eval --user=admin \
 		'ob_start(); ( function () { '"$codigo"'
 } )(); echo "\n@@NEXO@@" . base64_encode( (string) ob_get_clean() ) . "@@NEXO@@\n";' 2>/dev/null \
-		| sed -n 's/^.*@@NEXO@@\([A-Za-z0-9+\/=]*\)@@NEXO@@.*$/\1/p' | head -n 1 \
-		| python3 -I -c 'import base64, sys; sys.stdout.write(base64.b64decode(sys.stdin.read().strip()).decode())'
+		| sed -n 's/^.*@@NEXO@@\([A-Za-z0-9+\/=]*\)@@NEXO@@.*$/@\1/p' | head -n 1)"
+	# La marca lleva una @ delante, así una salida vacía pero completa se distingue de una corrida sin marca.
+	if [ -z "$marcada" ]; then
+		echo "php_wp: wp-cli no devolvió la salida marcada (falló docker, wp-cli o el PHP)" >&2
+		return 1
+	fi
+	printf '%s' "${marcada#@}" | python3 -I -c 'import base64, sys; sys.stdout.write(base64.b64decode(sys.stdin.read()).decode("utf-8", "replace"))'
 }
-php_wpr() { local out; out="$(php_wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(php_wp "$@")"; }; printf '%s' "$out"; }
+php_wpr() {
+	local out
+	out="$(php_wp "$@")" && [ -n "$out" ] || { sleep 2; out="$(php_wp "$@")" || return 1; }
+	printf '%s' "$out"
+}
 
 # Subcomando para el .py: comprueba con wp-cli, no con MCP, que el enlace del
 # botón quedó guardado en `_elementor_data` antes de restaurar el respaldo.
@@ -280,6 +291,9 @@ if [ "${1:-}" = "--campo" ]; then wpr post get "$2" --field="$3"; exit 0; fi
 fallas=0
 falla() { echo "FALLA: $*"; fallas=$((fallas + 1)); }
 ok() { echo "OK: $*"; }
+
+echo "### Ayudante php_wp (sin docker)"
+tools/prueba_php_wp.sh || falla "el ayudante php_wp no pasó su prueba (tools/prueba_php_wp.sh)"
 
 tools/instalar_plugins_prueba.sh || { echo "FALLA: no se pudieron instalar los plugins"; exit 1; }
 
