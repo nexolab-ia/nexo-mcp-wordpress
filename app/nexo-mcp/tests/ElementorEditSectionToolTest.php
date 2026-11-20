@@ -66,6 +66,7 @@ final class ElementorEditSectionToolTest extends NexoTestCase {
 	private function put_copy_of_page(): void {
 		\WP_Test_State::$posts[101] = new \WP_Post( array( 'ID' => 101, 'post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Inicio' ) );
 		update_post_meta( 101, WorkingCopy::META_DRAFT_OF, 100 );
+		update_post_meta( 100, WorkingCopy::META_DRAFT, 101 );
 		update_post_meta( 101, '_elementor_edit_mode', 'builder' );
 		update_post_meta( 101, '_elementor_data', (string) wp_json_encode( ElementorSectionFixtures::v3() ) );
 	}
@@ -186,5 +187,19 @@ final class ElementorEditSectionToolTest extends NexoTestCase {
 		$result = $this->ability()['execute_callback']( $input );
 
 		$this->assertFalse( $result instanceof \WP_Error && 'nexo_mcp_builder_forbidden' === $result->get_error_code(), 'edita' );
+	}
+
+	public function test_un_borrador_que_el_original_no_reconoce_como_copia_pide_permiso_sobre_si_mismo(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		delete_post_meta( 100, WorkingCopy::META_DRAFT );
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+		$before = serialize( array( \WP_Test_State::$posts, \WP_Test_State::$meta ) );
+
+		$result = $this->ability()['execute_callback']( array_merge( $this->input(), array( 'id' => 101 ) ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+		$this->assertSame( $before, serialize( array( \WP_Test_State::$posts, \WP_Test_State::$meta ) ) );
 	}
 }

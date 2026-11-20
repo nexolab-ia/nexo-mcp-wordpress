@@ -1063,8 +1063,10 @@ final class BuilderGateway {
 	 * Resuelve una página o su copia de trabajo, con el permiso pedido sobre el original.
 	 *
 	 * Editar la copia es editar el original: quien puede editar el original puede
-	 * trabajar con su copia aunque la haya creado otro usuario. Con el original
-	 * borrado, el permiso se pide sobre la copia ({@see WorkingCopy::original_id_for()}).
+	 * trabajar con su copia aunque la haya creado otro usuario. Sólo vale para la
+	 * copia vigente, con el enlace confirmado desde los dos lados
+	 * ({@see WorkingCopy::copy_of()}); cualquier otro contenido, incluida una copia
+	 * huérfana o un borrador que el original no reconoce, pide permiso sobre sí mismo.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 *
@@ -1077,7 +1079,10 @@ final class BuilderGateway {
 			return $post;
 		}
 
-		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
+		$original    = get_post( WorkingCopy::original_id_for( (int) $post->ID ) );
+		$is_its_copy = $original instanceof \WP_Post && $original->ID !== $post->ID && WorkingCopy::copy_of( $original ) === (int) $post->ID;
+
+		if ( ! current_user_can( 'edit_post', $is_its_copy ? $original->ID : $post->ID ) ) {
 			return $this->forbidden();
 		}
 

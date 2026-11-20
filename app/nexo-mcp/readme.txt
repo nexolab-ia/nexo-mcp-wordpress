@@ -65,7 +65,7 @@ No. Su módulo sólo se habilita si WooCommerce está activo.
 == Changelog ==
 
 = 1.4.1 =
-* Corrección: `edit-elementor-section` y `migrate-elementor-page` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original. Ahora el permiso se pide sólo sobre el original, como ya decía su descripción: quien puede editar la página puede trabajar con su copia aunque la haya creado otro usuario.
+* Corrección: `edit-elementor-section` y `migrate-elementor-page` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original. Ahora el permiso se pide sólo sobre el original, como ya decía su descripción: quien puede editar la página puede trabajar con su copia vigente aunque la haya creado otro usuario. Un borrador que el original no reconoce como su copia sigue pidiendo permiso sobre sí mismo.
 * Interno: un solo chequeo de permiso para las dos herramientas, y el conteo de `migrated` ya no se corrige después de convertir un text-editor en varios párrafos.
 
 = 1.4.0 =
