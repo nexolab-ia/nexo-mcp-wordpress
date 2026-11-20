@@ -75,6 +75,24 @@ final class TransportGuard {
 	private RegistrationState $registration_state;
 
 	/**
+	 * Último pedido evaluado.
+	 *
+	 * WordPress evalúa el `permission_callback` de la ruta varias veces por
+	 * pedido HTTP (al despachar y otra vez por método en `rest_send_allow_header`),
+	 * siempre con el mismo objeto. Se recuerda para contar una sola unidad.
+	 *
+	 * @var \WP_REST_Request|null
+	 */
+	private ?\WP_REST_Request $last_request = null;
+
+	/**
+	 * Resultado de la evaluación de `$last_request`.
+	 *
+	 * @var bool|\WP_Error
+	 */
+	private $last_result = false;
+
+	/**
 	 * Construye la cadena de controles del transporte.
 	 *
 	 * @param Settings               $settings          Configuración operativa.
@@ -104,10 +122,40 @@ final class TransportGuard {
 	/**
 	 * Autoriza una solicitud HTTP autenticada con Application Password.
 	 *
+	 * @param mixed $request Pedido REST que pasa el adaptador; sin él no hay memo.
 	 * @return bool|\WP_Error
 	 */
-	public function authorize() {
-		return $this->check( false );
+	public function authorize( $request = null ) {
+		if ( ! $request instanceof \WP_REST_Request ) {
+			return $this->check( false );
+		}
+
+		if ( $request === $this->last_request ) {
+			return $this->last_result;
+		}
+
+		$result             = $this->check( false );
+		$this->last_request = $request;
+		$this->last_result  = $result;
+
+		return $result;
+	}
+
+	/**
+	 * Devuelve el rechazo por límite que el guardia dio a este pedido, si lo hubo.
+	 *
+	 * @param mixed $request Pedido REST.
+	 */
+	public function rate_limit_error( $request ): ?\WP_Error {
+		if ( ! $request instanceof \WP_REST_Request || $request !== $this->last_request ) {
+			return null;
+		}
+
+		$result = $this->last_result;
+
+		return $result instanceof \WP_Error && 'nexo_mcp_rate_limit_exceeded' === $result->get_error_code()
+			? $result
+			: null;
 	}
 
 	/**

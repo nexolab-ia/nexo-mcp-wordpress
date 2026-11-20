@@ -58,6 +58,12 @@ final class WP_Test_State {
 
 	public static int $user_id = 1;
 
+	/** @var array<string, int> Contador de `nexo_mcp_rate_limits` por bucket_key. */
+	public static array $rate_hits = array();
+
+	/** @var array<string, mixed> Valor fijo que devuelve `apply_filters()` para un gancho. */
+	public static array $filters = array();
+
 	/** @var array<string, mixed> Autocarga pedida en la última escritura de cada opción. */
 	public static array $option_autoload = array();
 
@@ -98,6 +104,8 @@ final class WP_Test_State {
 		self::$object_taxonomies = array();
 		self::$terms     = array();
 		self::$audit     = array();
+		self::$rate_hits = array();
+		self::$filters   = array();
 		self::$user_id   = 1;
 		self::$option_autoload = array();
 		self::$fail_update_option = '';
@@ -140,6 +148,39 @@ class WP_Error {
 	}
 }
 
+class WP_REST_Request {
+	private string $route;
+
+	public function __construct( string $method = 'POST', string $route = '' ) {
+		$this->route = $route;
+	}
+
+	public function get_route(): string {
+		return $this->route;
+	}
+}
+
+class WP_REST_Response {
+	/** @var mixed */
+	private $data;
+	private int $status;
+	/** @var array<string, string> */
+	private array $headers = array();
+
+	public function __construct( $data = null, int $status = 200, array $headers = array() ) {
+		$this->data    = $data;
+		$this->status  = $status;
+		$this->headers = $headers;
+	}
+
+	public function get_data() { return $this->data; }
+	public function set_data( $data ): void { $this->data = $data; }
+	public function get_status(): int { return $this->status; }
+	public function set_status( $status ): void { $this->status = (int) $status; }
+	public function get_headers(): array { return $this->headers; }
+	public function header( $key, $value, $replace = true ): void { $this->headers[ $key ] = $value; }
+}
+
 class WP_Post {
 	public int $ID = 0;
 	public string $post_type = 'post';
@@ -180,9 +221,12 @@ class WPDB_Test_Double {
 			$args = $args[0];
 		}
 		return (string) preg_replace_callback(
-			'/%([sd])/',
+			'/%([sdi])/',
 			static function ( array $m ) use ( &$args ) {
 				$value = array_shift( $args );
+				if ( 'i' === $m[1] ) {
+					return '`' . (string) $value . '`';
+				}
 				return 's' === $m[1] ? "'" . addslashes( (string) $value ) . "'" : (string) (int) $value;
 			},
 			$sql
@@ -207,6 +251,9 @@ class WPDB_Test_Double {
 	 * Lectura directa de una opción (sin caché), como la haría la base.
 	 */
 	public function get_var( $sql ) {
+		if ( str_contains( (string) $sql, 'SELECT hits FROM' ) ) {
+			return WP_Test_State::$rate_hits[ $this->strings( (string) $sql )[0] ?? '' ] ?? null;
+		}
 		if ( ! str_contains( (string) $sql, 'SELECT option_value' ) ) {
 			return null;
 		}
@@ -220,6 +267,12 @@ class WPDB_Test_Double {
 	public function query( $sql ) {
 		$sql = (string) $sql;
 		$q   = $this->strings( $sql );
+
+		// INSERT … ON DUPLICATE KEY UPDATE de `RateLimiter`: suma una unidad al bucket.
+		if ( str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'nexo_mcp_rate_limits' ) ) {
+			WP_Test_State::$rate_hits[ $q[0] ] = ( WP_Test_State::$rate_hits[ $q[0] ] ?? 0 ) + 1;
+			return 1;
+		}
 
 		if ( str_starts_with( $sql, 'INSERT IGNORE INTO' ) && str_contains( $sql, 'options' ) ) {
 			if ( array_key_exists( $q[0], WP_Test_State::$options ) ) {
@@ -297,7 +350,7 @@ function rest_sanitize_boolean( $value ) {
 	return (bool) $value;
 }
 function is_wp_error( $thing ): bool { return $thing instanceof WP_Error; }
-function apply_filters( $hook, $value, ...$args ) { return $value; }
+function apply_filters( $hook, $value, ...$args ) { return array_key_exists( $hook, WP_Test_State::$filters ) ? WP_Test_State::$filters[ $hook ] : $value; }
 function do_action( $hook, ...$args ): void {}
 function add_action( ...$args ): bool { return true; }
 function add_filter( ...$args ): bool { return true; }
@@ -310,6 +363,7 @@ function rest_url( $path = '' ) { return home_url( '/wp-json/' . ltrim( (string)
 function admin_url( $path = '' ) { return home_url( '/wp-admin/' . ltrim( (string) $path, '/' ) ); }
 function wp_get_environment_type() { return 'production'; }
 function is_ssl(): bool { return true; }
+function wp_is_using_https(): bool { return true; }
 function is_multisite(): bool { return false; }
 
 // ----------------------------------------------------------------- Usuarios
