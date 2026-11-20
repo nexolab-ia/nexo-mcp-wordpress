@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.4.1
+Stable tag: 1.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,9 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.4.2 =
+* Corrección: `update-node-text`, `update-node-attribute`, `edit-structure` y `restore-builder-backup` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original, aunque su permiso de entrada ya lo pedía sólo sobre el original. Ahora el permiso se pide sólo sobre el original: quien puede editar la página puede trabajar con su copia vigente aunque la haya creado otro usuario. Un borrador que el original no reconoce como su copia sigue pidiendo permiso sobre sí mismo. `get-page-structure` no cambia: es de lectura y pide permiso sobre el contenido indicado.
 
 = 1.4.1 =
 * Corrección: `edit-elementor-section` y `migrate-elementor-page` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original. Ahora el permiso se pide sólo sobre el original, como ya decía su descripción: quien puede editar la página puede trabajar con su copia vigente aunque la haya creado otro usuario. Un borrador que el original no reconoce como su copia sigue pidiendo permiso sobre sí mismo.

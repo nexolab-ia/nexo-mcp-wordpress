@@ -403,7 +403,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function update_node_text( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
@@ -528,7 +528,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function update_node_attribute( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
@@ -657,7 +657,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function edit_structure( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
@@ -779,7 +779,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function restore_backup( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
