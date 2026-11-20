@@ -35,6 +35,9 @@ final class WP_Test_State {
 	/** @var array<string, bool> */
 	public static array $caps = array();
 
+	/** @var list<int> Posts on which `edit_post` is denied even when the capability is granted. */
+	public static array $denied_edit_posts = array();
+
 	/** @var array<int, WP_Post> */
 	public static array $posts = array();
 
@@ -88,6 +91,7 @@ final class WP_Test_State {
 		self::$post_cache  = array();
 		self::$options   = array();
 		self::$caps      = array();
+		self::$denied_edit_posts = array();
 		self::$posts     = array();
 		self::$meta      = array();
 		self::$abilities = array();
@@ -312,6 +316,10 @@ function is_multisite(): bool { return false; }
 function get_current_user_id(): int { return WP_Test_State::$user_id; }
 function is_user_logged_in(): bool { return WP_Test_State::$user_id > 0; }
 function current_user_can( $capability, ...$args ): bool {
+	if ( 'edit_post' === $capability && isset( $args[0] ) && in_array( (int) $args[0], WP_Test_State::$denied_edit_posts, true ) ) {
+		return false;
+	}
+
 	return ! empty( WP_Test_State::$caps[ $capability ] );
 }
 function user_can( $user, $capability, ...$args ): bool {

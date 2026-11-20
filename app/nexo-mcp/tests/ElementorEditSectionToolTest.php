@@ -63,6 +63,13 @@ final class ElementorEditSectionToolTest extends NexoTestCase {
 		update_post_meta( 100, '_elementor_data', (string) wp_json_encode( ElementorSectionFixtures::v3() ) );
 	}
 
+	private function put_copy_of_page(): void {
+		\WP_Test_State::$posts[101] = new \WP_Post( array( 'ID' => 101, 'post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Inicio' ) );
+		update_post_meta( 101, WorkingCopy::META_DRAFT_OF, 100 );
+		update_post_meta( 101, '_elementor_edit_mode', 'builder' );
+		update_post_meta( 101, '_elementor_data', (string) wp_json_encode( ElementorSectionFixtures::v3() ) );
+	}
+
 	public function test_es_una_herramienta_de_escritura_en_la_allowlist_con_su_esquema(): void {
 		$ability = $this->ability();
 		$schema  = $ability['input_schema'];
@@ -152,5 +159,32 @@ final class ElementorEditSectionToolTest extends NexoTestCase {
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+	}
+
+	public function test_con_el_id_de_la_copia_el_permiso_se_pide_sobre_el_original(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		\WP_Test_State::$denied_edit_posts = array( 100 );
+		$input = array_merge( $this->input(), array( 'id' => 101 ) );
+
+		$this->assertNotTrue( $this->ability()['permission_callback']( $input ) );
+
+		$result = $this->ability()['execute_callback']( $input );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_forbidden', $result->get_error_code() );
+	}
+
+	public function test_con_el_id_de_la_copia_no_importa_el_permiso_sobre_la_copia(): void {
+		$this->put_page();
+		$this->put_copy_of_page();
+		\WP_Test_State::$denied_edit_posts = array( 101 );
+		$input = array_merge( $this->input(), array( 'id' => 101 ) );
+
+		$this->assertTrue( $this->ability()['permission_callback']( $input ) );
+
+		$result = $this->ability()['execute_callback']( $input );
+
+		$this->assertFalse( $result instanceof \WP_Error && 'nexo_mcp_builder_forbidden' === $result->get_error_code(), 'edita' );
 	}
 }

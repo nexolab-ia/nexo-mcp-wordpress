@@ -338,18 +338,10 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function edit_elementor_section( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
-		}
-
-		// Editar la copia es editar el original: el permiso se pide sobre el original.
-		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_forbidden',
-				__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
-			);
 		}
 
 		$editor = new ElementorSectionEditor(
@@ -384,18 +376,10 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function migrate_elementor_page( array $input ) {
-		$post = $this->resolve_post( $input );
+		$post = $this->resolve_page_or_copy( $input );
 
 		if ( is_wp_error( $post ) ) {
 			return $post;
-		}
-
-		// Migrar la copia es migrar el original: el permiso se pide sobre el original.
-		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_forbidden',
-				__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
-			);
 		}
 
 		$migrator = new ElementorPageMigrator(
@@ -405,7 +389,7 @@ final class BuilderGateway {
 			new WorkingCopy( $this->settings ),
 			new ElementorSchemaGuard(),
 			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
-			static fn( array $tree ): array => ( new ElementorV3Migrator( new ElementorV3StyleMapper( new ElementorV3StyleSource() ) ) )->migrate( $tree )
+			$this->convert_v3_tree( ... )
 		);
 
 		return $migrator->migrate( $post, array( 'draft' => $input['draft'] ?? false ) );
@@ -1062,6 +1046,73 @@ final class BuilderGateway {
 	 * @return \WP_Post|\WP_Error
 	 */
 	private function resolve_post( array $input ) {
+		$post = $this->find_post( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( ! current_user_can( 'edit_post', $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		return $post;
+	}
+
+	/**
+	 * Resuelve una página o su copia de trabajo, con el permiso pedido sobre el original.
+	 *
+	 * Editar la copia es editar el original: quien puede editar el original puede
+	 * trabajar con su copia aunque la haya creado otro usuario. Con el original
+	 * borrado, el permiso se pide sobre la copia ({@see WorkingCopy::original_id_for()}).
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return \WP_Post|\WP_Error
+	 */
+	private function resolve_page_or_copy( array $input ) {
+		$post = $this->find_post( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( ! current_user_can( 'edit_post', WorkingCopy::original_id_for( (int) $post->ID ) ) ) {
+			return $this->forbidden();
+		}
+
+		return $post;
+	}
+
+	/**
+	 * Convierte un árbol de Elementor 3 a elementos atómicos. Ver {@see ElementorV3Migrator}.
+	 *
+	 * @param array<int, array<string, mixed>> $tree Árbol v3.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function convert_v3_tree( array $tree ): array {
+		return ( new ElementorV3Migrator( new ElementorV3StyleMapper( new ElementorV3StyleSource() ) ) )->migrate( $tree );
+	}
+
+	/**
+	 * Error de permiso de las herramientas de constructor.
+	 */
+	private function forbidden(): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_builder_forbidden',
+			__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
+		);
+	}
+
+	/**
+	 * Busca el contenido indicado, sin comprobar permisos.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return \WP_Post|\WP_Error
+	 */
+	private function find_post( array $input ) {
 		$post_id = isset( $input['id'] ) ? absint( $input['id'] ) : 0;
 
 		if ( 0 === $post_id ) {
@@ -1077,13 +1128,6 @@ final class BuilderGateway {
 			return new \WP_Error(
 				'nexo_mcp_builder_not_found',
 				__( 'El contenido no existe.', 'nexo-mcp' )
-			);
-		}
-
-		if ( ! current_user_can( 'edit_post', $post_id ) ) {
-			return new \WP_Error(
-				'nexo_mcp_builder_forbidden',
-				__( 'No tienes permiso sobre este contenido.', 'nexo-mcp' )
 			);
 		}
 

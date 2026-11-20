@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.4.0
+Stable tag: 1.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,10 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.4.1 =
+* Corrección: `edit-elementor-section` y `migrate-elementor-page` llamadas con el id de la copia de trabajo pedían también permiso de edición sobre la copia, además del original. Ahora el permiso se pide sólo sobre el original, como ya decía su descripción: quien puede editar la página puede trabajar con su copia aunque la haya creado otro usuario.
+* Interno: un solo chequeo de permiso para las dos herramientas, y el conteo de `migrated` ya no se corrige después de convertir un text-editor en varios párrafos.
 
 = 1.4.0 =
 * Nueva herramienta `migrate-elementor-page`: migra una página de Elementor 3 entera a elementos atómicos de Elementor 4, en una sola operación y con el mismo camino que `edit-elementor-section`. Escribe en la copia de trabajo de la página (el original publicado no cambia hasta que revises y publiques la copia; si el sitio apagó la copia de trabajo por defecto, hay que pedir `draft: true` o se migra en vivo con respaldo), respalda antes de guardar, invalida el CSS de esa página y nunca publica. Convierte `section`, `column` y `container` flex en `e-flexbox`/`e-div-block`, `heading`, `text-editor` (un párrafo por `e-paragraph`, sólo si el HTML tiene párrafos, enlaces y spans), `button`, `image` y `divider`, con un estilo local por nodo (tipografía, color, fondo, margen y relleno, borde, con variantes tablet y móvil; los colores y tipografías globales del Kit pasan a variable de color o a su valor literal). Lo que no tiene equivalente (spacer, widgets compuestos, text-editor con formato, container grid…) se conserva como v3, idéntico, y la respuesta lo lista en `kept_v3`; los ajustes no trasladados van en `unmapped`.
