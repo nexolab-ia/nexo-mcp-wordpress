@@ -11,7 +11,7 @@ público desde el 2026-11-20, así que los minutos ya no se cobran: se optimiza 
 - S2. Disparadores (punto 1 de la propuesta): `push` sólo en `main`, `pull_request` y `workflow_dispatch`; los commits que
   sólo tocan `odd/**` o `**/*.md` no corren el CI (`readme.txt` sí, va en el .zip); el push de un tag no corre nada (la
   release usa el .zip de la corrida de `main` del mismo commit, como v1.4.2); `cancel-in-progress` sólo para PRs, así una
-  corrida de `main` (la que da el .zip de la release) no se cancela. Sin protección de rama en `main`: `paths-ignore` no
+  corrida de `main` en curso (la que da el .zip de la release) no se cancela (una en espera sí puede: ver L2). Sin protección de rama en `main`: `paths-ignore` no
   deja checks requeridos colgados.
 - S3. Contenedor único de wp-cli (punto 2): medido en docker local, `docker compose run --rm` ~1,9 s por llamada contra
   `docker exec` ~0,4 s. Ayudante compartido `app/tools/wpcli.sh`: con `NEXO_WPCLI` (contenedor vivo) cada llamada es un
@@ -33,3 +33,5 @@ público desde el 2026-11-20, así que los minutos ya no se cobran: se optimiza 
   puntos, sin bloqueantes. Notas: con tres merges a `main` en menos de ~33 min, la corrida del medio (en espera) se
   cancela igual (una sola en espera por grupo) — antes era peor, se acepta; un cambio sólo a `app/nexo-mcp/NOTICE.md`
   (va en el .zip) no corre CI, inofensivo porque toda release cambia la versión en `.php`/`readme.txt`.
+- L3 (2026-11-20): review nativa (riesgo, fiabilidad) aprobada, lineage review-a3bbc8c4ed3453f6; su aviso
+  R3-pending-main-run-cancelled es la nota ya aceptada de L2; S2 aclara «en curso».
