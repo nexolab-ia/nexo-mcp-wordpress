@@ -1,16 +1,23 @@
 name: CI
 
+# Una corrida por PR y otra al llegar a main (la que da el .zip de la release); una rama sin PR se corre a mano con
+# workflow_dispatch. Los tags no corren nada: la release usa el .zip de la corrida de main del mismo commit. Los
+# cambios que sólo tocan docs (odd/, Markdown) no corren el CI; readme.txt sí, porque va en el .zip.
 on:
   push:
+    branches: [main]
+    paths-ignore: ['odd/**', '**/*.md']
   pull_request:
+    paths-ignore: ['odd/**', '**/*.md']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Un push nuevo a un PR cancela su corrida anterior; las de main no se cancelan.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
