@@ -185,6 +185,49 @@ Reglas que siempre se cumplen:
   el bloqueo; cualquier otro v3 se rechaza sin escribir. Mismo tope de
   elementos: `max(200, elementos actuales)`. Parámetro `id` (como en
   `edit-elementor-section`) y `draft` opcional.
+- **Datos dinámicos de Elementor (permiso propio, requiere Elementor Pro)**:
+  `list-dynamic-tags` lista los tags permitidos que el sitio tiene registrados
+  (`name`, `group`, `label` —el título que les da Elementor—, `categories`,
+  `settings` y `targets`; sin Pro responde una lista vacía) y `set-dynamic-tag`
+  `{id, draft?, node_id, prop, tag: {name, settings?}}` asigna uno a una prop de
+  un elemento atómico. Escribe en la **copia de trabajo** por el camino de
+  `edit-elementor-section` (bloqueo por original, respaldo, `save_tree`, CSS
+  invalidado; el original publicado no cambia; nunca publica) y exige el Editor
+  V4 activo. La respuesta es `{id, draft_of, preview_url, node_id, prop, tag}`
+  con el tag ya normalizado: lo que se guarda es ese valor, nunca el del
+  cliente. **Lista cerrada** (constante, no configurable) de 19 tags sin datos
+  sensibles. Texto: `site-title`, `site-tagline`, `page-title`, `post-title`,
+  `post-excerpt`, `post-date`, `post-time`, `post-terms`, `post-id`,
+  `archive-title`, `author-name`, `current-date-time`, `comments-number`; url:
+  `site-url`, `post-url`, `archive-url`, `comments-url`; imagen: `site-logo`,
+  `post-featured-image`. Todo lo demás (`shortcode`, `request-arg`,
+  `user-info`, `author-meta`, campos personalizados, ACF, WooCommerce…) se
+  rechaza con `nexo_mcp_dynamic_tag_unknown`; uno de la lista que el sitio no
+  tiene registrado (sin Pro) con `nexo_mcp_dynamic_tag_unavailable`. **Destinos**:
+  `e-heading.title`, `e-paragraph.paragraph` y `e-button.text` (tags de texto) y
+  `e-image.image` (tags de imagen); la categoría del tag tiene que ser la de la
+  prop (`nexo_mcp_dynamic_category_mismatch`) y cualquier otra prop,
+  incluido `link`, responde `nexo_mcp_dynamic_target_unsupported`. Los ajustes
+  de cada tag (`before`/`after`/`fallback` y los propios: selects con opciones
+  cerradas, textos de hasta 200 caracteres, números y switches `yes`/vacío) se
+  validan contra el catálogo y se guardan como **texto plano**, sin HTML; una
+  clave fuera del catálogo responde `nexo_mcp_dynamic_setting_unknown`.
+  **Permiso**: además de builders y `edit_post` sobre el original, el interruptor
+  «Datos dinámicos de Elementor» (`builders_dynamic_enabled`, **apagado por
+  defecto**, marcado como sensible), la capacidad `nexo_mcp_builders_dynamic`
+  (administrador; también al actualizar) y el scope OAuth
+  `mcp:builders:dynamic`. Está aparte porque un tag se evalúa en cada render
+  **para todo visitante**, sin ningún chequeo de permisos. `list-dynamic-tags`
+  sólo pide el permiso de lectura de constructores. **Regla de
+  `edit-elementor-section`**: una prop dinámica que la página ya tiene no se
+  pierde ni rompe la edición. Lo no tocado queda idéntico; dentro de un nodo
+  reemplazado, el cliente reenvía el nodo con su `id` original y la prop dinámica
+  idéntica para conservarla (el nodo recibe un id nuevo). Una prop dinámica nueva
+  o cambiada se rechaza (`nexo_mcp_elementor_prop_type_denied`): se asigna con
+  `set-dynamic-tag`. `create-elementor-page` y `migrate-elementor-page` no
+  cambian (la primera sigue rechazando `dynamic`). Se probó con Elementor Pro
+  4.4.1: el render resuelve el tag sin pasar por los analizadores del editor
+  (`tools/prueba_adaptadores.sh`, sección F6, sólo con Pro; sin Pro se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -371,6 +414,16 @@ código con PKCE y llama a `initialize`, `tools/list`, `get-site-info`,
 `list-pages` y `create-post`. Con el sitio en modo edición también comprueba
 que editar una página publicada crea una copia de trabajo y que
 `restore-revision` sin confirmación se rechaza.
+
+**Adaptadores** (`tools/prueba_adaptadores.sh`, unos 12-16 minutos): corre contra
+Yoast, ACF y Elementor reales del docker. La sección de datos dinámicos (F6)
+necesita Elementor Pro: sin él imprime `SKIP` y no falla (CI no lo tiene). Con
+Pro enciende `builders_dynamic_enabled` sólo durante la sección y lo restaura
+al final, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
+`php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
+y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el
+comando no cambia.
 
 ## 6. Crear el ZIP
 

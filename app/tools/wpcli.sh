@@ -7,15 +7,34 @@
 # como máximo 2 h (`sleep 7200`): uno que quedó perdido porque la corrida murió sin limpiar se va solo.
 #
 #   wpcli [-e CLAVE=valor]… <argumentos de wp>   las -e pasan como variables de entorno; stderr sale tal cual
+#
+# Memoria: con Elementor Pro activo, wp-cli muere con el memory_limit de 128M del servicio `setup`. Si NEXO_WPCLI_MEMORIA
+# trae un límite (p. ej. 1G), wp-cli corre como `php -d memory_limit=<límite> /usr/local/bin/wp`; sin ella, el comando es
+# el de siempre. wpcli_memoria_pro la fija (y exporta) sólo si el sitio tiene elementor-pro instalado; no pisa una ya dada.
 
 wpcli() {
 	local -a entorno=()
 	while [ "${1:-}" = "-e" ] && [ "$#" -ge 2 ]; do entorno+=(-e "$2"); shift 2; done
-	if [ -n "${NEXO_WPCLI:-}" ]; then
+	if [ -n "${NEXO_WPCLI_MEMORIA:-}" ]; then
+		if [ -n "${NEXO_WPCLI:-}" ]; then
+			docker exec -i -w /var/www/html ${entorno[@]+"${entorno[@]}"} "$NEXO_WPCLI" php -d "memory_limit=$NEXO_WPCLI_MEMORIA" /usr/local/bin/wp "$@"
+		else
+			docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint php setup -d "memory_limit=$NEXO_WPCLI_MEMORIA" /usr/local/bin/wp "$@"
+		fi
+	elif [ -n "${NEXO_WPCLI:-}" ]; then
 		docker exec -i -w /var/www/html ${entorno[@]+"${entorno[@]}"} "$NEXO_WPCLI" wp "$@"
 	else
 		docker compose run --rm -T ${entorno[@]+"${entorno[@]}"} --entrypoint wp setup "$@"
 	fi
+}
+
+wpcli_memoria_pro() {
+	[ -n "${NEXO_WPCLI_MEMORIA:-}" ] && return 0
+	if docker compose exec -T wordpress test -d /var/www/html/wp-content/plugins/elementor-pro >/dev/null 2>&1; then
+		NEXO_WPCLI_MEMORIA=1G
+		export NEXO_WPCLI_MEMORIA
+	fi
+	return 0
 }
 
 wpcli_propio=""

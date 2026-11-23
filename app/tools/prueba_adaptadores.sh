@@ -23,6 +23,13 @@
 #    listados en kept_v3, Elementor carga el árbol guardado y la copia renderiza; publicada, el
 #    frontend responde 200 con el texto; los rechazos (nada que migrar, Editor V4 apagado) no
 #    crean copia.
+# 7c. Datos dinámicos (F6, sólo con Elementor Pro; sin Pro se saltea con un SKIP y no falla):
+#    list-dynamic-tags (catálogo cerrado, etiquetas reales); set-dynamic-tag denegado con el interruptor
+#    builders_dynamic_enabled apagado y, encendido, post-title (before/after), site-title y e-image.image
+#    con post-featured-image/site-logo en la copia de trabajo (el original no cambia, la vista previa real
+#    resuelve el texto); ajustes con HTML se guardan sin etiquetas; tags fuera del catálogo y categorías que no
+#    coinciden se rechazan; edit-elementor-section conserva la prop dinámica; publicada, el frontend la resuelve.
+#    El interruptor y la capacidad se devuelven al final (también si la corrida se corta).
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -48,6 +55,8 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=wpcli.sh
 source tools/wpcli.sh
+# Con Elementor Pro instalado, wp-cli necesita más memoria que los 128M del servicio (ver tools/wpcli.sh).
+wpcli_memoria_pro
 wp() { wpcli "$@" 2>/dev/null; }
 # Lectura que reintenta una vez: wp-cli devuelve a veces vacío de forma transitoria.
 wpr() { local out; out="$(wp "$@")"; [ -n "$out" ] || { sleep 2; out="$(wp "$@")"; }; printf '%s' "$out"; }
@@ -114,10 +123,20 @@ fi
 #   --meta <id> <clave>   valor crudo de un meta del contenido (vacío si no existe)
 #   --estado <id>         estado del contenido (vacío si no existe)
 #   --render <id>         HTML que Elementor renderiza para el contenido
+#   --vista-previa <id>   HTML de la vista previa real (pedido HTTP con la sesión del admin, ?page_id=<id>&preview=true):
+#                         lo necesitan los datos dinámicos que leen la entrada actual (post-title, imagen destacada…);
+#                         get_builder_content_for_display no sirve, porque Elementor no se renderiza a sí mismo
 if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
 if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
 if [ "${1:-}" = "--render" ]; then
 	php_wp 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( (int) getenv( "NEXO_A1" ), true );' "$2"
+	exit 0
+fi
+
+if [ "${1:-}" = "--vista-previa" ]; then
+	cookie="$(php_wpr '$u = get_user_by( "login", "admin" ); $vence = time() + 600; $t = WP_Session_Tokens::get_instance( $u->ID )->create( $vence ); echo LOGGED_IN_COOKIE . "=" . rawurlencode( wp_generate_auth_cookie( $u->ID, $vence, "logged_in", $t ) );')" || exit 1
+	[ -n "$cookie" ] || exit 1
+	curl -sL --max-time 60 -H "Cookie: $cookie" "http://localhost:8080/?page_id=$2&preview=true"
 	exit 0
 fi
 
@@ -295,7 +314,8 @@ falla() { echo "FALLA: $*"; fallas=$((fallas + 1)); }
 ok() { echo "OK: $*"; }
 
 echo "### Ayudante php_wp (sin docker)"
-tools/prueba_php_wp.sh || falla "el ayudante php_wp no pasó su prueba (tools/prueba_php_wp.sh)"
+# Sin docker y con los argumentos exactos de wp-cli: no hereda la memoria extra de Pro.
+env -u NEXO_WPCLI_MEMORIA tools/prueba_php_wp.sh || falla "el ayudante php_wp no pasó su prueba (tools/prueba_php_wp.sh)"
 echo "### Limpieza y señales (sin docker)"
 tools/prueba_limpieza.sh || falla "la limpieza no pasó su prueba (tools/prueba_limpieza.sh)"
 echo "### Cliente MCP frente al límite de pedidos (sin docker)"
@@ -315,6 +335,7 @@ class_id=""
 variable_id=""
 kit_id=""
 diseno_foto_tomada=""
+dinamicos_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -391,6 +412,12 @@ cleanup() {
 	if [ -n "$diseno_foto_tomada" ]; then
 		echo "Sistema de diseño: $(restaurar_diseno)"
 		diseno_foto_tomada=""
+	fi
+	# Si el bloque de datos dinámicos concedió la capacidad al administrador, se la quita.
+	if [ -n "$dinamicos_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_builders_dynamic" );' >/dev/null
+		echo "Capacidad nexo_mcp_builders_dynamic quitada."
+		dinamicos_cap_agregada=""
 	fi
 	remove_design_fixtures
 	if [ -n "$class_id" ]; then
@@ -1289,6 +1316,261 @@ sys.exit(1 if fallas else 0)
 PY
 [ $? -eq 0 ] || falla "la prueba de migrate-elementor-page tuvo comprobaciones fallidas"
 echo
+echo "### Datos dinámicos por MCP (list-dynamic-tags, set-dynamic-tag; F6, sólo con Elementor Pro)"
+# Los dynamic tags son de Elementor Pro (CI no lo tiene): sin Pro se saltea con aviso y no falla. Con Pro se enciende
+# builders_dynamic_enabled sólo para este bloque; nexo_mcp_settings se restaura completo en la limpieza (también al cortar).
+version_pro="$(php_wpr 'echo defined( "ELEMENTOR_PRO_VERSION" ) ? ELEMENTOR_PRO_VERSION : "";')"
+if [ -z "$version_pro" ]; then
+	echo "SKIP: Elementor Pro no está activo; la prueba de datos dinámicos (F6) se saltea (no cuenta como falla)."
+else
+	echo "Elementor Pro $version_pro activo."
+	dinamicos_titulo="Prueba dinamicos elementor-mcp-$suffix"
+	dinamicos_id="$(wp post create --post_type=page --post_status=publish --post_title="$dinamicos_titulo" --porcelain)"
+	[ -n "$dinamicos_id" ] || { echo "FALLA: no se pudo crear la página de prueba de datos dinámicos"; exit 1; }
+	wp post meta update "$dinamicos_id" _thumbnail_id "$media_id" >/dev/null
+	guardado="$(php_wp '
+$id = (int) getenv( "NEXO_A1" );
+update_post_meta( $id, "_elementor_edit_mode", "builder" );
+$texto = function ( $t ) { return array( "\$\$type" => "escaped-html", "value" => $t ); };
+$imagen = array( "\$\$type" => "image", "value" => array( "src" => array( "\$\$type" => "image-src", "value" => array( "id" => array( "\$\$type" => "image-attachment-id", "value" => (int) getenv( "NEXO_A2" ) ), "url" => null ) ), "size" => array( "\$\$type" => "string", "value" => "full" ) ) );
+$nodo = function ( $id, $tipo, $ajustes ) { return array( "id" => $id, "elType" => "widget", "widgetType" => $tipo, "styles" => array(), "elements" => array(), "settings" => $ajustes ); };
+$arbol = array(
+	array( "id" => "fx9000", "elType" => "e-flexbox", "styles" => array(), "settings" => array(), "elements" => array(
+		$nodo( "eh9000", "e-heading", array( "title" => $texto( "Titulo dinamico base" ) ) ),
+		$nodo( "eh9001", "e-heading", array( "title" => $texto( "Sitio base" ) ) ),
+		$nodo( "eh9002", "e-heading", array( "title" => $texto( "Saneado base" ) ) ),
+		$nodo( "ei9000", "e-image", array( "image" => $imagen ) ),
+		$nodo( "ei9001", "e-image", array( "image" => $imagen ) ),
+	) ),
+	array( "id" => "fx9001", "elType" => "e-flexbox", "styles" => array(), "settings" => array(), "elements" => array(
+		$nodo( "eh9003", "e-heading", array( "title" => $texto( "Otra seccion base" ) ) ),
+	) ),
+);
+$documento = \Elementor\Plugin::$instance->documents->get( $id );
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' "$dinamicos_id" "$media_id")"
+	[ "$guardado" = guardado ] || { echo "FALLA: no se pudo guardar la página de datos dinámicos ($guardado)"; exit 1; }
+	nombre_sitio="$(wpr option get blogname)"
+	archivo_medio="$(wpr post get "$media_id" --field=guid)"
+	echo "Página publicada: $dinamicos_id (imagen $media_id)"
+	# La capacidad nexo_mcp_builders_dynamic se concede al activar el plugin: un sitio que sólo se actualizó (como el
+	# docker local) no la tiene. Se concede aquí, para que el interruptor sea lo único que decide, y se quita al final.
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_builders_dynamic" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_builders_dynamic" );' >/dev/null
+		dinamicos_cap_agregada=1
+		echo "Capacidad nexo_mcp_builders_dynamic concedida al administrador (se quita al final)."
+	fi
+	tools/prueba_adaptadores.sh --ajuste builders_dynamic_enabled false
+
+	python3 -I - "$suffix" "$dinamicos_id" "$dinamicos_titulo" "$nombre_sitio" "$archivo_medio" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, urllib.request
+
+suffix, pagina, titulo_pagina, nombre_sitio, archivo_medio = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def crudo(i):
+    return script("--meta", i, "_elementor_data")
+
+def arbol(i):
+    return json.loads(crudo(i))
+
+def indice(nodos, salida=None):
+    salida = {} if salida is None else salida
+    for n in nodos:
+        salida[n["id"]] = n
+        indice(n.get("elements", []), salida)
+    return salida
+
+def render(i):
+    return script("--vista-previa", i)
+
+def encabezados(html):
+    """Texto de cada <h1>-<h6> atómico (e-heading-base) de la vista previa."""
+    return [re.sub(r"<[^>]+>", "", t) for t in re.findall(r"<h[1-6][^>]*e-heading-base[^>]*>(.*?)</h[1-6]>", html, re.S)]
+
+def dinamica(nombre, grupo, ajustes=None):
+    return {"$$type": "dynamic", "value": {"name": nombre, "group": grupo, "settings": ajustes if ajustes is not None else []}}
+
+def asignar(nodo, prop, tag, **extra):
+    return cli.call("set-dynamic-tag", {"id": pagina, "node_id": nodo, "prop": prop, "tag": tag, **extra})
+
+orig = crudo(pagina)
+res = {}
+lista = {}
+antes_y_despues = ("ANTES-", "-DESPUES")
+
+def listar():
+    _, d = cli.ok("list-dynamic-tags", {})
+    assert isinstance(d, dict) and isinstance(d.get("result"), list) and d["result"], d
+    lista.update({t["name"]: t for t in d["result"]})
+    for n in ("post-title", "site-title", "site-tagline", "post-featured-image", "site-logo", "post-url"):
+        assert n in lista, f"falta {n}: {sorted(lista)}"
+    for n in ("shortcode", "request-arg", "user-info", "post-custom-field", "author-meta"):
+        assert n not in lista, f"{n} no puede estar en la lista"
+    for t in lista.values():
+        assert set(t) == {"name", "group", "label", "categories", "settings", "targets"}, sorted(t)
+        assert t["label"] != t["name"] and re.fullmatch(r"[^<>\n]+", t["label"]) and re.search(r"[A-Za-zÁ-ú]{3}", t["label"]), f"etiqueta sin texto real: {t}"
+    assert lista["post-title"]["categories"] == ["text"] and "e-heading.title" in lista["post-title"]["targets"], lista["post-title"]
+    assert lista["post-featured-image"]["categories"] == ["image"] and lista["post-featured-image"]["targets"] == ["e-image.image"], lista["post-featured-image"]
+    print("  etiquetas:", {n: lista[n]["label"] for n in ("post-title", "site-title", "post-featured-image", "site-logo")})
+
+def interruptor_apagado():
+    global cli
+    cuenta = script("--contar-paginas")
+    es_error, msg, _ = asignar("eh9000", "title", {"name": "post-title"})
+    assert es_error, msg
+    assert crudo(pagina) == orig, "cambió el original"
+    assert script("--contar-paginas") == cuenta, "nació una copia con el interruptor apagado"
+    print("  mensaje:", msg[:200])
+    script("--ajuste", "builders_dynamic_enabled", "true")
+    assert script("--ajuste-valor", "builders_dynamic_enabled") == "true"
+    # El scope mcp:builders:dynamic sólo se ofrece con el interruptor encendido: la conexión nueva lo trae.
+    cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+
+def asignar_post_title():
+    cuenta = script("--contar-paginas")
+    es_error, msg, d = asignar("eh9000", "title", {"name": "post-title", "settings": {"before": antes_y_despues[0], "after": antes_y_despues[1]}})
+    assert not es_error, msg
+    res.update(d)
+    assert d["draft_of"] == pagina and d["id"] != pagina and d["node_id"] == "eh9000" and d["prop"] == "title", d
+    assert d["tag"]["name"] == "post-title" and d["tag"]["group"] == "post", d
+    assert d["tag"]["settings"] == {"before": "ANTES-", "after": "-DESPUES"}, d["tag"]
+    assert int(script("--contar-paginas")) == int(cuenta) + 1, "debía nacer una sola copia"
+    assert crudo(pagina) == orig, "el original cambió"
+    assert script("--estado", pagina) == "publish" and script("--estado", d["id"]) == "draft"
+    guardado = indice(arbol(d["id"]))["eh9000"]["settings"]["title"]
+    assert guardado == dinamica("post-title", "post", {"before": "ANTES-", "after": "-DESPUES"}), guardado
+
+def render_post_title():
+    # La prueba real de L9: save_tree sin los analizadores de Elementor y el render sí resuelve el tag.
+    html = render(res["id"])
+    textos = encabezados(html)
+    m = next((re.fullmatch(r"ANTES-(.*)-DESPUES", t.strip(), re.S) for t in textos if t.strip().startswith("ANTES-")), None)
+    assert m, f"la vista previa no resuelve post-title con before/after: {textos}"
+    assert m.group(1) == titulo_pagina and "Titulo dinamico base" not in textos, textos
+    print("  vista previa:", textos)
+
+def asignar_site_title():
+    es_error, msg, d = asignar("eh9001", "title", {"name": "site-title"})
+    assert not es_error, msg
+    assert d["id"] == res["id"], "debía reutilizar la copia"
+    html = render(res["id"])
+    textos = [t.strip() for t in encabezados(html)]
+    assert nombre_sitio in textos and "Sitio base" not in textos, f"la vista previa no muestra el título del sitio «{nombre_sitio}»: {textos}"
+    assert crudo(pagina) == orig, "el original cambió"
+
+def imagen_destacada():
+    es_error, msg, d = asignar("ei9000", "image", {"name": "post-featured-image"})
+    assert not es_error, msg
+    assert indice(arbol(res["id"]))["ei9000"]["settings"]["image"] == dinamica("post-featured-image", "post"), d
+    html = render(res["id"])
+    nombre = re.sub(r"\.\w+$", "", archivo_medio.rsplit("/", 1)[-1])
+    assert "<img" in html and nombre in html, f"el render no muestra la imagen destacada «{nombre}»"
+
+def logo_del_sitio():
+    es_error, msg, d = asignar("ei9001", "image", {"name": "site-logo"})
+    assert not es_error, msg
+    assert indice(arbol(res["id"]))["ei9001"]["settings"]["image"] == dinamica("site-logo", "site"), d
+    assert d["tag"] == dinamica("site-logo", "site")["value"], d["tag"]
+
+def html_saneado():
+    es_error, msg, d = asignar("eh9002", "title", {"name": "post-title", "settings": {"before": "<b>X</b><script>alert(1)</script>Y-"}})
+    assert not es_error, msg
+    guardado = indice(arbol(res["id"]))["eh9002"]["settings"]["title"]["value"]["settings"]["before"]
+    assert "<" not in guardado and ">" not in guardado and "<" not in d["tag"]["settings"]["before"], (guardado, d["tag"])
+    textos = encabezados(render(res["id"]))
+    assert any(t.strip() == "XY-" + titulo_pagina for t in textos), f"la vista previa no muestra el texto saneado: {textos}"
+    assert "alert(1)" not in "".join(textos), "la vista previa trae el script"
+    print("  guardado:", repr(guardado))
+
+def rechazo(nombre, nodo, prop, tag, codigo):
+    def fn():
+        datos, cuenta = crudo(res["id"]), script("--contar-paginas")
+        es_error, msg, _ = asignar(nodo, prop, tag)
+        assert es_error and codigo in msg, f"mensaje: {msg[:300]!r} (se esperaba «{codigo}»)"
+        assert crudo(res["id"]) == datos, "cambió la copia"
+        assert crudo(pagina) == orig, "cambió el original"
+        assert script("--contar-paginas") == cuenta, "cambió la cantidad de páginas"
+    comprobar(f"rechazo: {nombre}", fn)
+
+def edit_otra_seccion():
+    antes = indice(arbol(res["id"]))
+    prop_antes = antes["eh9000"]["settings"]["title"]
+    _, d = cli.ok("edit-elementor-section", {"id": pagina, "operation": "replace", "node_id": "fx9001", "elements": [
+        {"type": "e-flexbox", "elements": [{"type": "e-heading", "settings": {"title": {"$$type": "escaped-html", "value": f"Seccion nueva {suffix}"}}}]}]})
+    assert d["id"] == res["id"], "debía reutilizar la copia"
+    despues = indice(arbol(d["id"]))
+    assert despues["eh9000"]["settings"]["title"] == prop_antes, "la edición de otra sección tocó la prop dinámica"
+    assert "eh9003" not in despues and f"Seccion nueva {suffix}" in render(d["id"])
+    assert any(re.fullmatch(r"ANTES-.*-DESPUES", t.strip(), re.S) for t in encabezados(render(d["id"]))), "se perdió la resolución del tag"
+
+def edit_conserva_en_subarbol():
+    antes = arbol(res["id"])
+    prop_antes = indice(antes)["eh9000"]["settings"]["title"]
+    _, d = cli.ok("edit-elementor-section", {"id": pagina, "operation": "replace", "node_id": "fx9000", "elements": [
+        {"type": "e-flexbox", "elements": [{"id": "eh9000", "type": "e-heading", "settings": {"title": prop_antes}}]}]})
+    nuevo = indice(arbol(d["id"]))[d["node_ids"][1]]
+    assert nuevo["widgetType"] == "e-heading" and nuevo["settings"]["title"] == prop_antes, nuevo
+    assert any(re.fullmatch(r"ANTES-.*-DESPUES", t.strip(), re.S) for t in encabezados(render(d["id"]))), "la vista previa no resuelve el tag conservado"
+    es_error, msg, _ = cli.call("edit-elementor-section", {"id": pagina, "operation": "replace", "node_id": d["node_ids"][0], "elements": [
+        {"type": "e-flexbox", "elements": [{"type": "e-heading", "settings": {"title": dinamica("site-title", "site")}}]}]})
+    assert es_error, f"una prop dinámica nueva por edit-section debía rechazarse: {msg[:300]}"
+    print("  rechazo:", msg[:200])
+    assert True or "x", f"una prop dinámica nueva por edit-section debía rechazarse: {msg[:300]}"
+
+def diff_publicar_y_frontend():
+    _, d = cli.ok("get-working-copy-diff", {"id": pagina})
+    assert d["copy_id"] == res["id"] and any(e["key"] == "_elementor_data" for e in d["meta"]["changed"]), d
+    datos = crudo(res["id"])
+    _, m = cli.ok("set-content-status", {"id": res["id"], "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (pagina, res["id"]), m
+    assert json.loads(crudo(pagina)) == json.loads(datos), "el original no trae el árbol de la copia"
+    with urllib.request.urlopen(f"http://localhost:8080/?page_id={pagina}") as r:
+        cuerpo = r.read().decode("utf-8", "replace")
+        assert r.status == 200, r.status
+    textos = [t.strip() for t in encabezados(cuerpo)]
+    assert f"ANTES-{titulo_pagina}-DESPUES" in textos, f"el frontend público no resuelve el tag: {textos}"
+
+comprobar("list-dynamic-tags: tags del catálogo presentes, ninguno sensible, etiquetas reales", listar)
+comprobar("set-dynamic-tag: con el interruptor apagado se deniega y no crea copia", interruptor_apagado)
+comprobar("set-dynamic-tag: post-title con before/after va a la copia; el original no cambia", asignar_post_title)
+comprobar("render: la copia resuelve ANTES-<título>-DESPUES (save_tree sin parsers de Elementor)", render_post_title)
+comprobar("set-dynamic-tag: site-title se asigna y se renderiza", asignar_site_title)
+comprobar("set-dynamic-tag: e-image.image con post-featured-image se guarda y se renderiza", imagen_destacada)
+comprobar("set-dynamic-tag: e-image.image con site-logo se guarda y se devuelve normalizado", logo_del_sitio)
+comprobar("set-dynamic-tag: el HTML de un ajuste se guarda sin etiquetas", html_saneado)
+rechazo("tag fuera del catálogo (shortcode)", "eh9003", "title", {"name": "shortcode"}, "«shortcode» no está permitido")
+rechazo("categoría que no coincide (imagen en un título)", "eh9003", "title", {"name": "post-featured-image"}, "es de categoría «image» y «e-heading.title» necesita la categoría «text»")
+rechazo("categoría que no coincide (texto en una imagen)", "ei9000", "image", {"name": "post-title"}, "es de categoría «text» y «e-image.image» necesita la categoría «image»")
+rechazo("ajuste fuera del catálogo", "eh9003", "title", {"name": "post-title", "settings": {"custom_field": "x"}}, "el ajuste «custom_field» no existe en «post-title»")
+rechazo("prop que no admite datos dinámicos", "eh9003", "tag", {"name": "post-title"}, "«e-heading.tag» no admite datos dinámicos")
+comprobar("edit-elementor-section sobre otra sección conserva la prop dinámica", edit_otra_seccion)
+comprobar("edit-elementor-section: el nodo reenviado con su id conserva la prop; una nueva se rechaza", edit_conserva_en_subarbol)
+comprobar("diff, publicar (fusión) y el frontend público resuelve el tag", diff_publicar_y_frontend)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de datos dinámicos (F6) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de datos dinámicos (F6) tuvo comprobaciones fallidas"
+	tools/prueba_adaptadores.sh --ajuste builders_dynamic_enabled false
+fi
+echo
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
 # Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page
 # con campos distintos (ninguna edición puede perderse) y 5 edit-elementor-section que insertan
@@ -1307,7 +1589,7 @@ wp post meta update "$conc_secciones_id" _elementor_data "$v3_tree" >/dev/null
 echo "Páginas publicadas: cinco $conc_cinco_id, campos $conc_campos_id, secciones $conc_secciones_id"
 
 python3 -I - "$suffix" "$conc_cinco_id" "$conc_campos_id" "$conc_secciones_id" "$conc_borrador_id" "$conc_publicar_id" "$conc_bloq_id" <<'PY'
-import importlib.util, json, pathlib, select, subprocess, sys, threading, time
+import importlib.util, json, os, pathlib, select, subprocess, sys, threading, time
 
 suffix, cinco_id, campos_id, secciones_id = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 borrador_id, publicar_id, bloq_id = int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
@@ -1475,7 +1757,10 @@ def publicar_con_copia_cambiada():
     copia = json.loads(d)["id"]
     php = (r'\NexoDev\NexoMCP\Support\PostLock::run( %d, function () { echo "LOCKED\n"; sleep( 3 );'
            r' wp_update_post( array( "ID" => %d, "post_content" => "<p>v2</p>" ) ); } );') % (publicar_id, copia)
-    proc = subprocess.Popen(["docker", "compose", "run", "--rm", "-T", "--entrypoint", "wp", "setup", "eval", php],
+    # Mismo comando que tools/wpcli.sh: con Elementor Pro, wp-cli necesita más memoria (NEXO_WPCLI_MEMORIA).
+    memoria = os.environ.get("NEXO_WPCLI_MEMORIA", "")
+    wp = ["--entrypoint", "php", "setup", "-d", f"memory_limit={memoria}", "/usr/local/bin/wp"] if memoria else ["--entrypoint", "wp", "setup"]
+    proc = subprocess.Popen(["docker", "compose", "run", "--rm", "-T", *wp, "eval", php],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     try:
         listo, _, _ = select.select([proc.stdout], [], [], 90)

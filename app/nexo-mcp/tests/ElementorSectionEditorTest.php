@@ -770,4 +770,178 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 		$this->assertSame( 'nexo_mcp_builder_copy_orphan', $result->get_error_code() );
 		$this->assertSame( 'nexo_mcp_builder_too_large', $result->get_error_data()['original_error'] );
 	}
+
+	/**
+	 * Página con un heading de dato dinámico dentro de fx00001 y otra sección sin tocar.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function dynamic_page(): array {
+		$heading = static fn( string $id, array $title ): array => array(
+			'id'         => $id,
+			'elType'     => 'widget',
+			'widgetType' => 'e-heading',
+			'settings'   => array( 'title' => $title ),
+			'styles'     => array(),
+			'elements'   => array(),
+		);
+
+		return array(
+			array(
+				'id'       => 'fx00001',
+				'elType'   => 'e-flexbox',
+				'settings' => array(),
+				'styles'   => array(),
+				'elements' => array( $heading( 'eh00001', self::dynamic_prop() ) ),
+			),
+			array(
+				'id'       => 'fx00002',
+				'elType'   => 'e-flexbox',
+				'settings' => array(),
+				'styles'   => array(),
+				'elements' => array( $heading( 'eh00002', ElementorSectionFixtures::prop( 'escaped-html', 'Otro' ) ) ),
+			),
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private static function dynamic_prop( string $before = 'A-' ): array {
+		return ElementorSectionFixtures::prop( 'dynamic', array( 'name' => 'post-title', 'group' => 'post', 'settings' => array( 'before' => $before ) ) );
+	}
+
+	public function test_editar_otra_seccion_de_una_pagina_con_un_dato_dinamico_sigue_funcionando_y_lo_conserva(): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+
+		$result = $this->exec_edit( array( 'id' => 120, 'operation' => 'replace', 'node_id' => 'fx00002', 'elements' => ElementorSectionFixtures::new_box( 'Reconstruido' ) ) );
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$data = $this->data( 120 );
+		$this->assertSame( self::dynamic_prop(), $data[0]['elements'][0]['settings']['title'], 'el dato dinámico queda igual' );
+		$this->assertSame( 'eh00001', $data[0]['elements'][0]['id'] );
+		$this->assertSame( 'Reconstruido', $data[1]['elements'][0]['settings']['title']['value'] );
+
+		$deleted = $this->exec_edit( array( 'id' => 120, 'operation' => 'delete', 'node_id' => $result['node_ids'][0] ) );
+		$this->assertIsArray( $deleted );
+		$this->assertSame( self::dynamic_prop(), $this->data( 120 )[0]['elements'][0]['settings']['title'] );
+
+		$inserted = $this->exec_edit( array( 'id' => 120, 'operation' => 'insert', 'node_id' => 'fx00001', 'position' => 'after', 'elements' => ElementorSectionFixtures::new_box( 'Más' ) ) );
+		$this->assertIsArray( $inserted );
+		$this->assertSame( self::dynamic_prop(), $this->data( 120 )[0]['elements'][0]['settings']['title'] );
+	}
+
+	public function test_en_un_subarbol_reemplazado_el_dato_dinamico_sin_cambios_se_conserva_con_su_id_original_en_la_entrada(): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+		$box                                         = ElementorSectionFixtures::new_box( 'Nuevo' );
+		$box[0]['elements']                          = array(
+			array(
+				'type'     => 'e-heading',
+				'id'       => 'eh00001',
+				'settings' => array( 'title' => self::dynamic_prop() ),
+			),
+		);
+
+		$result = $this->exec_edit( array( 'id' => 120, 'operation' => 'replace', 'node_id' => 'fx00001', 'elements' => $box ) );
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$node = $this->data( 120 )[0]['elements'][0];
+		$this->assertSame( self::dynamic_prop(), $node['settings']['title'], 'el dato dinámico idéntico se conserva' );
+		$this->assertNotSame( 'eh00001', $node['id'], 'los ids del subárbol reemplazado son nuevos' );
+		$this->assertNotSame( $result['node_ids'][0], 'fx00001' );
+	}
+
+	/**
+	 * @return array<string, array{0: string, 1: array<string, mixed>}>
+	 */
+	public static function rejected_dynamics(): array {
+		return array(
+			'sin el id original'      => array( 'sin id', array( 'type' => 'e-heading', 'settings' => array( 'title' => array() ) ) ),
+			'con otro id'             => array( 'otro id', array( 'type' => 'e-heading', 'id' => 'eh00002', 'settings' => array( 'title' => array() ) ) ),
+			'con ajustes cambiados'   => array( 'cambiado', array( 'type' => 'e-heading', 'id' => 'eh00001', 'settings' => array( 'title' => array() ) ) ),
+		);
+	}
+
+	/**
+	 * @dataProvider rejected_dynamics
+	 * @param array<string, mixed> $node Nodo del cliente; su título se completa según el caso.
+	 */
+	public function test_un_dato_dinamico_nuevo_o_cambiado_en_el_subarbol_se_rechaza_y_no_escribe( string $case, array $node ): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+		$node['settings']['title'] = 'cambiado' === $case ? self::dynamic_prop( 'B-' ) : self::dynamic_prop();
+		$box                       = ElementorSectionFixtures::new_box();
+		$box[0]['elements']        = array( $node );
+		$before                    = $this->snapshot();
+
+		$result = $this->exec_edit( array( 'id' => 120, 'operation' => 'replace', 'node_id' => 'fx00001', 'elements' => $box ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result, $case );
+		$this->assertSame( 'nexo_mcp_elementor_prop_type_denied', $result->get_error_code(), $case );
+		$this->assertSame( $before, $this->snapshot(), $case );
+	}
+
+	public function test_insertar_un_dato_dinamico_nuevo_sigue_rechazado(): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+		$before = $this->snapshot();
+
+		$result = $this->exec_edit(
+			array(
+				'id'        => 120,
+				'operation' => 'insert',
+				'node_id'   => 'fx00001',
+				'position'  => 'inside',
+				'elements'  => array( array( 'type' => 'e-heading', 'settings' => array( 'title' => self::dynamic_prop() ) ) ),
+			)
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_prop_type_denied', $result->get_error_code() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
+
+	/**
+	 * Copias de un dato dinámico guardado reusando el id de su nodo: sólo se conserva dentro
+	 * del subárbol que se reemplaza y una sola vez (sin el scope de datos dinámicos no se
+	 * puede duplicar ni mover).
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: string, 3: int}>
+	 */
+	public static function copied_dynamics(): array {
+		return array(
+			'insert con el id de un nodo dinámico'       => array( 'insert', 'fx00002', 'inside', 1 ),
+			'replace de otro subárbol con ese id'         => array( 'replace', 'fx00002', '', 1 ),
+			'replace del subárbol con el id repetido'     => array( 'replace', 'fx00001', '', 2 ),
+		);
+	}
+
+	/**
+	 * @dataProvider copied_dynamics
+	 */
+	public function test_un_dato_dinamico_guardado_no_se_duplica_ni_se_mueve_reusando_el_id( string $operation, string $node_id, string $position, int $copies ): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+		$heading = array(
+			'type'     => 'e-heading',
+			'id'       => 'eh00001',
+			'settings' => array( 'title' => self::dynamic_prop() ),
+		);
+		$box                = ElementorSectionFixtures::new_box();
+		$box[0]['elements'] = array_fill( 0, $copies, $heading );
+		$input              = array(
+			'id'        => 120,
+			'operation' => $operation,
+			'node_id'   => $node_id,
+			'elements'  => $box,
+		);
+
+		if ( '' !== $position ) {
+			$input['position'] = $position;
+		}
+
+		$before = $this->snapshot();
+		$result = $this->exec_edit( $input );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_prop_type_denied', $result->get_error_code() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
 }

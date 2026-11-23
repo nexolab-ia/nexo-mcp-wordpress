@@ -44,6 +44,15 @@ final class Capabilities {
 	 */
 	public const BUILDER_ATTRS = 'nexo_mcp_builder_attrs';
 
+	/**
+	 * Asignar datos dinámicos (dynamic tags) a las props de un elemento atómico.
+	 *
+	 * Va separada de BUILDERS a propósito: el tag se evalúa en el render para
+	 * cualquier visitante (título del sitio, imagen destacada…). Además lo
+	 * enciende aparte el interruptor `builders_dynamic_enabled`.
+	 */
+	public const BUILDERS_DYNAMIC = 'nexo_mcp_builders_dynamic';
+
 	public const PUBLISH = 'nexo_mcp_publish';
 
 	public const DESTRUCTIVE = 'nexo_mcp_destructive';

@@ -215,6 +215,27 @@ final class ElementorTreeValidator {
 	private int $max_nodes = self::MAX_NODES;
 
 	/**
+	 * Props dinámicas del documento original, por id de nodo (opt-in, ver {@see self::accepting_unchanged_dynamic()}).
+	 *
+	 * @var array<string, array{type: string, props: array<string, mixed>}>
+	 */
+	private array $original_dynamic = array();
+
+	/**
+	 * Props dinámicas originales ya aceptadas en la validación en curso (`id|clave`): cada una vale una sola vez.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $dynamic_used = array();
+
+	/**
+	 * Catálogo con el que se aceptan props dinámicas nuevas o cambiadas (modo asignar); null = desactivado.
+	 *
+	 * @var DynamicTagCatalog|null
+	 */
+	private ?DynamicTagCatalog $assign_catalog = null;
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param array<string, array<int, string>> $allowed_settings Claves de `settings` por tipo.
@@ -227,6 +248,120 @@ final class ElementorTreeValidator {
 		$this->allowed_settings = $allowed_settings;
 		$this->global_classes   = $global_classes;
 		$this->image_check      = $image_check ?? static fn( int $id ) => AttributeValue::image( $id );
+	}
+
+	/**
+	 * Copia del validador que acepta las props dinámicas idénticas a las del documento original.
+	 *
+	 * Opt-in: por omisión `$$type: dynamic` se rechaza. La identidad es por id de nodo: el
+	 * nodo del cliente debe traer `id` (el del documento guardado), el mismo tipo de widget y,
+	 * en la misma clave de `settings`, una prop dinámica igual a la guardada. Cualquier cambio
+	 * (otro tag, otros ajustes, otro nodo, otro id) se rechaza, salvo en el modo de
+	 * {@see self::assigning_dynamic()}. Sólo se miran las props de primer nivel de `settings`;
+	 * un `dynamic` anidado en otro valor o en un estilo sigue rechazado. Cada prop original se
+	 * acepta una sola vez por validación: repetir el id no la duplica.
+	 *
+	 * @param array<int, mixed>       $stored_tree Árbol guardado (formato de Elementor: `id`, `elType`, `widgetType`, `settings`, `elements`).
+	 * @param array<int, string>|null $only_ids   Ids de nodo cuyas props se aceptan (p. ej. los del subárbol que se reemplaza); null = todo el árbol.
+	 */
+	public function accepting_unchanged_dynamic( array $stored_tree, ?array $only_ids = null ): self {
+		$found = self::collect_dynamic( $stored_tree );
+
+		if ( null !== $only_ids ) {
+			$found = array_intersect_key( $found, array_flip( array_map( 'strval', $only_ids ) ) );
+		}
+
+		$copy                   = clone $this;
+		$copy->original_dynamic = $this->original_dynamic + $found;
+
+		return $copy;
+	}
+
+	/**
+	 * Copia del validador en modo asignar: acepta props dinámicas nuevas o cambiadas si el catálogo las valida.
+	 *
+	 * La validación no modifica el árbol: quien guarda debe escribir el valor normalizado que
+	 * devuelve {@see DynamicTagCatalog::validate()} (ajustes saneados), no el del cliente.
+	 * Combina con {@see self::accepting_unchanged_dynamic()}: una prop idéntica a la original pasa sin consultar el catálogo.
+	 *
+	 * @param DynamicTagCatalog $catalog Catálogo cerrado y comprobaciones del sitio.
+	 */
+	public function assigning_dynamic( DynamicTagCatalog $catalog ): self {
+		$copy                 = clone $this;
+		$copy->assign_catalog = $catalog;
+
+		return $copy;
+	}
+
+	/**
+	 * Props dinámicas de primer nivel de un árbol guardado, por id de nodo.
+	 *
+	 * @param array<int|string, mixed> $nodes Nodos guardados.
+	 *
+	 * @return array<string, array{type: string, props: array<string, mixed>}>
+	 */
+	private static function collect_dynamic( array $nodes ): array {
+		$found = array();
+
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			$id   = $node['id'] ?? null;
+			$type = 'widget' === ( $node['elType'] ?? null ) ? ( $node['widgetType'] ?? null ) : ( $node['elType'] ?? null );
+			$prop = array();
+
+			foreach ( is_array( $node['settings'] ?? null ) ? $node['settings'] : array() as $key => $value ) {
+				if ( is_array( $value ) && 'dynamic' === ( $value['$$type'] ?? null ) ) {
+					$prop[ (string) $key ] = $value;
+				}
+			}
+
+			if ( is_string( $id ) && '' !== $id && is_string( $type ) && array() !== $prop ) {
+				$found[ $id ] = array(
+					'type'  => $type,
+					'props' => $prop,
+				);
+			}
+
+			if ( is_array( $node['elements'] ?? null ) ) {
+				$found += self::collect_dynamic( $node['elements'] );
+			}
+		}
+
+		return $found;
+	}
+
+	/**
+	 * Comparación de dos valores sin importar el orden de las claves.
+	 *
+	 * @param mixed $a Valor.
+	 * @param mixed $b Valor.
+	 */
+	private static function same_value( $a, $b ): bool {
+		return wp_json_encode( self::sorted( $a ) ) === wp_json_encode( self::sorted( $b ) );
+	}
+
+	/**
+	 * Ordena por clave los objetos (no las listas), a cualquier profundidad.
+	 *
+	 * @param mixed $value Valor.
+	 *
+	 * @return mixed
+	 */
+	private static function sorted( $value ) {
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+
+		$value = array_map( array( self::class, 'sorted' ), $value );
+
+		if ( ! array_is_list( $value ) ) {
+			ksort( $value );
+		}
+
+		return $value;
 	}
 
 	/**
@@ -285,10 +420,11 @@ final class ElementorTreeValidator {
 			);
 		}
 
-		$this->nodes       = $base_nodes;
-		$this->parent_kind = $parent_kind;
-		$this->base_depth  = $base_depth;
-		$this->max_nodes   = $max_nodes > 0 ? $max_nodes : self::MAX_NODES;
+		$this->nodes        = $base_nodes;
+		$this->parent_kind  = $parent_kind;
+		$this->base_depth   = $base_depth;
+		$this->max_nodes    = $max_nodes > 0 ? $max_nodes : self::MAX_NODES;
+		$this->dynamic_used = array();
 
 		return $this->walk_list( $elements, 'elements', $base_depth + 1 );
 	}
@@ -419,7 +555,8 @@ final class ElementorTreeValidator {
 
 		$locals = $this->local_style_ids( $node['styles'] ?? null );
 
-		$result = $this->check_settings( $node['settings'] ?? null, $type, $path . '.settings', $locals );
+		$node_id = isset( $node['id'] ) && is_string( $node['id'] ) ? $node['id'] : null;
+		$result  = $this->check_settings( $node['settings'] ?? null, $type, $path . '.settings', $locals, $node_id );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -510,10 +647,11 @@ final class ElementorTreeValidator {
 	 * @param string             $type     Tipo del nodo.
 	 * @param string             $path     Ruta de `settings`.
 	 * @param array<int, string> $locals   Estilos locales del nodo.
+	 * @param string|null        $node_id  Id del nodo si el cliente lo manda (sólo sirve para la identidad de props dinámicas).
 	 *
 	 * @return true|\WP_Error
 	 */
-	private function check_settings( $settings, string $type, string $path, array $locals ) {
+	private function check_settings( $settings, string $type, string $path, array $locals, ?string $node_id = null ) {
 		if ( null === $settings || array() === $settings ) {
 			return true;
 		}
@@ -566,6 +704,20 @@ final class ElementorTreeValidator {
 				);
 			}
 
+			if ( 'dynamic' === $prop['$$type'] ) {
+				$dynamic = $this->check_dynamic( $prop, $node_id, $type, $key, $here );
+
+				if ( true === $dynamic ) {
+					continue;
+				}
+
+				if ( is_wp_error( $dynamic ) ) {
+					return $dynamic;
+				}
+
+				// null: sin opt-in; cae en la lista cerrada, que rechaza «dynamic».
+			}
+
 			if ( 'e-button' === $type && 'tag' === $key && ( 'string' !== $prop['$$type'] || ! in_array( $prop['value'], self::BUTTON_TAGS, true ) ) ) {
 				return $this->error(
 					'nexo_mcp_elementor_setting_invalid',
@@ -583,6 +735,41 @@ final class ElementorTreeValidator {
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Decide una prop dinámica de primer nivel de `settings`.
+	 *
+	 * @param array<string, mixed> $prop    Prop recibida.
+	 * @param string|null          $node_id Id de nodo del cliente.
+	 * @param string               $type    Widget.
+	 * @param string               $key     Clave de la prop.
+	 * @param string               $path    Ruta de la prop.
+	 *
+	 * @return true|\WP_Error|null true: aceptada; WP_Error: rechazada por el catálogo; null: sin opt-in aplicable.
+	 */
+	private function check_dynamic( array $prop, ?string $node_id, string $type, string $key, string $path ) {
+		$original = null !== $node_id ? ( $this->original_dynamic[ $node_id ] ?? null ) : null;
+
+		$used = null !== $node_id ? $node_id . '|' . $key : '';
+
+		if ( null !== $original && ! isset( $this->dynamic_used[ $used ] ) && $original['type'] === $type && isset( $original['props'][ $key ] ) && self::same_value( $original['props'][ $key ], $prop ) ) {
+			$this->dynamic_used[ $used ] = true;
+
+			return true;
+		}
+
+		if ( null === $this->assign_catalog ) {
+			return null;
+		}
+
+		$checked = $this->assign_catalog->validate( $type, $key, $prop );
+
+		if ( is_wp_error( $checked ) ) {
+			return $this->error( $checked->get_error_code(), $path, $checked->get_error_message() );
 		}
 
 		return true;

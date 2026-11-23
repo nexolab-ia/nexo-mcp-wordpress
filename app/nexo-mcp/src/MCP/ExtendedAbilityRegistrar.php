@@ -74,6 +74,8 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/create-elementor-page',
 		'nexo-mcp/edit-elementor-section',
 		'nexo-mcp/migrate-elementor-page',
+		'nexo-mcp/list-dynamic-tags',
+		'nexo-mcp/set-dynamic-tag',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -383,6 +385,24 @@ final class ExtendedAbilityRegistrar {
 			$this->elementor_migrate_schema(),
 			fn( array $input ) => $this->builders->migrate_elementor_page( $input ),
 			fn( array $input ) => $this->elementor_page_permission( $input )
+		);
+		$this->ability(
+			'list-dynamic-tags',
+			'Listar datos dinámicos de Elementor 4',
+			$this->dynamic_list_description(),
+			'read',
+			$this->empty_schema(),
+			fn() => $this->builders->list_dynamic_tags(),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
+		);
+		$this->ability(
+			'set-dynamic-tag',
+			'Asignar dato dinámico a un elemento de Elementor 4',
+			$this->dynamic_set_description(),
+			'write',
+			$this->dynamic_set_schema(),
+			fn( array $input ) => $this->builders->set_dynamic_tag( $input ),
+			fn( array $input ) => $this->dynamic_tag_permission( $input )
 		);
 		$this->ability(
 			'update-node-text',
@@ -899,6 +919,115 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Permiso de set-dynamic-tag: el de las herramientas de página de Elementor y, además, el scope propio.
+	 *
+	 * Asignar un dato dinámico exige el módulo de constructores y `edit_post` sobre el
+	 * original (como edit-elementor-section) Y la capacidad `nexo_mcp_builders_dynamic`
+	 * con su interruptor `builders_dynamic_enabled`, que el dueño enciende a propósito.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 */
+	private function dynamic_tag_permission( array $input ): bool {
+		return $this->elementor_page_permission( $input )
+			&& $this->module_write(
+				'builders_dynamic_enabled',
+				Capabilities::BUILDERS_DYNAMIC,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			);
+	}
+
+	/**
+	 * Descripción de list-dynamic-tags.
+	 */
+	private function dynamic_list_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Lista los datos dinámicos (dynamic tags de Elementor) que se pueden asignar con nexo-mcp-set-dynamic-tag y que este sitio tiene registrados. Es una lista cerrada de tags sin datos sensibles (título, lema, URL y logo del sitio; título, extracto, fecha, URL, imagen destacada y términos de la entrada; título y URL de archivo; nombre del autor; fecha actual): shortcode, request-arg, user-info, campos personalizados, ACF y el resto no se pueden asignar.',
+				'',
+				'SALIDA: lista de {name, group, label, categories, settings, targets}. settings es el esquema de los ajustes admitidos del tag ({type: text | number | switch | enum | taxonomy, options?, min?, max?}); targets, las props donde sirve (widget.prop, por categoría). Los tags son de Elementor Pro: sin Pro (ningún tag registrado) devuelve una lista vacía, no un error.',
+			)
+		);
+	}
+
+	/**
+	 * Descripción de set-dynamic-tag.
+	 */
+	private function dynamic_set_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Asigna un dato dinámico (dynamic tag de Elementor Pro) a una prop de un elemento atómico de la versión 4: el valor se calcula en cada render para todo visitante. Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Requiere el Editor V4 activo (nexo_mcp_elementor_v4_required) y, además del permiso de constructores, el scope mcp:builders:dynamic que el administrador enciende aparte.',
+				'',
+				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+				'',
+				'ENTRADA: id, node_id (el elemento, ver nexo-mcp-get-page-structure), prop y tag {name, settings?}, draft (opcional). Destinos: e-heading.title, e-paragraph.paragraph, e-button.text (tags de categoría text) y e-image.image (categoría image). El grupo del tag lo pone el plugin. Usa nexo-mcp-list-dynamic-tags para ver los tags registrados y sus ajustes. Los ajustes se validan y se guardan como texto plano (lo que se guarda es el valor normalizado, devuelto en tag).',
+				'',
+				'EJEMPLO: {"id":12,"node_id":"abc1234","prop":"title","tag":{"name":"post-title","settings":{"before":"Hola, "}}}.',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, node_id, prop y tag {name, group, settings}.',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_builder_node_missing (el elemento no existe), nexo_mcp_dynamic_target_unsupported (ese tipo de elemento o prop no admite datos dinámicos), nexo_mcp_dynamic_value_invalid, nexo_mcp_dynamic_tag_unknown, nexo_mcp_dynamic_group_mismatch, nexo_mcp_dynamic_category_mismatch (el tag no es de la categoría de la prop), nexo_mcp_dynamic_tag_unavailable (el tag no está registrado: falta Elementor Pro), nexo_mcp_dynamic_setting_unknown y nexo_mcp_dynamic_setting_invalid.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de set-dynamic-tag.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function dynamic_set_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'      => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Elementor o su copia de trabajo.',
+				),
+				'node_id' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Id del elemento (ver get-page-structure).',
+				),
+				'prop'    => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Prop del elemento: title (e-heading), paragraph (e-paragraph), text (e-button) o image (e-image).',
+				),
+				'tag'     => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'name'     => array(
+							'type'        => 'string',
+							'minLength'   => 1,
+							'maxLength'   => 64,
+							'description' => 'Nombre del tag (ver list-dynamic-tags).',
+						),
+						'settings' => array(
+							'type'                 => 'object',
+							'additionalProperties' => true,
+							'description'          => 'Ajustes del tag (before, after, fallback…, según list-dynamic-tags).',
+						),
+					),
+					'required'             => array( 'name' ),
+					'additionalProperties' => false,
+				),
+				'draft'   => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide asignar en la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'node_id', 'prop', 'tag' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Permiso de set-content-status, con un id o con un lote.
 	 *
 	 * Con `ids` aquí sólo se exigen los interruptores y las capacidades del
@@ -1313,7 +1442,7 @@ final class ExtendedAbilityRegistrar {
 		callable $callback,
 		callable $permission
 	): void {
-		$array_outputs = array( 'list-media', 'list-terms', 'list-revisions', 'list-menus', 'list-plugins', 'list-themes' );
+		$array_outputs = array( 'list-media', 'list-terms', 'list-revisions', 'list-menus', 'list-plugins', 'list-themes', 'list-dynamic-tags' );
 
 		// MCP exige que `outputSchema` describa un objeto. El adaptador envuelve
 		// por su cuenta los esquemas que no lo son, pero esa transformación no

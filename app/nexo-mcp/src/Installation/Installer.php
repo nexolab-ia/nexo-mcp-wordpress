@@ -84,6 +84,7 @@ final class Installer {
 			$administrator->add_cap( Capabilities::COMMERCE );
 			$administrator->add_cap( Capabilities::BUILDERS );
 			$administrator->add_cap( Capabilities::BUILDER_ATTRS );
+			$administrator->add_cap( Capabilities::BUILDERS_DYNAMIC );
 			$administrator->add_cap( Capabilities::PUBLISH );
 			$administrator->add_cap( Capabilities::DESTRUCTIVE );
 			$administrator->add_cap( Capabilities::DESIGN_SYSTEM );

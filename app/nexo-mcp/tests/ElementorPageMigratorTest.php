@@ -369,4 +369,34 @@ final class ElementorPageMigratorTest extends NexoTestCase {
 		$this->assertSame( array(), $this->live_copies() );
 		$this->assertSame( 'e-flexbox', $this->data( self::ORIGINAL )[0]['elType'] );
 	}
+
+	public function test_migrar_una_pagina_con_un_dato_dinamico_ya_guardado_lo_deja_igual(): void {
+		$dynamic = ElementorSectionFixtures::prop( 'dynamic', array( 'name' => 'post-title', 'group' => 'post', 'settings' => array( 'before' => 'A-' ) ) );
+		$tree    = $this->v3_page();
+		$tree[]  = array(
+			'id'       => 'fx00001',
+			'elType'   => 'e-flexbox',
+			'settings' => array(),
+			'styles'   => array(),
+			'elements' => array(
+				array(
+					'id'         => 'eh00009',
+					'elType'     => 'widget',
+					'widgetType' => 'e-heading',
+					'settings'   => array( 'title' => $dynamic ),
+					'styles'     => array(),
+					'elements'   => array(),
+				),
+			),
+		);
+		$this->put_page( 107, 'draft', $tree );
+
+		$result = $this->run_migration( 107 );
+
+		$this->assertIsArray( $result, $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$data = $this->data( 107 );
+		$this->assertSame( $dynamic, $data[1]['elements'][0]['settings']['title'] );
+		$this->assertSame( 'eh00009', $data[1]['elements'][0]['id'] );
+		$this->assertSame( 'e-flexbox', $data[0]['elType'], 'y lo v3 se migró' );
+	}
 }
