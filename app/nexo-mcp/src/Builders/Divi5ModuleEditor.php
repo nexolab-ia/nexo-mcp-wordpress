@@ -30,32 +30,11 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
 final class Divi5ModuleEditor {
 
 	/**
-	 * Configuración operativa.
+	 * Camino de escritura compartido.
 	 *
-	 * @var Settings
+	 * @var Divi5ContentWriter
 	 */
-	private Settings $settings;
-
-	/**
-	 * Adaptador de Divi 5.
-	 *
-	 * @var Divi5Adapter
-	 */
-	private Divi5Adapter $adapter;
-
-	/**
-	 * Respaldo previo a la escritura.
-	 *
-	 * @var BuilderBackup
-	 */
-	private BuilderBackup $backup;
-
-	/**
-	 * Copias de trabajo.
-	 *
-	 * @var WorkingCopy
-	 */
-	private WorkingCopy $copies;
+	private Divi5ContentWriter $writer;
 
 	/**
 	 * Validador del parche.
@@ -63,27 +42,6 @@ final class Divi5ModuleEditor {
 	 * @var DiviTreeValidator
 	 */
 	private DiviTreeValidator $validator;
-
-	/**
-	 * Comprobación del bloqueo de edición: fn( \WP_Post ): true|\WP_Error.
-	 *
-	 * @var callable
-	 */
-	private $lock_check;
-
-	/**
-	 * Indica si Divi 5 está activo: fn(): bool.
-	 *
-	 * @var callable
-	 */
-	private $divi5_active;
-
-	/**
-	 * Guardado de `post_content`: fn( int $id, string $content ): true|\WP_Error.
-	 *
-	 * @var callable
-	 */
-	private $saver;
 
 	/**
 	 * Construye el editor.
@@ -107,24 +65,8 @@ final class Divi5ModuleEditor {
 		?callable $divi5_active = null,
 		?callable $saver = null
 	) {
-		$this->settings     = $settings;
-		$this->adapter      = $adapter;
-		$this->backup       = $backup;
-		$this->copies       = $copies;
-		$this->validator    = $validator;
-		$this->lock_check   = $lock_check;
-		$this->divi5_active = $divi5_active ?? static fn(): bool => defined( 'ET_BUILDER_5_DIR' );
-		$this->saver        = $saver ?? static function ( int $id, string $content ) {
-			$saved = wp_update_post(
-				array(
-					'ID'           => $id,
-					'post_content' => wp_slash( $content ),
-				),
-				true
-			);
-
-			return is_wp_error( $saved ) ? $saved : true;
-		};
+		$this->writer    = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->validator = $validator;
 	}
 
 	/**
@@ -160,51 +102,34 @@ final class Divi5ModuleEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function edit_locked( \WP_Post $post, array $input ) {
-		if ( ! ( $this->divi5_active )() ) {
-			return new \WP_Error(
-				'nexo_mcp_divi5_required',
-				__( 'Divi 5 no está activo en este sitio. Instala y activa el tema Divi 5 para editar módulos.', 'nexo-mcp' )
-			);
+		$target = $this->writer->target( $post, $input );
+
+		if ( is_wp_error( $target ) ) {
+			return $target;
 		}
 
-		if ( ! $this->adapter->handles( $post ) ) {
-			return new \WP_Error(
-				'nexo_mcp_divi_not_divi5',
-				__( 'Esta página no está hecha con Divi 5 (no tiene bloques «divi/»).', 'nexo-mcp' )
-			);
-		}
-
-		$staged   = WorkingCopy::should_stage( $post, $input, $this->settings );
-		$existing = $staged ? WorkingCopy::copy_of( $post ) : 0;
-		$source   = $existing > 0 ? get_post( $existing ) : $post;
-
-		if ( ! $source instanceof \WP_Post ) {
-			return new \WP_Error( 'nexo_mcp_draft_missing', __( 'No se pudo leer la copia de trabajo.', 'nexo-mcp' ) );
-		}
-
-		if ( (bool) $this->settings->get( 'drafts_only' ) && 'draft' !== $post->post_status && ! $staged ) {
-			return new \WP_Error(
-				'nexo_mcp_draft_required',
-				__( 'El modo sólo borradores impide editar contenido publicado.', 'nexo-mcp' )
-			);
-		}
-
-		foreach ( array_unique( array( $post->ID, $source->ID ) ) as $locked_id ) {
-			$locked_post = get_post( $locked_id );
-			$locked      = $locked_post instanceof \WP_Post ? ( $this->lock_check )( $locked_post ) : true;
-
-			if ( is_wp_error( $locked ) ) {
-				return $locked;
-			}
-		}
-
-		$prepared = $this->prepare( $source, $input );
+		$prepared = $this->prepare( $target['source'], $input );
 
 		if ( is_wp_error( $prepared ) ) {
 			return $prepared;
 		}
 
-		return $this->write( $post, $staged, $existing, $prepared );
+		$written = $this->writer->write( $post, $target, $prepared['content'] );
+
+		if ( is_wp_error( $written ) ) {
+			return $written;
+		}
+
+		$fresh = get_post( $written->ID );
+		$node  = Divi5Tree::locate( Divi5Tree::build( $fresh instanceof \WP_Post ? (string) $fresh->post_content : $prepared['content'] ), $prepared['path'] );
+
+		return array_merge(
+			Divi5ContentWriter::describe( $written ),
+			array(
+				'path'        => $prepared['path'],
+				'fingerprint' => null === $node ? '' : (string) $node['fingerprint'],
+			)
+		);
 	}
 
 	/**
@@ -305,120 +230,5 @@ final class Divi5ModuleEditor {
 		}
 
 		return $base;
-	}
-
-	/**
-	 * Crea o reutiliza la copia si corresponde, respalda y guarda.
-	 *
-	 * @param \WP_Post                             $post     Contenido indicado.
-	 * @param bool                                 $staged   Si el cambio va a la copia de trabajo.
-	 * @param int                                  $existing Copia que ya existía, o 0.
-	 * @param array{content: string, path: string} $prepared Contenido nuevo y ruta.
-	 *
-	 * @return array<string, mixed>|\WP_Error
-	 */
-	private function write( \WP_Post $post, bool $staged, int $existing, array $prepared ) {
-		// Antes de la primera escritura el bloqueo pudo vencer y otro proceso tomarlo.
-		$held = WorkingCopy::ensure_lock( (int) $post->ID );
-
-		if ( is_wp_error( $held ) ) {
-			return $held;
-		}
-
-		$target  = $post;
-		$created = false;
-
-		if ( $staged ) {
-			$target = $this->copies->obtain( $post );
-
-			if ( is_wp_error( $target ) ) {
-				return $target;
-			}
-
-			$created = 0 === $existing;
-		}
-
-		// Sin respaldo no se escribe.
-		if ( ! $this->backup->capture( $target, $this->adapter ) ) {
-			return $this->abort(
-				$target,
-				$created,
-				new \WP_Error(
-					'nexo_mcp_builder_backup_failed',
-					__( 'No fue posible respaldar el contenido; el cambio se canceló.', 'nexo-mcp' )
-				)
-			);
-		}
-
-		$saved = $this->save( $target, $prepared['content'] );
-
-		if ( is_wp_error( $saved ) ) {
-			return $this->abort( $target, $created, $saved );
-		}
-
-		update_post_meta( $target->ID, '_et_pb_use_builder', 'on' );
-		update_post_meta( $target->ID, '_et_pb_use_divi_5', 'on' );
-
-		$this->adapter->flush( $target );
-
-		$fresh = get_post( $target->ID );
-		$node  = Divi5Tree::locate( Divi5Tree::build( $fresh instanceof \WP_Post ? (string) $fresh->post_content : $prepared['content'] ), $prepared['path'] );
-
-		$out      = array( 'id' => (int) $target->ID );
-		$original = WorkingCopy::original_of( $target );
-
-		if ( $original > 0 ) {
-			$out['draft_of'] = $original;
-		}
-
-		$out['preview_url'] = (string) get_preview_post_link( $target );
-		$out['path']        = $prepared['path'];
-		$out['fingerprint'] = null === $node ? '' : (string) $node['fingerprint'];
-
-		return $out;
-	}
-
-	/**
-	 * Guarda `post_content` con los filtros kses quitados sólo durante la escritura.
-	 *
-	 * El contenido ya pasó el validador. Los filtros se restauran en un `finally`, también si
-	 * el guardado falla o lanza, y sólo si estaban activos.
-	 *
-	 * @param \WP_Post $target  Destino.
-	 * @param string   $content Contenido serializado.
-	 *
-	 * @return true|\WP_Error
-	 */
-	private function save( \WP_Post $target, string $content ) {
-		$active = false !== has_filter( 'content_save_pre', 'wp_filter_post_kses' );
-
-		kses_remove_filters();
-
-		try {
-			return ( $this->saver )( (int) $target->ID, $content );
-		} finally {
-			if ( $active ) {
-				kses_init_filters();
-			}
-		}
-	}
-
-	/**
-	 * Devuelve el error y manda a la papelera la copia que esta llamada acaba de crear.
-	 *
-	 * @param \WP_Post  $target  Destino.
-	 * @param bool      $created Si la copia la creó esta llamada.
-	 * @param \WP_Error $error   Error a devolver.
-	 */
-	private function abort( \WP_Post $target, bool $created, \WP_Error $error ): \WP_Error {
-		if ( $created ) {
-			$discarded = $this->copies->discard( $target );
-
-			if ( is_wp_error( $discarded ) ) {
-				return WorkingCopy::orphan_error( $target, $error );
-			}
-		}
-
-		return $error;
 	}
 }

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace NexoDev\NexoMCP\Tests;
 
 use NexoDev\NexoMCP\Builders\BuilderBackup;
+use NexoDev\NexoMCP\Builders\BuilderGateway;
 use NexoDev\NexoMCP\Builders\Divi5Adapter;
 use NexoDev\NexoMCP\Builders\Divi5ModuleEditor;
 use NexoDev\NexoMCP\Builders\Divi5Tree;
@@ -355,6 +356,45 @@ final class Divi5ModuleEditorTest extends NexoTestCase {
 		$this->assertSame( array( false ), \WP_Test_State::$kses_during_save );
 		$this->assertSame( self::page(), $this->content( self::ORIGINAL ) );
 		$this->assertArrayNotHasKey( '_et_pb_use_divi_5', \WP_Test_State::$meta[ self::ORIGINAL ] ?? array() );
+		$this->assertSame( 0, WorkingCopy::copy_of( get_post( self::ORIGINAL ) ), 'la copia recién creada se descartó' ); // @phpstan-ignore-line
+		$this->assertSame( array( self::ORIGINAL ), array_keys( array_filter( \WP_Test_State::$posts, static fn( $p ): bool => 'trash' !== $p->post_status ) ), 'no queda otra página viva' );
+	}
+
+	public function test_a_lock_lost_before_the_first_write_aborts_without_writing_or_creating_a_copy(): void {
+		$this->lose_lock_after_acquiring( self::ORIGINAL );
+		$before = $this->snapshot();
+
+		$this->assertRejected( 'nexo_mcp_busy', $this->run_edit(), $before );
+		$this->assertSame( 0, WorkingCopy::copy_of( get_post( self::ORIGINAL ) ) ); // @phpstan-ignore-line
+		$this->assertSame( array(), \WP_Test_State::$kses_during_save );
+	}
+
+	public function test_a_failed_backup_aborts_without_writing_and_discards_the_fresh_copy(): void {
+		\WP_Test_State::$json_fail_in = 'capture';
+
+		$result = $this->run_edit();
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_backup_failed', $result->get_error_code() );
+		$this->assertSame( 0, WorkingCopy::copy_of( get_post( self::ORIGINAL ) ) ); // @phpstan-ignore-line
+		$this->assertSame( array(), \WP_Test_State::$kses_during_save, 'no se escribió' );
+		$this->assertSame( self::page(), $this->content( self::ORIGINAL ) );
+		$this->assertArrayNotHasKey( '_et_pb_use_divi_5', \WP_Test_State::$meta[ self::ORIGINAL ] ?? array() );
+	}
+
+	public function test_restore_builder_backup_round_trips_a_divi5_edit(): void {
+		$result  = $this->run_edit();
+		$this->assertIsArray( $result );
+		$copy    = (int) $result['id'];
+		$gateway = new BuilderGateway( null, null, $this->cfg );
+		$this->assertNotSame( self::page(), $this->content( $copy ) );
+
+		$restored = $gateway->restore_backup( array( 'id' => $copy ) );
+
+		$this->assertIsArray( $restored, $restored instanceof \WP_Error ? $restored->get_error_message() : '' );
+		$this->assertTrue( $restored['restored'] );
+		$this->assertSame( self::page(), $this->content( $copy ), 'vuelve al contenido previo a la edición' );
+		$this->assertArrayNotHasKey( '_et_pb_use_divi_5', \WP_Test_State::$meta[ $copy ] ?? array(), 'la meta previa (ausente) se restaura' );
 	}
 
 	public function test_kses_filters_are_restored_when_the_save_throws(): void {

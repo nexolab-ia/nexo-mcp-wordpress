@@ -84,6 +84,15 @@ final class WP_Test_State {
 	/** Si es true, `wp_update_post()` devuelve un WP_Error (el guardado falla). */
 	public static bool $fail_update_post = false;
 
+	/** Hace que `wp_insert_post()` devuelva un error. */
+	public static bool $fail_insert_post = false;
+
+	/** Hace que `wp_insert_post()` guarde un `post_content` distinto del pedido (un filtro que lo reescribe). */
+	public static bool $mangle_insert = false;
+
+	/** @var list<bool> Estado de los filtros kses en cada llamada a `wp_insert_post()`. */
+	public static array $kses_during_insert = array();
+
 	/** Si es true, `wp_trash_post()` falla (devuelve false). */
 	public static bool $fail_trash = false;
 
@@ -106,6 +115,9 @@ final class WP_Test_State {
 		self::$on_forget        = null;
 		self::$kses_active      = false;
 		self::$kses_during_save = array();
+		self::$fail_insert_post = false;
+		self::$mangle_insert    = false;
+		self::$kses_during_insert = array();
 		self::$cleaned          = array();
 		self::$fail_trash       = false;
 		self::$post_cache  = array();
@@ -444,7 +456,7 @@ if ( ! function_exists( 'serialize_block' ) ) {
 			$json = str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), (string) $json );
 			$attr = $json . ' ';
 		}
-		return '' === $html ? "<!-- wp:{$name} {$attr}/-->" : "<!-- wp:{$name} {$attr}-->\n{$html}\n<!-- /wp:{$name} -->";
+		return '' === $html ? "<!-- wp:{$name} {$attr}/-->" : "<!-- wp:{$name} {$attr}-->{$html}<!-- /wp:{$name} -->";
 	}
 }
 
@@ -647,6 +659,13 @@ if ( ! function_exists( 'clean_post_cache' ) ) {
 }
 
 function wp_insert_post( $data, $wp_error = false ) {
+	WP_Test_State::$kses_during_insert[] = WP_Test_State::$kses_active;
+	if ( WP_Test_State::$fail_insert_post ) {
+		return new WP_Error( 'db_insert_error', 'No se pudo insertar.' );
+	}
+	if ( WP_Test_State::$mangle_insert && isset( $data['post_content'] ) ) {
+		$data['post_content'] = str_replace( '<!-- ', '<!--', (string) $data['post_content'] );
+	}
 	$id = max( array_merge( array( 0 ), array_keys( WP_Test_State::$posts ) ) ) + 1;
 	WP_Test_State::$posts[ $id ] = new WP_Post( array_merge( array( 'post_type' => 'post', 'post_status' => 'draft' ), $data, array( 'ID' => $id ) ) );
 	return $id;

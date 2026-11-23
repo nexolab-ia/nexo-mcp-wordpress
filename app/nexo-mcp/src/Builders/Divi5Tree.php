@@ -127,6 +127,76 @@ final class Divi5Tree {
 	}
 
 	/**
+	 * Sustituye `$remove` hijos de un nivel por bloques nuevos, sin tocar el resto.
+	 *
+	 * `$parent_path` vacío es el nivel superior del documento; `$index` cuenta como la ruta
+	 * (sin los freeform en blanco). Del resto del documento sólo cambia la lista de hijos del
+	 * padre: los hijos que quedan conservan sus bytes, y el espacio entre ellos se rehace en
+	 * `innerContent` (en el nivel superior, como bloques freeform en blanco). Devuelve null si
+	 * el padre o el rango no existen.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks      Bloques sin filtrar.
+	 * @param string                           $parent_path Ruta del padre, o '' para la raíz.
+	 * @param int                              $index       Primer hijo que se quita o posición de inserción.
+	 * @param int                              $remove      Cuántos hijos se quitan.
+	 * @param array<int, array<string, mixed>> $added         Bloques nuevos.
+	 *
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	public static function splice( array $blocks, string $parent_path, int $index, int $remove, array $added ): ?array {
+		if ( '' === $parent_path ) {
+			return self::splice_top( $blocks, $index, $remove, $added );
+		}
+
+		$indices = self::indices( $parent_path );
+
+		return null === $indices ? null : self::splice_in( $blocks, $indices, $index, $remove, $added );
+	}
+
+	/**
+	 * Cuenta los bloques que ocupan un índice, con todos sus descendientes.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks Bloques sin filtrar.
+	 */
+	public static function count_blocks( array $blocks ): int {
+		$total = 0;
+
+		foreach ( $blocks as $block ) {
+			if ( ! self::counts( $block ) ) {
+				continue;
+			}
+
+			++$total;
+			$total += self::count_blocks( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array() );
+		}
+
+		return $total;
+	}
+
+	/**
+	 * Lista plana `{path, type, fingerprint}` de un nodo y sus descendientes.
+	 *
+	 * @param array<string, mixed> $node Nodo de {@see self::build()}.
+	 *
+	 * @return array<int, array{path: string, type: string, fingerprint: string}>
+	 */
+	public static function summarize( array $node ): array {
+		$out = array(
+			array(
+				'path'        => (string) $node['path'],
+				'type'        => (string) $node['type'],
+				'fingerprint' => (string) $node['fingerprint'],
+			),
+		);
+
+		foreach ( isset( $node['children'] ) && is_array( $node['children'] ) ? $node['children'] : array() as $child ) {
+			$out = array_merge( $out, self::summarize( $child ) );
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Huella de un bloque: sha256 de su serialización con `serialize_block()`.
 	 *
 	 * @param array<string, mixed> $block Bloque de `parse_blocks()`.
@@ -146,6 +216,192 @@ final class Divi5Tree {
 		$node = self::locate( $tree, $path );
 
 		return null !== $node && '' !== $fingerprint && hash_equals( (string) $node['fingerprint'], $fingerprint );
+	}
+
+	/**
+	 * Baja por los índices hasta el padre y cambia sus hijos.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks  Bloques del nivel.
+	 * @param array<int, int>                  $indices Índices que faltan hasta el padre.
+	 * @param int                              $index   Primer hijo.
+	 * @param int                              $remove  Hijos que se quitan.
+	 * @param array<int, array<string, mixed>> $added     Bloques nuevos.
+	 *
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	private static function splice_in( array $blocks, array $indices, int $index, int $remove, array $added ): ?array {
+		$wanted = array_shift( $indices );
+		$seen   = 0;
+
+		foreach ( $blocks as $key => $candidate ) {
+			if ( ! self::counts( $candidate ) ) {
+				continue;
+			}
+
+			if ( $seen++ !== $wanted ) {
+				continue;
+			}
+
+			if ( array() === $indices ) {
+				$changed = self::splice_children( $candidate, $index, $remove, $added );
+
+				if ( null === $changed ) {
+					return null;
+				}
+
+				$blocks[ $key ] = $changed;
+
+				return $blocks;
+			}
+
+			$inner = isset( $candidate['innerBlocks'] ) && is_array( $candidate['innerBlocks'] ) ? $candidate['innerBlocks'] : array();
+			$next  = self::splice_in( $inner, $indices, $index, $remove, $added );
+
+			if ( null === $next ) {
+				return null;
+			}
+
+			$blocks[ $key ]['innerBlocks'] = $next;
+
+			return $blocks;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Cambia los hijos de un bloque y rehace su `innerContent`.
+	 *
+	 * @param array<string, mixed>             $block  Padre.
+	 * @param int                              $index  Primer hijo.
+	 * @param int                              $remove Hijos que se quitan.
+	 * @param array<int, array<string, mixed>> $added    Bloques nuevos.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private static function splice_children( array $block, int $index, int $remove, array $added ): ?array {
+		$inner = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? array_values( $block['innerBlocks'] ) : array();
+		$gaps  = array( '' );
+
+		foreach ( isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : array() as $chunk ) {
+			if ( is_string( $chunk ) ) {
+				$gaps[ count( $gaps ) - 1 ] .= $chunk;
+			} else {
+				$gaps[] = '';
+			}
+		}
+
+		$done = self::splice_gaps( $inner, $gaps, $index, $remove, $added, "\n" );
+
+		if ( null === $done ) {
+			return null;
+		}
+
+		list( $inner, $gaps ) = $done;
+
+		if ( array() !== $inner && '' === $gaps[ count( $gaps ) - 1 ] ) {
+			$gaps[ count( $gaps ) - 1 ] = "\n";
+		}
+
+		$content = array();
+
+		foreach ( $gaps as $position => $gap ) {
+			if ( '' !== $gap ) {
+				$content[] = $gap;
+			}
+
+			if ( $position < count( $inner ) ) {
+				$content[] = null;
+			}
+		}
+
+		if ( array() === $inner && '' === trim( implode( '', $gaps ) ) ) {
+			$content = array();
+		}
+
+		$block['innerBlocks']  = $inner;
+		$block['innerContent'] = $content;
+		$block['innerHTML']    = implode( '', array_filter( $content, 'is_string' ) );
+
+		return $block;
+	}
+
+	/**
+	 * Cambia los bloques del nivel superior; los freeform en blanco son el espacio entre ellos.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks Bloques del documento.
+	 * @param int                              $index  Primer hijo.
+	 * @param int                              $remove Hijos que se quitan.
+	 * @param array<int, array<string, mixed>> $added    Bloques nuevos.
+	 *
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	private static function splice_top( array $blocks, int $index, int $remove, array $added ): ?array {
+		$items = array();
+		$gaps  = array( '' );
+
+		foreach ( $blocks as $block ) {
+			if ( self::counts( $block ) ) {
+				$items[] = $block;
+				$gaps[]  = '';
+				continue;
+			}
+
+			$gaps[ count( $gaps ) - 1 ] .= (string) ( $block['innerHTML'] ?? '' );
+		}
+
+		$done = self::splice_gaps( $items, $gaps, $index, $remove, $added, "\n\n" );
+
+		if ( null === $done ) {
+			return null;
+		}
+
+		list( $items, $gaps ) = $done;
+
+		$out = array();
+
+		foreach ( $gaps as $position => $gap ) {
+			if ( '' !== $gap ) {
+				$out[] = array(
+					'blockName'    => null,
+					'attrs'        => array(),
+					'innerBlocks'  => array(),
+					'innerHTML'    => $gap,
+					'innerContent' => array( $gap ),
+				);
+			}
+
+			if ( $position < count( $items ) ) {
+				$out[] = $items[ $position ];
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Cambia hijos y espacios a la vez: quita el espacio previo de cada hijo quitado y
+	 * pone un separador antes de cada hijo nuevo.
+	 *
+	 * @param array<int, array<string, mixed>> $items  Hijos actuales.
+	 * @param array<int, string>               $gaps   Espacios (uno más que los hijos).
+	 * @param int                              $index  Primer hijo.
+	 * @param int                              $remove Hijos que se quitan.
+	 * @param array<int, array<string, mixed>> $added    Bloques nuevos.
+	 * @param string                           $sep    Separador de lo nuevo.
+	 *
+	 * @return array{0: array<int, array<string, mixed>>, 1: array<int, string>}|null
+	 */
+	private static function splice_gaps( array $items, array $gaps, int $index, int $remove, array $added, string $sep ): ?array {
+		if ( $index < 0 || $remove < 0 || $index + $remove > count( $items ) || count( $gaps ) !== count( $items ) + 1 ) {
+			return null;
+		}
+
+		array_splice( $items, $index, $remove, array_values( $added ) );
+		array_splice( $gaps, $index, $remove );
+		array_splice( $gaps, $index, 0, array_fill( 0, count( $added ), $sep ) );
+
+		return array( $items, $gaps );
 	}
 
 	/**
