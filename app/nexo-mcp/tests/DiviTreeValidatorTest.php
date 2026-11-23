@@ -408,6 +408,41 @@ namespace NexoDev\NexoMCP\Tests {
 			$this->assertSame( $patch['design'], $out['design'] ); // @phpstan-ignore-line
 		}
 
+		/**
+		 * Shortcodes que sólo aparecen después del saneado o que WordPress reconoce con puntuación detrás.
+		 *
+		 * @return array<string, array{0: string, 1: string}>
+		 */
+		public static function hidden_shortcodes(): array {
+			return array(
+				'título partido por etiqueta vacía'   => array( 'title', '[gall<b></b>ery]' ),
+				'título partido por script'          => array( 'title', '[gal<script>x</script>lery]' ),
+				'título con punto detrás'            => array( 'title', '[gallery.]' ),
+				'título con comillas detrás'         => array( 'title', '[gallery"x"]' ),
+				'título con coma detrás'             => array( 'title', '[caption,]' ),
+				'texto partido por etiqueta quitada' => array( 'content', '<p>[gall<img src="x">ery]</p>' ),
+				'texto partido por div'              => array( 'content', '<p>[gal<div></div>lery]</p>' ),
+				'texto con punto y coma detrás'      => array( 'content', '<p>[gallery;]</p>' ),
+			);
+		}
+
+		/**
+		 * @dataProvider hidden_shortcodes
+		 */
+		public function test_a_shortcode_hidden_by_markup_or_punctuation_is_rejected( string $slot, string $value ): void {
+			$patch = 'title' === $slot
+				? array( 'divi/heading', array( 'content' => array( 'title' => array( 'innerContent' => self::value( $value ) ) ) ), 'content.title.innerContent.desktop.value' )
+				: array( 'divi/text', array( 'content' => array( 'content' => array( 'innerContent' => self::value( $value ) ) ) ), 'content.content.innerContent.desktop.value' );
+
+			$this->assertError( 'nexo_mcp_divi_shortcode_denied', $patch[2], $this->validator()->validate_patch( $patch[0], $patch[1] ) );
+		}
+
+		public function test_brackets_that_are_not_a_registered_shortcode_still_pass(): void {
+			$out = $this->validator()->validate_patch( 'divi/heading', array( 'content' => array( 'title' => array( 'innerContent' => self::value( '[galleryx] [gallery-x] [nota]' ) ) ) ) );
+
+			$this->assertSame( '[galleryx] [gallery-x] [nota]', $out['content']['title']['innerContent']['desktop']['value'] ); // @phpstan-ignore-line
+		}
+
 		public function test_patch_with_only_one_slot_returns_only_that_slot(): void {
 			$out = $this->validator()->validate_patch( 'divi/heading', array( 'content' => array( 'title' => array( 'innerContent' => self::value( 'Nuevo' ) ) ) ) );
 

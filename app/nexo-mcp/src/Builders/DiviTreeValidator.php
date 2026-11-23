@@ -610,13 +610,15 @@ final class DiviTreeValidator {
 	 * @return string|\WP_Error
 	 */
 	private function check_plain( string $value, string $path ) {
-		$shortcode = $this->registered_shortcode( $value );
+		// Se revisa también el resultado: quitar etiquetas puede armar un shortcode (`[gall<b></b>ery]`).
+		$clean     = wp_strip_all_tags( $this->without_active_blocks( $value ) );
+		$shortcode = $this->registered_shortcode( $value ) ?? $this->registered_shortcode( $clean );
 
 		if ( null !== $shortcode ) {
 			return $this->shortcode_error( $path, $shortcode );
 		}
 
-		return wp_strip_all_tags( $this->without_active_blocks( $value ) );
+		return $clean;
 	}
 
 	/**
@@ -644,7 +646,15 @@ final class DiviTreeValidator {
 			}
 		}
 
-		return wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES );
+		// Lo que se guarda es la salida de wp_kses: también se revisa, porque quitar etiquetas puede armar un shortcode.
+		$clean     = wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES );
+		$shortcode = $this->registered_shortcode( $clean );
+
+		if ( null !== $shortcode ) {
+			return $this->shortcode_error( $path, $shortcode );
+		}
+
+		return $clean;
 	}
 
 	/**
@@ -659,16 +669,45 @@ final class DiviTreeValidator {
 	/**
 	 * Primer shortcode registrado que aparece en el texto (también con corchetes escritos como entidad), o null.
 	 *
+	 * Sigue la gramática de WordPress (`get_shortcode_regex`): el nombre registrado va justo después
+	 * de `[` o `[/` y termina donde sigue un carácter que no es letra, dígito, `_` ni `-`; así
+	 * `[gallery.]` o `[caption,]` cuentan como `gallery` y `caption`.
+	 *
 	 * @param string $value Texto.
 	 */
 	private function registered_shortcode( string $value ): ?string {
 		foreach ( array( $value, html_entity_decode( $value, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) as $text ) {
 			if ( preg_match_all( '/\[\/?([^\s\[\]<>&\/=\x00-\x20]+)/', $text, $matches ) > 0 ) {
-				foreach ( $matches[1] as $name ) {
-					if ( (bool) ( $this->shortcode_exists )( $name ) ) {
+				foreach ( $matches[1] as $run ) {
+					$name = $this->shortcode_prefix( $run );
+
+					if ( null !== $name ) {
 						return $name;
 					}
 				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Prefijo de `$run` que es un shortcode registrado y que WordPress cortaría ahí, o null.
+	 *
+	 * @param string $run Caracteres seguidos tras `[`.
+	 */
+	private function shortcode_prefix( string $run ): ?string {
+		$length = strlen( $run );
+
+		for ( $end = 1; $end <= $length; $end++ ) {
+			if ( $end < $length && 1 === preg_match( '/[\w-]/', $run[ $end ] ) ) {
+				continue;
+			}
+
+			$name = substr( $run, 0, $end );
+
+			if ( (bool) ( $this->shortcode_exists )( $name ) ) {
+				return $name;
 			}
 		}
 
