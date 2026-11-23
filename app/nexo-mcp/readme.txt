@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.4.3
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,6 +18,7 @@ Nexo MCP expone un servidor MCP en `/wp-json/nexo-mcp/v1/mcp` construido sobre l
 * Permisos acumulativos: capacidad de WordPress + módulo encendido + modo sólo lectura + alcances de cada conexión. Cada rechazo explica su causa.
 * Herramientas de lectura, escritura, constructores visuales (Gutenberg, Elementor, Flatsome, Divi, WPBakery y shortcodes, con respaldo antes de editar), SEO (Yoast, Rank Math, AIOSEO, SEOPress o nativo), campos ACF, medios, menús, apariencia, mantenimiento de plugins en dos pasos y WooCommerce opcional.
 * Las ediciones a contenido publicado van primero a una copia de trabajo.
+* Datos dinámicos de Elementor (requiere Elementor Pro): `list-dynamic-tags` y `set-dynamic-tag` asignan, de una lista cerrada de tags sin datos sensibles, un dato dinámico (título del sitio, título de la entrada, imagen destacada…) a un título, párrafo, botón o imagen atómico, siempre en la copia de trabajo. Permiso propio, apagado por defecto: un tag se evalúa para todo visitante.
 * Acciones irreversibles con confirmación explícita.
 * Límites de tasa y de subidas, auditoría con redacción de datos sensibles, sanitización de contenido y política HTTPS.
 * Purga de caché de los proveedores conocidos.
@@ -63,6 +64,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.5.0 =
+* Nuevo: datos dinámicos de Elementor (requiere **Elementor Pro** y Elementor 4 con el Editor V4 activo). Dos herramientas: `list-dynamic-tags` (los tags permitidos que el sitio tiene registrados, con `name`, `group`, `label`, `categories`, `settings` y destinos) y `set-dynamic-tag` (asigna un tag a una prop de un elemento atómico en la copia de trabajo de la página, con el mismo camino que `edit-elementor-section`: el original publicado no cambia, respalda antes de guardar y nunca publica). Destinos: `e-heading.title`, `e-paragraph.paragraph` y `e-button.text` (tags de texto) y `e-image.image` (tags de imagen); el tag debe ser de la categoría de la prop. Los enlaces (`link`) quedan fuera.
+* Seguridad: lista cerrada y no configurable de 19 tags sin datos sensibles (título, lema, logo y URL del sitio; título, extracto, fecha, hora, id, URL, imagen destacada y términos de la entrada; título y URL de archivo; nombre del autor; fecha actual; número y URL de comentarios). `shortcode`, `request-arg`, `user-info`, campos personalizados, ACF, WooCommerce y el resto se rechazan. Los ajustes de cada tag tienen claves y valores acotados y se guardan como texto plano (sin HTML). Un tag se evalúa para todo visitante de la página, sin chequeo de permisos: por eso tiene su propio permiso.
+* Nuevo: interruptor «Datos dinámicos de Elementor» (`builders_dynamic_enabled`, **apagado por defecto**, marcado como sensible), capacidad `nexo_mcp_builders_dynamic` (administrador, también al actualizar) y scope OAuth `mcp:builders:dynamic`. `set-dynamic-tag` exige además el permiso de constructores y `edit_post` sobre el original; `list-dynamic-tags` sólo el de lectura de constructores (sin Pro devuelve una lista vacía).
+* Cambio: `edit-elementor-section` acepta una prop dinámica que la página ya tiene: dentro de un nodo reemplazado, el cliente reenvía el nodo con su `id` original y la prop idéntica para conservarla (el nodo recibe un id nuevo); una prop dinámica nueva o cambiada se rechaza con `nexo_mcp_elementor_prop_type_denied` (se asigna con `set-dynamic-tag`). Lo no tocado se conserva solo. `create-elementor-page` y `migrate-elementor-page` no cambian.
 
 = 1.4.3 =
 * Corrección: el límite de solicitudes del transporte (240 por minuto por usuario e IP) contaba cada pedido MCP 4 veces, porque WordPress evalúa el permiso de la ruta una vez al despachar y otra por cada método al armar la cabecera `Allow`; el límite real quedaba en unos 60 pedidos por minuto y cada denegación se auditaba 4 veces. Ahora cada pedido consume una sola unidad. Además, al pasar el límite el endpoint responde `429` con el código `nexo_mcp_rate_limit_exceeded`, `data.retry_after` y la cabecera `Retry-After` con los segundos de espera, en vez de un `403 rest_forbidden` sin indicación. El resto de las denegaciones del transporte no cambia.
