@@ -228,6 +228,38 @@ Reglas que siempre se cumplen:
   cambian (la primera sigue rechazando `dynamic`). Se probó con Elementor Pro
   4.4.1: el render resuelve el tag sin pasar por los analizadores del editor
   (`tools/prueba_adaptadores.sh`, sección F6, sólo con Pro; sin Pro se saltea).
+- **Componentes de Elementor 4 (permiso propio, requiere Elementor Pro con
+  licencia activa)**: los componentes son posts `elementor_component` que se
+  insertan en las páginas como un widget `e-component` que apunta a ellos
+  (editar el componente lo cambia en todas las páginas). `list-components` lista
+  los no archivados (`id`, `uid`, `title`, `status`, `modified`; con
+  `include_archived` también los archivados, marcados) sin el árbol.
+  `create-component` (`title` 2-200 caracteres y `elements`) valida el árbol con
+  la misma lista cerrada de `create-elementor-page` (sin `e-component` ni
+  `dynamic`), lo sanea con los parsers de Elementor y corre sus validadores
+  (límite de 100 componentes, título y uid duplicados, sólo elementos atómicos,
+  sin ciclos); lo crea en **borrador** con un uid propio (`nexo-` y 12
+  caracteres) y devuelve `id`, `uid`, `title` y `status`; publicarlo se hace en
+  el editor. `insert-component` (`id`, `draft`, `node_id`, `position`,
+  `component_id`) inserta la instancia por el camino de `edit-elementor-section`:
+  copia de trabajo, bloqueo y respaldo; el original publicado no cambia hasta
+  que se publica la copia. Un `component_id` que no existe, está archivado o en
+  la papelera responde `nexo_mcp_component_not_found` (Elementor lo renderizaría
+  vacío sin avisar). **Sin overrides**: la instancia usa el componente tal cual;
+  tampoco se editan, publican, archivan ni borran componentes por MCP, ni se
+  insertan instancias dentro de componentes. Sin Pro con licencia (o sin el
+  Editor V4) crear e insertar responden `nexo_mcp_components_unavailable` sin
+  escribir; listar funciona con el módulo cargado. Crear un componente cambia el
+  sitio, no sólo una página: tiene su interruptor en el panel («Componentes de
+  Elementor», `builders_components_enabled`, **apagado por defecto**, marcado
+  como sensible), la capacidad `nexo_mcp_builders_components` y el scope OAuth
+  `mcp:builders:components`; crear e insertar exigen además el permiso de
+  constructores (insertar, también `edit_post` sobre la página). `create-elementor-page`,
+  `edit-elementor-section` y `migrate-elementor-page` siguen rechazando
+  `e-component`. Los mensajes de los validadores de Elementor se devuelven como
+  texto, sin entidades HTML. Se probó con Elementor Pro 4.4.1
+  (`tools/prueba_adaptadores.sh`, sección F7, sólo con Pro con licencia; sin eso
+  se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -419,7 +451,10 @@ que editar una página publicada crea una copia de trabajo y que
 Yoast, ACF y Elementor reales del docker. La sección de datos dinámicos (F6)
 necesita Elementor Pro: sin él imprime `SKIP` y no falla (CI no lo tiene). Con
 Pro enciende `builders_dynamic_enabled` sólo durante la sección y lo restaura
-al final, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+al final, también si la corrida se corta. La de componentes (F7) pide además
+la licencia activa: sin ella imprime `SKIP` y no falla; con ella enciende
+`builders_components_enabled` (y la capacidad, si falta) sólo durante la sección,
+los restaura y borra los componentes que creó. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el

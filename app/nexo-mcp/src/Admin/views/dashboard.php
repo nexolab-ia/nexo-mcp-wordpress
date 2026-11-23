@@ -80,6 +80,12 @@ $sensitive_options = array(
 		'confirm-title' => __( '¿Seguro que quieres permitir datos dinámicos en las páginas?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá asociar a textos e imágenes de las páginas datos del sitio (título, fecha, imagen destacada…) que se muestran a todos los visitantes. Sólo una lista cerrada de tags sin datos sensibles; el cambio va a la copia de trabajo.', 'nexo-mcp' ),
 	),
+	'builders_components_enabled' => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'componentes', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres permitir crear componentes de Elementor?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá crear componentes reutilizables de Elementor 4 (siempre en borrador). Un componente es parte del sitio, no de una sola página: al publicarlo y usarlo en varias páginas, un cambio se ve en todas.', 'nexo-mcp' ),
+	),
 	'extension_deletion_enabled'  => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
@@ -928,6 +934,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'builders_dynamic_enabled' ); ?>
 							<?php checked( ! empty( $settings['builders_dynamic_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Componentes de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Crea componentes reutilizables de Elementor 4 (en borrador). Requiere Elementor Pro con licencia activa y el módulo de constructores.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[builders_components_enabled]"
+							value="1"
+							<?php $print_sensitive( 'builders_components_enabled' ); ?>
+							<?php checked( ! empty( $settings['builders_components_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

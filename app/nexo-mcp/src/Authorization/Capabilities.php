@@ -53,6 +53,15 @@ final class Capabilities {
 	 */
 	public const BUILDERS_DYNAMIC = 'nexo_mcp_builders_dynamic';
 
+	/**
+	 * Crear componentes de Elementor 4 (reutilizables en todo el sitio).
+	 *
+	 * Va separada de BUILDERS a propósito: crear un componente cambia el sitio,
+	 * no sólo una página. Además la enciende aparte el interruptor
+	 * `builders_components_enabled`.
+	 */
+	public const BUILDERS_COMPONENTS = 'nexo_mcp_builders_components';
+
 	public const PUBLISH = 'nexo_mcp_publish';
 
 	public const DESTRUCTIVE = 'nexo_mcp_destructive';

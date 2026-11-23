@@ -30,6 +30,12 @@
 #    resuelve el texto); ajustes con HTML se guardan sin etiquetas; tags fuera del catálogo y categorías que no
 #    coinciden se rechazan; edit-elementor-section conserva la prop dinámica; publicada, el frontend la resuelve.
 #    El interruptor y la capacidad se devuelven al final (también si la corrida se corta).
+# 7d. Componentes (F7, sólo con Elementor Pro con licencia activa; sin eso se saltea con un SKIP y no falla):
+#    create-component (árbol atómico → borrador con uid propio), list-components y insert-component en una página
+#    publicada (va a la copia, con la instancia e-component exacta; el original no cambia hasta publicar; publicada, el
+#    frontend renderiza el componente); rechazos sin escribir: widget v3, título duplicado (mensaje sin entidades
+#    HTML), component_id inexistente y un e-component por edit-elementor-section. builders_components_enabled
+#    y la capacidad se devuelven al final y los componentes se borran (force), también si la corrida se corta.
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -336,6 +342,7 @@ variable_id=""
 kit_id=""
 diseno_foto_tomada=""
 dinamicos_cap_agregada=""
+componentes_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -418,6 +425,19 @@ cleanup() {
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_builders_dynamic" );' >/dev/null
 		echo "Capacidad nexo_mcp_builders_dynamic quitada."
 		dinamicos_cap_agregada=""
+	fi
+	# Componentes del bloque de F7 (se barren por el sufijo, también si se cortó) y la capacidad concedida.
+	if [ -n "$suffix" ]; then
+		for id in $(wpr post list --post_type=elementor_component --post_status=any --field=ID --s="elementor-mcp-$suffix"); do
+			php_wp 'wp_delete_post( (int) getenv( "NEXO_A1" ), true );' "$id" >/dev/null
+			if [ -z "$(wpr post get "$id" --field=post_status)" ]; then echo "Componente borrado: $id"
+			else echo "FALLA: el componente $id no se borró"; fallidas=$((fallidas + 1)); fi
+		done
+	fi
+	if [ -n "$componentes_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_builders_components" );' >/dev/null
+		echo "Capacidad nexo_mcp_builders_components quitada."
+		componentes_cap_agregada=""
 	fi
 	remove_design_fixtures
 	if [ -n "$class_id" ]; then
@@ -1569,6 +1589,184 @@ sys.exit(1 if fallas else 0)
 PY
 	[ $? -eq 0 ] || falla "la prueba de datos dinámicos (F6) tuvo comprobaciones fallidas"
 	tools/prueba_adaptadores.sh --ajuste builders_dynamic_enabled false
+fi
+echo
+echo "### Componentes por MCP (list-components, create-component, insert-component; F7, sólo con Elementor Pro con licencia)"
+# Los componentes exigen Pro con licencia activa (CI no lo tiene): sin eso se saltea con aviso y no falla. Con Pro se
+# enciende builders_components_enabled (y la capacidad, si falta) sólo para este bloque; nexo_mcp_settings se restaura
+# completo en la limpieza (también al cortar), que además borra (force) los componentes del sufijo.
+componentes_listos="$(php_wpr '$c = "\\Elementor\\Modules\\Components\\Components_Access_Controller"; echo post_type_exists( "elementor_component" ) && class_exists( $c ) && $c::can_create() && $c::can_add_to_page() ? "si" : "no";')"
+if [ "$componentes_listos" != si ]; then
+	echo "SKIP: Elementor Pro con licencia activa y el módulo de componentes no están disponibles; la prueba de componentes (F7) se saltea (no cuenta como falla)."
+else
+	echo "Elementor Pro ${version_pro:-?} con licencia activa y módulo de componentes presentes."
+	componentes_titulo="Prueba componentes elementor-mcp-$suffix"
+	componentes_id="$(wp post create --post_type=page --post_status=publish --post_title="$componentes_titulo" --porcelain)"
+	[ -n "$componentes_id" ] || { echo "FALLA: no se pudo crear la página de prueba de componentes"; exit 1; }
+	guardado="$(php_wp '
+$id = (int) getenv( "NEXO_A1" );
+update_post_meta( $id, "_elementor_edit_mode", "builder" );
+$texto = function ( $t ) { return array( "\$\$type" => "escaped-html", "value" => $t ); };
+$arbol = array(
+	array( "id" => "fx9500", "elType" => "e-flexbox", "styles" => array(), "settings" => array(), "elements" => array(
+		array( "id" => "eh9500", "elType" => "widget", "widgetType" => "e-heading", "styles" => array(), "elements" => array(), "settings" => array( "title" => $texto( "Base componentes" ) ) ),
+	) ),
+);
+$documento = \Elementor\Plugin::$instance->documents->get( $id );
+echo $documento && $documento->save( array( "elements" => $arbol, "settings" => array() ) ) ? "guardado" : "error";' "$componentes_id")"
+	[ "$guardado" = guardado ] || { echo "FALLA: no se pudo guardar la página de componentes ($guardado)"; exit 1; }
+	echo "Página publicada: $componentes_id"
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_builders_components" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_builders_components" );' >/dev/null
+		componentes_cap_agregada=1
+		echo "Capacidad nexo_mcp_builders_components concedida al administrador (se quita al final)."
+	fi
+	tools/prueba_adaptadores.sh --ajuste builders_components_enabled false
+
+	python3 -I - "$suffix" "$componentes_id" "$componentes_titulo" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, urllib.request
+
+suffix, pagina, titulo_pagina = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def crudo(i):
+    return script("--meta", i, "_elementor_data")
+
+def arbol(i):
+    return json.loads(crudo(i))
+
+def indice(nodos, salida=None):
+    salida = {} if salida is None else salida
+    for n in nodos:
+        salida[n["id"]] = n
+        indice(n.get("elements", []), salida)
+    return salida
+
+def encabezados(html):
+    return [re.sub(r"<[^>]+>", "", t).strip() for t in re.findall(r"<h[1-6][^>]*e-heading-base[^>]*>(.*?)</h[1-6]>", html, re.S)]
+
+def frontend(i):
+    with urllib.request.urlopen(f"http://localhost:8080/?page_id={i}") as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def prop(tipo, valor):
+    return {"$$type": tipo, "value": valor}
+
+def componentes():
+    _, d = cli.ok("list-components", {})
+    assert isinstance(d, dict) and isinstance(d.get("result"), list), d
+    return d["result"]
+
+def propio(lista, titulo):
+    return [c for c in lista if c["title"] == titulo]
+
+titulo_comp = f"Componente F7 d'prueba elementor-mcp-{suffix}"
+texto_comp = f"Texto del componente {suffix}"
+orig = crudo(pagina)
+comp = {}
+res = {}
+
+def caja(*hijos):
+    return [{"type": "e-flexbox", "elements": list(hijos)}]
+
+def encabezado(texto):
+    return {"type": "e-heading", "settings": {"title": prop("escaped-html", texto)}}
+
+def interruptor_apagado():
+    global cli
+    antes = len(componentes())
+    es_error, msg, _ = cli.call("create-component", {"title": titulo_comp, "elements": caja(encabezado(texto_comp))})
+    assert es_error, msg
+    assert len(componentes()) == antes, "se creó un componente con el interruptor apagado"
+    script("--ajuste", "builders_components_enabled", "true")
+    assert script("--ajuste-valor", "builders_components_enabled") == "true"
+    # El scope mcp:builders:components sólo se ofrece con el interruptor encendido: la conexión nueva lo trae.
+    cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+
+def crear():
+    antes = len(componentes())
+    _, d = cli.ok("create-component", {"title": titulo_comp, "elements": caja(encabezado(texto_comp))})
+    comp.update(d)
+    assert set(d) == {"id", "uid", "title", "status"}, d
+    assert d["title"] == titulo_comp and d["status"] == "draft" and re.fullmatch(r"nexo-[a-z0-9]{12}", d["uid"]), d
+    assert script("--estado", d["id"]) == "draft"
+    assert len(componentes()) == antes + 1
+
+def listar():
+    filas = propio(componentes(), titulo_comp)
+    assert len(filas) == 1, filas
+    f = filas[0]
+    assert f["id"] == comp["id"] and f["uid"] == comp["uid"] and f["status"] == "draft", f
+    assert set(f) == {"id", "uid", "title", "status", "modified"}, sorted(f)
+
+def insertar():
+    cuenta = script("--contar-paginas")
+    _, d = cli.ok("insert-component", {"id": pagina, "node_id": "fx9500", "position": "inside", "component_id": comp["id"]})
+    res.update(d)
+    assert d["draft_of"] == pagina and d["id"] != pagina and len(d["node_ids"]) == 1, d
+    assert int(script("--contar-paginas")) == int(cuenta) + 1, "debía nacer una sola copia"
+    assert crudo(pagina) == orig, "el original cambió"
+    assert script("--estado", pagina) == "publish" and script("--estado", d["id"]) == "draft"
+    nodo = indice(arbol(d["id"]))[d["node_ids"][0]]
+    assert nodo["elType"] == "widget" and nodo["widgetType"] == "e-component", nodo
+    esperado = prop("component-instance", {"component_id": prop("number", comp["id"])})
+    assert nodo["settings"] == {"component_instance": esperado}, nodo["settings"]
+
+def publicar_y_frontend():
+    assert texto_comp not in encabezados(frontend(pagina)), "el original ya mostraba el componente antes de publicar"
+    _, m = cli.ok("set-content-status", {"id": res["id"], "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (pagina, res["id"]), m
+    assert any(n.get("widgetType") == "e-component" for n in indice(arbol(pagina)).values())
+    textos = encabezados(frontend(pagina))
+    assert texto_comp in textos and "Base componentes" in textos, f"el frontend no renderiza el componente: {textos}"
+
+def sin_escribir(nombre, llamar, esperado_en_msg, ver_sin_entidad=False):
+    def fn():
+        n_comp, n_pag, datos = len(componentes()), script("--contar-paginas"), crudo(pagina)
+        es_error, msg, _ = llamar()
+        assert es_error, "debía rechazarse"
+        for e in esperado_en_msg:
+            assert e in msg, f"falta «{e}» en: {msg[:300]!r}"
+        if ver_sin_entidad:
+            assert "&#039;" not in msg and "&amp;" not in msg, f"entidades HTML sin decodificar: {msg[:300]!r}"
+        assert len(componentes()) == n_comp, "cambió la cantidad de componentes"
+        assert script("--contar-paginas") == n_pag, "cambió la cantidad de páginas (¿copia?)"
+        assert crudo(pagina) == datos, "cambió el original"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+comprobar("create-component: con el interruptor apagado se deniega y no crea nada", interruptor_apagado)
+comprobar("create-component: árbol atómico → borrador con uid propio", crear)
+comprobar("list-components: lo muestra con uid, título y borrador, sin árbol", listar)
+comprobar("insert-component: la copia lleva la instancia e-component exacta; el original no cambia", insertar)
+comprobar("publicar la copia: el frontend renderiza el componente", publicar_y_frontend)
+sin_escribir("widget v3 (heading)", lambda: cli.call("create-component", {"title": f"V3 elementor-mcp-{suffix}", "elements": caja({"type": "heading", "settings": {"title": "x"}})}), ["«heading» es un elemento de Elementor 3"])
+sin_escribir("título duplicado (mensaje sin entidades HTML)", lambda: cli.call("create-component", {"title": titulo_comp, "elements": caja(encabezado("otro"))}), ["duplicado", "d'prueba"], True)
+sin_escribir("component_id inexistente", lambda: cli.call("insert-component", {"id": pagina, "node_id": "fx9500", "position": "inside", "component_id": 99999999}), ["no existe, está archivado"])
+sin_escribir("edit-elementor-section con un e-component", lambda: cli.call("edit-elementor-section", {"id": pagina, "operation": "insert", "node_id": "fx9500", "position": "inside", "elements": caja({"type": "e-component"})}), ["e-component", "no está permitido"])
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de componentes (F7) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de componentes (F7) tuvo comprobaciones fallidas"
+	tools/prueba_adaptadores.sh --ajuste builders_components_enabled false
 fi
 echo
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"

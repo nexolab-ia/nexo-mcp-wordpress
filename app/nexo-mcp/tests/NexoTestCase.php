@@ -48,6 +48,7 @@ abstract class NexoTestCase extends TestCase {
 			Capabilities::BUILDERS,
 			Capabilities::BUILDER_ATTRS,
 			Capabilities::BUILDERS_DYNAMIC,
+			Capabilities::BUILDERS_COMPONENTS,
 			Capabilities::PUBLISH,
 			Capabilities::DESTRUCTIVE,
 			Capabilities::DESIGN_SYSTEM,

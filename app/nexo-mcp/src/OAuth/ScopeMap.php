@@ -34,23 +34,24 @@ final class ScopeMap {
 	 * @var array<string, string>
 	 */
 	private const MAP = array(
-		self::CONNECT          => Capabilities::CONNECT,
-		'mcp:read'             => Capabilities::READ,
-		'mcp:write'            => Capabilities::WRITE,
-		'mcp:content'          => Capabilities::CONTENT_ADVANCED,
-		'mcp:seo'              => Capabilities::SEO,
-		'mcp:appearance'       => Capabilities::APPEARANCE,
-		'mcp:maintenance'      => Capabilities::MAINTENANCE,
-		'mcp:commerce'         => Capabilities::COMMERCE,
-		'mcp:builders'         => Capabilities::BUILDERS,
-		'mcp:builder_attrs'    => Capabilities::BUILDER_ATTRS,
-		'mcp:builders:dynamic' => Capabilities::BUILDERS_DYNAMIC,
-		'mcp:publish'          => Capabilities::PUBLISH,
-		'mcp:destructive'      => Capabilities::DESTRUCTIVE,
-		'mcp:design_system'    => Capabilities::DESIGN_SYSTEM,
+		self::CONNECT             => Capabilities::CONNECT,
+		'mcp:read'                => Capabilities::READ,
+		'mcp:write'               => Capabilities::WRITE,
+		'mcp:content'             => Capabilities::CONTENT_ADVANCED,
+		'mcp:seo'                 => Capabilities::SEO,
+		'mcp:appearance'          => Capabilities::APPEARANCE,
+		'mcp:maintenance'         => Capabilities::MAINTENANCE,
+		'mcp:commerce'            => Capabilities::COMMERCE,
+		'mcp:builders'            => Capabilities::BUILDERS,
+		'mcp:builder_attrs'       => Capabilities::BUILDER_ATTRS,
+		'mcp:builders:dynamic'    => Capabilities::BUILDERS_DYNAMIC,
+		'mcp:builders:components' => Capabilities::BUILDERS_COMPONENTS,
+		'mcp:publish'             => Capabilities::PUBLISH,
+		'mcp:destructive'         => Capabilities::DESTRUCTIVE,
+		'mcp:design_system'       => Capabilities::DESIGN_SYSTEM,
 		// Variantes de sólo consulta: apuntan a la misma capacidad que su módulo.
-		'mcp:seo:read'         => Capabilities::SEO,
-		'mcp:maintenance:read' => Capabilities::MAINTENANCE,
+		'mcp:seo:read'            => Capabilities::SEO,
+		'mcp:maintenance:read'    => Capabilities::MAINTENANCE,
 	);
 
 	/**
@@ -94,18 +95,19 @@ final class ScopeMap {
 	 * @var array<string, string>
 	 */
 	private const MODULE_SWITCH = array(
-		'mcp:content'          => 'content_tools_enabled',
-		'mcp:seo'              => 'seo_tools_enabled',
-		'mcp:appearance'       => 'appearance_tools_enabled',
-		'mcp:maintenance'      => 'maintenance_tools_enabled',
-		'mcp:commerce'         => 'woocommerce_tools_enabled',
-		'mcp:builders'         => 'builders_tools_enabled',
-		'mcp:builder_attrs'    => 'builders_tools_enabled',
-		'mcp:publish'          => 'publishing_enabled',
-		'mcp:destructive'      => 'destructive_enabled',
-		'mcp:design_system'    => 'design_system_tools_enabled',
+		'mcp:content'             => 'content_tools_enabled',
+		'mcp:seo'                 => 'seo_tools_enabled',
+		'mcp:appearance'          => 'appearance_tools_enabled',
+		'mcp:maintenance'         => 'maintenance_tools_enabled',
+		'mcp:commerce'            => 'woocommerce_tools_enabled',
+		'mcp:builders'            => 'builders_tools_enabled',
+		'mcp:builder_attrs'       => 'builders_tools_enabled',
+		'mcp:publish'             => 'publishing_enabled',
+		'mcp:destructive'         => 'destructive_enabled',
+		'mcp:design_system'       => 'design_system_tools_enabled',
 		// Al final: el baseline de PHPStan fija las primeras entradas de esta lista.
-		'mcp:builders:dynamic' => 'builders_dynamic_enabled',
+		'mcp:builders:dynamic'    => 'builders_dynamic_enabled',
+		'mcp:builders:components' => 'builders_components_enabled',
 	);
 
 	/**
@@ -114,22 +116,23 @@ final class ScopeMap {
 	 * @var array<string, string>
 	 */
 	private const LABELS = array(
-		self::CONNECT          => 'Conectarse a este sitio',
-		'mcp:read'             => 'Leer contenido, medios y configuración pública',
-		'mcp:write'            => 'Crear y editar borradores',
-		'mcp:content'          => 'Administrar medios, taxonomías y revisiones',
-		'mcp:seo'              => 'Gestionar metadatos SEO, sitemap y robots',
-		'mcp:appearance'       => 'Modificar identidad del sitio, CSS y menús',
-		'mcp:maintenance'      => 'Instalar, actualizar, activar y desactivar plugins',
-		'mcp:commerce'         => 'Administrar productos de WooCommerce',
-		'mcp:builders'         => 'Editar textos en páginas hechas con constructores visuales',
-		'mcp:builder_attrs'    => 'Cambiar enlaces e imágenes en páginas hechas con constructores visuales',
-		'mcp:builders:dynamic' => 'Asignar datos dinámicos de Elementor (título del sitio, imagen destacada…) a textos e imágenes de las páginas',
-		'mcp:publish'          => 'Publicar contenido',
-		'mcp:destructive'      => 'Eliminar contenido de forma permanente',
-		'mcp:design_system'    => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',
-		'mcp:seo:read'         => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
-		'mcp:maintenance:read' => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
+		self::CONNECT             => 'Conectarse a este sitio',
+		'mcp:read'                => 'Leer contenido, medios y configuración pública',
+		'mcp:write'               => 'Crear y editar borradores',
+		'mcp:content'             => 'Administrar medios, taxonomías y revisiones',
+		'mcp:seo'                 => 'Gestionar metadatos SEO, sitemap y robots',
+		'mcp:appearance'          => 'Modificar identidad del sitio, CSS y menús',
+		'mcp:maintenance'         => 'Instalar, actualizar, activar y desactivar plugins',
+		'mcp:commerce'            => 'Administrar productos de WooCommerce',
+		'mcp:builders'            => 'Editar textos en páginas hechas con constructores visuales',
+		'mcp:builder_attrs'       => 'Cambiar enlaces e imágenes en páginas hechas con constructores visuales',
+		'mcp:builders:dynamic'    => 'Asignar datos dinámicos de Elementor (título del sitio, imagen destacada…) a textos e imágenes de las páginas',
+		'mcp:builders:components' => 'Crear componentes de Elementor reutilizables en todo el sitio',
+		'mcp:publish'             => 'Publicar contenido',
+		'mcp:destructive'         => 'Eliminar contenido de forma permanente',
+		'mcp:design_system'       => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',
+		'mcp:seo:read'            => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
+		'mcp:maintenance:read'    => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
 	);
 
 	/**

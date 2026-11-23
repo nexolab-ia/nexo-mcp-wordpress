@@ -236,6 +236,13 @@ final class ElementorTreeValidator {
 	private ?DynamicTagCatalog $assign_catalog = null;
 
 	/**
+	 * Comprobación de existencia de componentes (modo instancias); null = e-component rechazado.
+	 *
+	 * @var callable|null
+	 */
+	private $component_exists = null;
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param array<string, array<int, string>> $allowed_settings Claves de `settings` por tipo.
@@ -289,6 +296,25 @@ final class ElementorTreeValidator {
 	public function assigning_dynamic( DynamicTagCatalog $catalog ): self {
 		$copy                 = clone $this;
 		$copy->assign_catalog = $catalog;
+
+		return $copy;
+	}
+
+	/**
+	 * Copia del validador que acepta instancias de componente (`e-component`).
+	 *
+	 * Opt-in: por omisión `e-component` es un tipo no permitido. Con el opt-in sólo se
+	 * acepta un widget sin hijos ni estilos cuyos `settings` son exactamente
+	 * `component_instance` = `{"$$type":"component-instance","value":{"component_id":
+	 * {"$$type":"number","value":N}}}` (N entero positivo, que `$component_exists` confirma),
+	 * con `overrides` ausente o exactamente `{"$$type":"overrides","value":[]}`: los
+	 * overrides quedan fuera de esta entrega.
+	 *
+	 * @param callable $component_exists fn( int $id ): bool, true si es un componente usable.
+	 */
+	public function accepting_components( callable $component_exists ): self {
+		$copy                   = clone $this;
+		$copy->component_exists = $component_exists;
 
 		return $copy;
 	}
@@ -504,6 +530,10 @@ final class ElementorTreeValidator {
 			);
 		}
 
+		if ( 'e-component' === $type && null !== $this->component_exists ) {
+			return $this->walk_component( $node, $path, $depth );
+		}
+
 		if ( ! in_array( $type, self::allowed_types(), true ) ) {
 			return $this->error( 'nexo_mcp_elementor_type_denied', $path . '.type', $this->denied_type_reason( $type ) );
 		}
@@ -581,6 +611,132 @@ final class ElementorTreeValidator {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Valida una instancia de componente (sólo con {@see self::accepting_components()}).
+	 *
+	 * @param array<string, mixed> $node  Nodo.
+	 * @param string               $path  Ruta del nodo.
+	 * @param int                  $depth Nivel del nodo.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function walk_component( array $node, string $path, int $depth ) {
+		if ( $depth === $this->base_depth + 1 ) {
+			$nesting = ElementorNesting::reason( $this->parent_kind, 'e-component' );
+
+			if ( null !== $nesting ) {
+				return $this->error( 'nexo_mcp_elementor_nesting_denied', $path . '.type', $nesting );
+			}
+		}
+
+		if ( array() !== (array) ( $node['elements'] ?? null ) ) {
+			return $this->error(
+				'nexo_mcp_elementor_children_denied',
+				$path . '.elements',
+				__( '«e-component» no admite elementos hijos.', 'nexo-mcp' )
+			);
+		}
+
+		if ( array() !== (array) ( $node['styles'] ?? null ) ) {
+			return $this->error(
+				'nexo_mcp_elementor_setting_invalid',
+				$path . '.styles',
+				__( 'una instancia de componente no lleva estilos propios.', 'nexo-mcp' )
+			);
+		}
+
+		$settings = $node['settings'] ?? null;
+		$here     = $path . '.settings';
+
+		if ( ! is_array( $settings ) || array() === $settings || array_is_list( $settings ) ) {
+			return $this->error(
+				'nexo_mcp_elementor_setting_invalid',
+				$here,
+				__( 'debe traer «component_instance».', 'nexo-mcp' )
+			);
+		}
+
+		foreach ( array_keys( $settings ) as $key ) {
+			if ( 'component_instance' !== $key ) {
+				return $this->error(
+					'nexo_mcp_elementor_setting_unknown',
+					$here . '.' . $key,
+					__( 'una instancia de componente sólo admite «component_instance».', 'nexo-mcp' )
+				);
+			}
+		}
+
+		$id = $this->component_id( $settings['component_instance'] );
+
+		if ( null === $id ) {
+			return $this->error(
+				'nexo_mcp_elementor_setting_invalid',
+				$here . '.component_instance',
+				__( 'debe ser {"$$type":"component-instance","value":{"component_id":{"$$type":"number","value":N}}} con N entero positivo y sin overrides.', 'nexo-mcp' )
+			);
+		}
+
+		if ( ! (bool) ( $this->component_exists )( $id ) ) {
+			return $this->error(
+				'nexo_mcp_component_not_found',
+				$here . '.component_instance',
+				sprintf(
+					/* translators: %d: id del componente. */
+					__( 'el componente %d no existe, está archivado o en la papelera.', 'nexo-mcp' ),
+					$id
+				)
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Id de componente de una prop `component-instance` exacta, o null si la forma no es la admitida.
+	 *
+	 * @param mixed $prop Valor de `component_instance`.
+	 */
+	private function component_id( $prop ): ?int {
+		if ( ! is_array( $prop ) || array( '$$type', 'value' ) !== self::sorted_keys( $prop ) || 'component-instance' !== $prop['$$type'] || ! is_array( $prop['value'] ) ) {
+			return null;
+		}
+
+		$value = $prop['value'];
+
+		if ( ! isset( $value['component_id'] ) || array() !== array_diff( array_keys( $value ), array( 'component_id', 'overrides' ) ) ) {
+			return null;
+		}
+
+		if ( array_key_exists( 'overrides', $value ) && array(
+			'$$type' => 'overrides',
+			'value'  => array(),
+		) !== $value['overrides'] ) {
+			return null;
+		}
+
+		$id = $value['component_id'];
+
+		if ( ! is_array( $id ) || array( '$$type', 'value' ) !== self::sorted_keys( $id ) || 'number' !== $id['$$type'] || ! is_int( $id['value'] ) || $id['value'] < 1 ) {
+			return null;
+		}
+
+		return $id['value'];
+	}
+
+	/**
+	 * Claves de un arreglo, ordenadas.
+	 *
+	 * @param array<int|string, mixed> $value Arreglo.
+	 *
+	 * @return array<int, int|string>
+	 */
+	private static function sorted_keys( array $value ): array {
+		$keys = array_keys( $value );
+		sort( $keys );
+
+		return $keys;
 	}
 
 	/**
