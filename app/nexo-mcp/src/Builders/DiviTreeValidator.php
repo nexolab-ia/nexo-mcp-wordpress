@@ -57,10 +57,11 @@ final class DiviTreeValidator {
 		'ul'     => array(),
 		'ol'     => array(),
 		'li'     => array(),
+		// Sin `target`: abrir en otra pestaña permitiría tabnabbing, y forzar `rel` reescribiendo el
+		// HTML después de wp_kses rompió el entrecomillado (XSS). wp_kses lo quita y nada lo toca después.
 		'a'      => array(
-			'href'   => true,
-			'target' => true,
-			'rel'    => true,
+			'href' => true,
+			'rel'  => true,
 		),
 		'strong' => array(),
 		'em'     => array(),
@@ -647,7 +648,7 @@ final class DiviTreeValidator {
 		}
 
 		// Lo que se guarda es la salida de wp_kses: también se revisa, porque quitar etiquetas puede armar un shortcode.
-		$clean     = $this->force_safe_rel( wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES ) );
+		$clean     = wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES );
 		$shortcode = $this->registered_shortcode( $clean );
 
 		if ( null !== $shortcode ) {
@@ -655,27 +656,6 @@ final class DiviTreeValidator {
 		}
 
 		return $clean;
-	}
-
-	/**
-	 * Fuerza `rel="noopener noreferrer"` en los enlaces que abren en otra pestaña (`target`), contra el tabnabbing.
-	 *
-	 * @param string $html HTML ya saneado por `wp_kses`.
-	 */
-	private function force_safe_rel( string $html ): string {
-		return (string) preg_replace_callback(
-			'/<a\b([^>]*)>/i',
-			static function ( array $m ): string {
-				if ( 1 !== preg_match( '/(?<![\w-])target\s*=/i', $m[1] ) ) {
-					return $m[0];
-				}
-
-				$attrs = (string) preg_replace( '/\s+(?<![\w-])rel\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]*)/i', '', $m[1] );
-
-				return '<a' . rtrim( $attrs ) . ' rel="noopener noreferrer">';
-			},
-			$html
-		);
 	}
 
 	/**

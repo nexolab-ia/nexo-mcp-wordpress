@@ -155,7 +155,7 @@ namespace NexoDev\NexoMCP\Tests {
 										),
 										array(
 											'type'  => 'divi/text',
-											'attrs' => array( 'content' => array( 'innerContent' => self::value( '<p>Hola <strong>mundo</strong> <a href="/x" target="_blank" rel="noopener">link</a></p>' ) ) ),
+											'attrs' => array( 'content' => array( 'innerContent' => self::value( '<p>Hola <strong>mundo</strong> <a href="/x" rel="noopener">link</a></p>' ) ) ),
 										),
 										array(
 											'type'  => 'divi/button',
@@ -502,7 +502,7 @@ namespace NexoDev\NexoMCP\Tests {
 
 			$this->assertIsArray( $out );
 			$this->assertSame(
-				'<h2>T</h2><p>a <strong>b</strong> <em>c</em> <b>d</b> <i>e</i><br><span>f</span></p><ul><li>u</li></ul><ol><li>o</li></ol><a href="https://a.b" target="_blank" rel="noopener noreferrer">l</a>dd',
+				'<h2>T</h2><p>a <strong>b</strong> <em>c</em> <b>d</b> <i>e</i><br><span>f</span></p><ul><li>u</li></ul><ol><li>o</li></ol><a href="https://a.b" rel="noopener">l</a>dd',
 				$out[0]['children'][0]['children'][0]['children'][0]['attrs']['content']['innerContent']['desktop']['value']
 			);
 		}
@@ -657,13 +657,12 @@ namespace NexoDev\NexoMCP\Tests {
 			$this->assertError( 'nexo_mcp_divi_value_invalid', $slot . '.' . $path, $this->validator()->validate_patch( $type, array( $slot => $attrs ) ) );
 		}
 
-		public function test_anchors_with_a_target_get_rel_noopener_noreferrer_forced(): void {
+		public function test_rich_text_links_drop_target_and_are_never_rewritten_after_kses(): void {
 			$cases = array(
-				'<p><a href="https://a.b" target="_blank">x</a></p>'                            => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
-				'<p><a href="https://a.b" target="_blank" rel="opener">x</a></p>'               => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
-				'<p><a href="https://a.b" rel="noopener" target="_blank">x</a></p>'             => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
-				'<p><a href="https://a.b" rel="nofollow">x</a></p>'                              => '<p><a href="https://a.b" rel="nofollow">x</a></p>',
-				'<p><a href="https://a.b">x</a></p>'                                             => '<p><a href="https://a.b">x</a></p>',
+				'<p><a href="https://a.b" target="_blank">x</a></p>'              => '<p><a href="https://a.b">x</a></p>',
+				'<p><a href="https://a.b" target="_blank" rel="opener">x</a></p>' => '<p><a href="https://a.b" rel="opener">x</a></p>',
+				'<p><a href="https://a.b" rel="nofollow">x</a></p>'               => '<p><a href="https://a.b" rel="nofollow">x</a></p>',
+				'<p><a href="https://a.b">x</a></p>'                              => '<p><a href="https://a.b">x</a></p>',
 			);
 
 			foreach ( $cases as $input => $expected ) {
@@ -672,6 +671,16 @@ namespace NexoDev\NexoMCP\Tests {
 				$this->assertIsArray( $out, $input );
 				$this->assertSame( $expected, $out['content']['content']['innerContent']['desktop']['value'], $input ); // @phpstan-ignore-line
 			}
+		}
+
+		public function test_a_quoted_rel_inside_another_attribute_cannot_open_a_new_attribute(): void {
+			$input = "<p><a href=\"https://a.b\" target='_blank rel=z'>x</a> it's ' onmouseover=alert(1) ' <b>y</b></p>";
+			$out   = $this->validator()->validate_patch( 'divi/text', array( 'content' => array( 'content' => array( 'innerContent' => self::value( $input ) ) ) ) );
+
+			$this->assertIsArray( $out );
+			$value = $out['content']['content']['innerContent']['desktop']['value']; // @phpstan-ignore-line
+			$this->assertStringNotContainsString( 'target', $value );
+			$this->assertSame( 0, preg_match( '/<a\b[^>]*onmouseover/i', $value ), $value );
 		}
 	}
 
