@@ -245,9 +245,12 @@ final class ElementorSectionEditor {
 		}
 
 		$elements = $input['elements'] ?? null;
-		// Un dato dinámico que el documento ya tiene (mismo id de nodo, mismo tipo, misma
-		// prop, mismo valor) no se rechaza; uno nuevo o cambiado sí (se asigna con set-dynamic-tag).
-		$checked = $this->guard->validator()->accepting_unchanged_dynamic( $tree )->validate(
+		// Un dato dinámico que el subárbol reemplazado ya tiene (mismo id de nodo, mismo tipo,
+		// misma prop, mismo valor, una sola vez) no se rechaza; uno nuevo, cambiado, de otro
+		// lugar de la página o repetido sí (se asigna con set-dynamic-tag). insert no reemplaza
+		// nada: `removed` viene vacío y no conserva ninguno.
+		$removed = is_array( $plan['removed'] ?? null ) ? $plan['removed'] : array();
+		$checked = $this->guard->validator()->accepting_unchanged_dynamic( $tree, $removed )->validate(
 			$elements,
 			(string) $plan['parent_kind'],
 			(int) $plan['base_depth'],

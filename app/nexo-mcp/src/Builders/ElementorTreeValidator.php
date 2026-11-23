@@ -222,6 +222,13 @@ final class ElementorTreeValidator {
 	private array $original_dynamic = array();
 
 	/**
+	 * Props dinámicas originales ya aceptadas en la validación en curso (`id|clave`): cada una vale una sola vez.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $dynamic_used = array();
+
+	/**
 	 * Catálogo con el que se aceptan props dinámicas nuevas o cambiadas (modo asignar); null = desactivado.
 	 *
 	 * @var DynamicTagCatalog|null
@@ -251,13 +258,21 @@ final class ElementorTreeValidator {
 	 * en la misma clave de `settings`, una prop dinámica igual a la guardada. Cualquier cambio
 	 * (otro tag, otros ajustes, otro nodo, otro id) se rechaza, salvo en el modo de
 	 * {@see self::assigning_dynamic()}. Sólo se miran las props de primer nivel de `settings`;
-	 * un `dynamic` anidado en otro valor o en un estilo sigue rechazado.
+	 * un `dynamic` anidado en otro valor o en un estilo sigue rechazado. Cada prop original se
+	 * acepta una sola vez por validación: repetir el id no la duplica.
 	 *
-	 * @param array<int, mixed> $stored_tree Árbol guardado (formato de Elementor: `id`, `elType`, `widgetType`, `settings`, `elements`).
+	 * @param array<int, mixed>       $stored_tree Árbol guardado (formato de Elementor: `id`, `elType`, `widgetType`, `settings`, `elements`).
+	 * @param array<int, string>|null $only_ids   Ids de nodo cuyas props se aceptan (p. ej. los del subárbol que se reemplaza); null = todo el árbol.
 	 */
-	public function accepting_unchanged_dynamic( array $stored_tree ): self {
+	public function accepting_unchanged_dynamic( array $stored_tree, ?array $only_ids = null ): self {
+		$found = self::collect_dynamic( $stored_tree );
+
+		if ( null !== $only_ids ) {
+			$found = array_intersect_key( $found, array_flip( array_map( 'strval', $only_ids ) ) );
+		}
+
 		$copy                   = clone $this;
-		$copy->original_dynamic = $this->original_dynamic + self::collect_dynamic( $stored_tree );
+		$copy->original_dynamic = $this->original_dynamic + $found;
 
 		return $copy;
 	}
@@ -405,10 +420,11 @@ final class ElementorTreeValidator {
 			);
 		}
 
-		$this->nodes       = $base_nodes;
-		$this->parent_kind = $parent_kind;
-		$this->base_depth  = $base_depth;
-		$this->max_nodes   = $max_nodes > 0 ? $max_nodes : self::MAX_NODES;
+		$this->nodes        = $base_nodes;
+		$this->parent_kind  = $parent_kind;
+		$this->base_depth   = $base_depth;
+		$this->max_nodes    = $max_nodes > 0 ? $max_nodes : self::MAX_NODES;
+		$this->dynamic_used = array();
 
 		return $this->walk_list( $elements, 'elements', $base_depth + 1 );
 	}
@@ -738,7 +754,11 @@ final class ElementorTreeValidator {
 	private function check_dynamic( array $prop, ?string $node_id, string $type, string $key, string $path ) {
 		$original = null !== $node_id ? ( $this->original_dynamic[ $node_id ] ?? null ) : null;
 
-		if ( null !== $original && $original['type'] === $type && isset( $original['props'][ $key ] ) && self::same_value( $original['props'][ $key ], $prop ) ) {
+		$used = null !== $node_id ? $node_id . '|' . $key : '';
+
+		if ( null !== $original && ! isset( $this->dynamic_used[ $used ] ) && $original['type'] === $type && isset( $original['props'][ $key ] ) && self::same_value( $original['props'][ $key ], $prop ) ) {
+			$this->dynamic_used[ $used ] = true;
+
 			return true;
 		}
 

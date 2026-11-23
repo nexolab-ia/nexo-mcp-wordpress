@@ -898,4 +898,50 @@ final class ElementorSectionEditorTest extends NexoTestCase {
 		$this->assertSame( 'nexo_mcp_elementor_prop_type_denied', $result->get_error_code() );
 		$this->assertSame( $before, $this->snapshot() );
 	}
+
+	/**
+	 * Copias de un dato dinámico guardado reusando el id de su nodo: sólo se conserva dentro
+	 * del subárbol que se reemplaza y una sola vez (sin el scope de datos dinámicos no se
+	 * puede duplicar ni mover).
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: string, 3: int}>
+	 */
+	public static function copied_dynamics(): array {
+		return array(
+			'insert con el id de un nodo dinámico'       => array( 'insert', 'fx00002', 'inside', 1 ),
+			'replace de otro subárbol con ese id'         => array( 'replace', 'fx00002', '', 1 ),
+			'replace del subárbol con el id repetido'     => array( 'replace', 'fx00001', '', 2 ),
+		);
+	}
+
+	/**
+	 * @dataProvider copied_dynamics
+	 */
+	public function test_un_dato_dinamico_guardado_no_se_duplica_ni_se_mueve_reusando_el_id( string $operation, string $node_id, string $position, int $copies ): void {
+		$this->put_page( 120, 'draft', $this->dynamic_page() );
+		$heading = array(
+			'type'     => 'e-heading',
+			'id'       => 'eh00001',
+			'settings' => array( 'title' => self::dynamic_prop() ),
+		);
+		$box                = ElementorSectionFixtures::new_box();
+		$box[0]['elements'] = array_fill( 0, $copies, $heading );
+		$input              = array(
+			'id'        => 120,
+			'operation' => $operation,
+			'node_id'   => $node_id,
+			'elements'  => $box,
+		);
+
+		if ( '' !== $position ) {
+			$input['position'] = $position;
+		}
+
+		$before = $this->snapshot();
+		$result = $this->exec_edit( $input );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_elementor_prop_type_denied', $result->get_error_code() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
 }
