@@ -172,6 +172,8 @@ final class BuilderBackup {
 				return array( '_elementor_data', '_elementor_edit_mode', '_elementor_version' );
 			case 'divi':
 				return array( '_et_pb_use_builder', '_et_pb_old_content' );
+			case 'divi5':
+				return array( '_et_pb_use_builder', '_et_pb_use_divi_5' );
 			case 'wpbakery':
 				return array( '_wpb_vc_js_status' );
 			default:

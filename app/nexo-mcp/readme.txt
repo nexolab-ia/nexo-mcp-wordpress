@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.6.1
+Stable tag: 1.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.7.0 =
+* Nuevo: Divi 5 como módulos reales (el contenido son bloques `wp:divi/…`; las páginas de Divi 4 con shortcodes siguen con el adaptador de siempre). `get-page-structure` lee una página de Divi 5 como árbol de nodos con `path` (índices desde la raíz) y `fingerprint` (hash del nodo): Divi 5 no tiene ids de nodo, así que toda escritura exige el `fingerprint` leído y, si la página cambió, responde `nexo_mcp_divi_node_changed` sin escribir.
+* Nuevo: `edit-divi-module` (contenido y diseño de escritorio de un módulo; tablet, teléfono y hover se conservan), `create-divi-page` (borrador con secciones, filas, columnas y módulos) y `edit-divi-section` (reemplazar, insertar o borrar por ruta; el `divi/placeholder` raíz sólo admite insertar dentro). Escriben en la copia de trabajo de una página publicada (el original no cambia hasta publicar), respaldan antes de guardar, vacían el CSS de Divi y nunca publican. Permiso de constructores, sin scope nuevo.
+* Catálogo cerrado: sección, fila, columna, texto, título, botón, imagen, divisor, blurb, ícono, video y lista de íconos. Se rechazan sin escribir `divi/code`, `divi/fullwidth-code`, `divi/shortcode-module` y cualquier módulo fuera del catálogo, shortcodes en el texto, enlaces `javascript:`, `htmlBefore`/`htmlAfter`, CSS propio y los valores de tablet, teléfono y hover. Requiere el tema Divi 5 (`nexo_mcp_divi5_required` si no está activo).
+* Corrección (revisión): el título de `create-divi-page` conserva las barras invertidas; `nexo_mcp_divi_save_failed` ya no incluye el texto crudo de excepciones; si el borrador a medias no se puede borrar, el error lo avisa (`nexo_mcp_builder_copy_orphan`).
 
 = 1.6.1 =
 * Corrección: `list-components` respondía una lista vacía si Elementor no podía leer los componentes, igual que si no hubiera ninguno; ahora responde `nexo_mcp_components_unreadable` con el motivo. Sin componentes sigue devolviendo una lista vacía.

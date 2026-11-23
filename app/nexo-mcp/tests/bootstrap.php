@@ -84,17 +84,44 @@ final class WP_Test_State {
 	/** Si es true, `wp_update_post()` devuelve un WP_Error (el guardado falla). */
 	public static bool $fail_update_post = false;
 
+	/** Hace que `wp_insert_post()` devuelva un error. */
+	public static bool $fail_insert_post = false;
+
+	/** Hace que `wp_insert_post()` guarde un `post_content` distinto del pedido (un filtro que lo reescribe). */
+	public static bool $mangle_insert = false;
+
+	/** @var list<bool> Estado de los filtros kses en cada llamada a `wp_insert_post()`. */
+	public static array $kses_during_insert = array();
+	/** @var array<int, mixed> Valores que pasaron por wp_slash(). */
+	public static array $slashed = array();
+
 	/** Si es true, `wp_trash_post()` falla (devuelve false). */
 	public static bool $fail_trash = false;
 
 	/** Se llama una sola vez, en el primer `wp_cache_delete( id, 'post_meta' )` (justo tras obtener un bloqueo). */
 	public static ?\Closure $on_forget = null;
 
+	/** Si los filtros kses del contenido están activos (`kses_init_filters()` / `kses_remove_filters()`). */
+	public static bool $kses_active = false;
+
+	/** @var list<bool> Estado de los filtros kses en cada llamada a `wp_update_post()`. */
+	public static array $kses_during_save = array();
+
+	/** @var list<int> Contenidos cuya caché se limpió con `clean_post_cache()`. */
+	public static array $cleaned = array();
+
 	public static function reset(): void {
 		self::$cache_posts      = false;
 		self::$json_fail_in     = '';
 		self::$fail_update_post = false;
 		self::$on_forget        = null;
+		self::$kses_active      = false;
+		self::$kses_during_save = array();
+		self::$fail_insert_post = false;
+		self::$mangle_insert    = false;
+		self::$kses_during_insert = array();
+		self::$slashed            = array();
+		self::$cleaned          = array();
 		self::$fail_trash       = false;
 		self::$post_cache  = array();
 		self::$options   = array();
@@ -329,7 +356,7 @@ function wp_kses_post( $text ) { return preg_replace( '#<script[^>]*>.*?</script
 function wp_strip_all_tags( $text ) { return strip_tags( (string) $text ); }
 function absint( $value ) { return abs( (int) $value ); }
 function wp_unslash( $value ) { return $value; }
-function wp_slash( $value ) { return $value; }
+function wp_slash( $value ) { WP_Test_State::$slashed[] = $value; return $value; }
 function wp_json_encode( $data, $flags = 0 ) {
 	if ( '' !== WP_Test_State::$json_fail_in ) {
 		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 5 ) as $frame ) { // phpcs:ignore
@@ -343,6 +370,104 @@ function wp_json_encode( $data, $flags = 0 ) {
 function untrailingslashit( $value ) { return rtrim( (string) $value, '/\\' ); }
 function trailingslashit( $value ) { return untrailingslashit( $value ) . '/'; }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( (string) $url, $component ); }
+
+// ------------------------------------------------------------ Bloques del núcleo
+// Réplicas mínimas de parse_blocks()/serialize_block() de WordPress (el núcleo no se
+// carga en las pruebas). Sólo se definen si faltan, para no pisar el real.
+if ( ! function_exists( 'has_blocks' ) ) {
+	function has_blocks( $content = null ): bool {
+		return false !== strpos( (string) $content, '<!-- wp:' );
+	}
+}
+
+if ( ! function_exists( 'parse_blocks' ) ) {
+	function parse_blocks( $content ): array {
+		$content = (string) $content;
+		$regex   = '/<!--\s+(?P<closer>\/)?wp:(?P<namespace>[a-z][a-z0-9_-]*\/)?(?P<name>[a-z][a-z0-9_-]*)\s+(?P<attrs>{(?:(?:[^}]+|}+(?=})|(?!}\s+\/?-->).)*+)?}\s+)?(?P<void>\/)?-->/s';
+		$found   = preg_match_all( $regex, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		$out     = array();
+		$stack   = array();
+		$offset  = 0;
+
+		$add_text = static function ( string $text ) use ( &$out, &$stack ): void {
+			if ( '' === $text ) {
+				return;
+			}
+			if ( array() === $stack ) {
+				$out[] = array( 'blockName' => null, 'attrs' => array(), 'innerBlocks' => array(), 'innerHTML' => $text, 'innerContent' => array( $text ) );
+				return;
+			}
+			$top                   = count( $stack ) - 1;
+			$stack[ $top ]['innerHTML']    .= $text;
+			$stack[ $top ]['innerContent'][] = $text;
+		};
+		$attach   = static function ( array $block ) use ( &$out, &$stack ): void {
+			if ( array() === $stack ) {
+				$out[] = $block;
+				return;
+			}
+			$top                                = count( $stack ) - 1;
+			$stack[ $top ]['innerBlocks'][]     = $block;
+			$stack[ $top ]['innerContent'][]    = null;
+		};
+
+		foreach ( $found ? $matches : array() as $m ) {
+			$start = $m[0][1];
+			$add_text( substr( $content, $offset, $start - $offset ) );
+			$offset = $start + strlen( $m[0][0] );
+			$ns     = '' === $m['namespace'][0] ? 'core/' : $m['namespace'][0];
+			$name   = $ns . $m['name'][0];
+			$attrs  = '' === ( $m['attrs'][0] ?? '' ) ? array() : json_decode( $m['attrs'][0], true );
+			$block  = array( 'blockName' => $name, 'attrs' => is_array( $attrs ) ? $attrs : array(), 'innerBlocks' => array(), 'innerHTML' => '', 'innerContent' => array() );
+
+			if ( '' !== ( $m['closer'][0] ?? '' ) ) {
+				if ( array() !== $stack ) {
+					$done = array_pop( $stack );
+					$attach( $done );
+				}
+			} elseif ( '' !== ( $m['void'][0] ?? '' ) ) {
+				$attach( $block );
+			} else {
+				$stack[] = $block;
+			}
+		}
+
+		$add_text( substr( $content, $offset ) );
+
+		while ( array() !== $stack ) {
+			$attach( array_pop( $stack ) );
+		}
+
+		return $out;
+	}
+}
+
+if ( ! function_exists( 'serialize_block' ) ) {
+	function serialize_block( array $block ): string {
+		$html  = '';
+		$index = 0;
+		foreach ( $block['innerContent'] as $chunk ) {
+			$html .= is_string( $chunk ) ? $chunk : serialize_block( $block['innerBlocks'][ $index++ ] );
+		}
+		if ( null === $block['blockName'] ) {
+			return $html;
+		}
+		$name = 0 === strpos( $block['blockName'], 'core/' ) ? substr( $block['blockName'], 5 ) : $block['blockName'];
+		$attr = '';
+		if ( ! empty( $block['attrs'] ) ) {
+			$json = json_encode( $block['attrs'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			$json = str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), (string) $json );
+			$attr = $json . ' ';
+		}
+		return '' === $html ? "<!-- wp:{$name} {$attr}/-->" : "<!-- wp:{$name} {$attr}-->{$html}<!-- /wp:{$name} -->";
+	}
+}
+
+if ( ! function_exists( 'serialize_blocks' ) ) {
+	function serialize_blocks( array $blocks ): string {
+		return implode( '', array_map( 'serialize_block', $blocks ) );
+	}
+}
 function rest_sanitize_boolean( $value ) {
 	if ( is_string( $value ) ) {
 		$value = strtolower( $value );
@@ -499,6 +624,7 @@ function wp_cache_delete( $key, $group = '' ): bool {
 }
 function wp_update_post( $data, $wp_error = false ) {
 	$id = (int) ( $data['ID'] ?? 0 );
+	WP_Test_State::$kses_during_save[] = WP_Test_State::$kses_active;
 	if ( WP_Test_State::$fail_update_post ) {
 		return new WP_Error( 'db_update_error', 'No se pudo actualizar.' );
 	}
@@ -520,7 +646,29 @@ function wp_update_post( $data, $wp_error = false ) {
 	return $id;
 }
 
+if ( ! function_exists( 'has_filter' ) ) {
+	function has_filter( $hook, $callback = false ) {
+		return 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ? 10 : false;
+	}
+}
+if ( ! function_exists( 'kses_remove_filters' ) ) {
+	function kses_remove_filters(): void { WP_Test_State::$kses_active = false; }
+}
+if ( ! function_exists( 'kses_init_filters' ) ) {
+	function kses_init_filters(): void { WP_Test_State::$kses_active = true; }
+}
+if ( ! function_exists( 'clean_post_cache' ) ) {
+	function clean_post_cache( $post_id ): void { WP_Test_State::$cleaned[] = (int) $post_id; }
+}
+
 function wp_insert_post( $data, $wp_error = false ) {
+	WP_Test_State::$kses_during_insert[] = WP_Test_State::$kses_active;
+	if ( WP_Test_State::$fail_insert_post ) {
+		return new WP_Error( 'db_insert_error', 'No se pudo insertar.' );
+	}
+	if ( WP_Test_State::$mangle_insert && isset( $data['post_content'] ) ) {
+		$data['post_content'] = str_replace( '<!-- ', '<!--', (string) $data['post_content'] );
+	}
 	$id = max( array_merge( array( 0 ), array_keys( WP_Test_State::$posts ) ) ) + 1;
 	WP_Test_State::$posts[ $id ] = new WP_Post( array_merge( array( 'post_type' => 'post', 'post_status' => 'draft' ), $data, array( 'ID' => $id ) ) );
 	return $id;
@@ -548,4 +696,54 @@ function wp_register_ability( string $name, array $args ) {
 }
 function wp_register_ability_category( string $slug, array $args ) {
 	return true;
+}
+
+// El arranque de las pruebas no trae `wp_kses`: réplica mínima (etiquetas y atributos de la
+// lista, sin el contenido de script/style) sólo si el núcleo no está cargado.
+if ( ! function_exists( 'wp_kses' ) ) {
+	/**
+	 * @param string                              $content           HTML.
+	 * @param array<string, array<string, mixed>> $allowed_html      Etiquetas y atributos admitidos.
+	 * @param array<int, string>                  $allowed_protocols Esquemas admitidos.
+	 */
+	function wp_kses( $content, $allowed_html, $allowed_protocols = array() ): string {
+		$content = (string) preg_replace( '#<(script|style|iframe)\b[^>]*>.*?</\1>#is', '', $content );
+
+		return (string) preg_replace_callback(
+			'#<(/?)([a-z0-9]+)([^>]*)>#i',
+			static function ( array $m ) use ( $allowed_html, $allowed_protocols ): string {
+				$tag = strtolower( $m[2] );
+
+				if ( ! isset( $allowed_html[ $tag ] ) ) {
+					return '';
+				}
+
+				if ( '/' === $m[1] ) {
+					return '</' . $tag . '>';
+				}
+
+				$out = '';
+
+				preg_match_all( '#([a-z-]+)\s*=\s*("([^"]*)"|\'([^\']*)\')#i', $m[3], $attrs, PREG_SET_ORDER );
+
+				foreach ( $attrs as $attr ) {
+					$name  = strtolower( $attr[1] );
+					$value = '' !== ( $attr[3] ?? '' ) ? $attr[3] : ( $attr[4] ?? '' );
+
+					if ( ! isset( $allowed_html[ $tag ][ $name ] ) ) {
+						continue;
+					}
+
+					if ( 'href' === $name && 1 === preg_match( '#^([a-z][a-z0-9+.-]*):#i', $value, $scheme ) && ! in_array( strtolower( $scheme[1] ), $allowed_protocols, true ) ) {
+						continue;
+					}
+
+					$out .= ' ' . $name . '="' . $value . '"';
+				}
+
+				return '<' . $tag . $out . '>';
+			},
+			$content
+		);
+	}
 }

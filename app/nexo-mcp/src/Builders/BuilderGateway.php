@@ -512,6 +512,92 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Edita un módulo de una página de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5ModuleEditor}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function edit_divi_module( array $input ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new DiviTreeValidator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'content'     => $input['content'] ?? null,
+				'design'      => $input['design'] ?? null,
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Crea una página de Divi 5 en borrador a partir de secciones con módulos reales.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_divi_page( array $input ) {
+		return ( new Divi5PageCreator() )->create( $input );
+	}
+
+	/**
+	 * Reemplaza, inserta o borra un nodo de una página de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5SectionEditor}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function edit_divi_section( array $input ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		$editor = new Divi5SectionEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new DiviTreeValidator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'operation'   => isset( $input['operation'] ) && is_string( $input['operation'] ) ? $input['operation'] : '',
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'position'    => isset( $input['position'] ) && is_string( $input['position'] ) ? $input['position'] : '',
+				'sections'    => $input['sections'] ?? null,
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
 	 * Migra una página de Elementor 3 a elementos atómicos, en la copia de trabajo.
 	 *
 	 * Mismo permiso y mismo camino de escritura que {@see self::edit_elementor_section()}.

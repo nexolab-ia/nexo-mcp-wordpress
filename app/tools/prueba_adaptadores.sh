@@ -36,6 +36,13 @@
 #    frontend renderiza el componente); rechazos sin escribir: widget v3, título duplicado (mensaje sin entidades
 #    HTML), component_id inexistente y un e-component por edit-elementor-section. builders_components_enabled
 #    y la capacidad se devuelven al final y los componentes se borran (force), también si la corrida se corta.
+# 7e. Divi 5 (sólo con el tema Divi 5 activo; si está instalado y no activo se activa sólo para el bloque y se
+#    devuelve el tema previo al final; sin Divi 5 se saltea con un SKIP y no falla): create-divi-page (sección>fila>
+#    columna>texto+título+botón+imagen), get-page-structure (nodos divi5 con path y fingerprint), edit-divi-module
+#    sobre una publicada (copia; el original no cambia), edit-divi-section (reemplaza una sección), publicar la copia
+#    (el frontend muestra los textos nuevos y ningún comentario de bloque crudo); rechazos sin escribir ni crear
+#    copia: divi/code, shortcode en un texto, enlace javascript:, huella vieja y el divi/placeholder raíz. Se borran
+#    (force) las páginas y sus directorios et-cache, también si la corrida se corta.
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -134,6 +141,22 @@ fi
 #                         get_builder_content_for_display no sirve, porque Elementor no se renderiza a sí mismo
 if [ "${1:-}" = "--meta" ]; then wpr post meta get "$2" "$3"; exit 0; fi
 if [ "${1:-}" = "--estado" ]; then wpr post get "$2" --field=post_status; exit 0; fi
+# Subcomandos para el bloque de Divi 5.
+#   --contenido <id>       post_content crudo
+#   --divi-borrar <id>     borra (force) la página y su directorio wp-content/et-cache/<id>
+if [ "${1:-}" = "--contenido" ]; then wpr post get "$2" --field=post_content; exit 0; fi
+if [ "${1:-}" = "--divi-borrar" ]; then
+	php_wp '
+$id = (int) getenv( "NEXO_A1" );
+wp_delete_post( $id, true );
+$dir = WP_CONTENT_DIR . "/et-cache/" . $id;
+if ( $id > 0 && is_dir( $dir ) ) {
+	$it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
+	foreach ( $it as $f ) { $f->isDir() ? rmdir( $f->getPathname() ) : unlink( $f->getPathname() ); }
+	rmdir( $dir );
+}' "$2" >/dev/null
+	exit 0
+fi
 if [ "${1:-}" = "--render" ]; then
 	php_wp 'echo \Elementor\Plugin::$instance->frontend->get_builder_content_for_display( (int) getenv( "NEXO_A1" ), true );' "$2"
 	exit 0
@@ -343,6 +366,7 @@ kit_id=""
 diseno_foto_tomada=""
 dinamicos_cap_agregada=""
 componentes_cap_agregada=""
+divi_tema_previo=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -391,6 +415,17 @@ clase_global_quitada() {
 	if printf '%s' "$etiquetas" | grep -q "$1"; then return 1; fi
 	return 0
 }
+# Borra (force) las páginas de Divi 5 de esta corrida, por el marcador del título (copias incluidas) y su et-cache.
+barrer_divi() {
+	local id malas=0
+	[ -n "$suffix" ] || return 0
+	for id in $(wpr post list --post_type=page --post_status=any,trash --field=ID --s="divi5-mcp-$suffix"); do
+		tools/prueba_adaptadores.sh --divi-borrar "$id"
+		if [ -z "$(wpr post get "$id" --field=post_status)" ]; then echo "Página Divi 5 borrada: $id"
+		else echo "FALLA: la página Divi 5 $id no se borró"; malas=1; fi
+	done
+	return "$malas"
+}
 cleanup() {
 	echo
 	echo "### Limpieza (a la papelera)"
@@ -438,6 +473,13 @@ cleanup() {
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_builders_components" );' >/dev/null
 		echo "Capacidad nexo_mcp_builders_components quitada."
 		componentes_cap_agregada=""
+	fi
+	# Divi 5: páginas del bloque (por el marcador del título, también si se cortó) y el tema previo.
+	barrer_divi || fallidas=$((fallidas + 1))
+	if [ -n "$divi_tema_previo" ]; then
+		if wp theme activate "$divi_tema_previo" >/dev/null; then echo "Tema restaurado: $divi_tema_previo"
+		else echo "FALLA: no se pudo restaurar el tema $divi_tema_previo"; fallidas=$((fallidas + 1)); fi
+		divi_tema_previo=""
 	fi
 	remove_design_fixtures
 	if [ -n "$class_id" ]; then
@@ -1767,6 +1809,200 @@ sys.exit(1 if fallas else 0)
 PY
 	[ $? -eq 0 ] || falla "la prueba de componentes (F7) tuvo comprobaciones fallidas"
 	tools/prueba_adaptadores.sh --ajuste builders_components_enabled false
+fi
+echo
+echo "### Divi 5 por MCP (create-divi-page, get-page-structure, edit-divi-module, edit-divi-section; sólo con el tema Divi 5)"
+# Sin Divi 5 activo (CI no lo tiene) se saltea con aviso y no falla. Si el tema Divi 5 está instalado pero no activo, se
+# activa sólo para este bloque y la limpieza (también al cortar) devuelve el tema previo.
+divi_listo="$(php_wpr 'echo defined( "ET_BUILDER_5_DIR" ) ? "si" : "no";')"
+if [ "$divi_listo" != si ] && [ "$(php_wpr 'echo is_dir( get_theme_root() . "/Divi/includes/builder-5" ) ? "si" : "no";')" = si ]; then
+	divi_tema_previo="$(wpr option get stylesheet)"
+	if [ -n "$divi_tema_previo" ] && wp theme activate Divi >/dev/null; then
+		echo "Tema Divi 5 activado para el bloque (tema previo: $divi_tema_previo)."
+		divi_listo="$(php_wpr 'echo defined( "ET_BUILDER_5_DIR" ) ? "si" : "no";')"
+	else
+		divi_tema_previo=""
+	fi
+fi
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba de Divi 5 se saltea (no cuenta como falla)."
+else
+	echo "Divi 5 activo: $(php_wpr 'echo defined( "ET_BUILDER_VERSION" ) ? ET_BUILDER_VERSION : "?";')."
+	python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True).stdout.strip()
+
+def contenido(i):
+    return script("--contenido", i)
+
+def frontend(i):
+    with urllib.request.urlopen(f"http://localhost:8080/?page_id={i}") as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def huellas(i):
+    _, d = cli.ok("get-page-structure", {"id": i})
+    assert d["builder"] == "divi5", d.get("builder")
+    return d["nodes"]
+
+def por_ruta(nodos):
+    return {n["id"]: n for n in nodos}
+
+def valor(texto):
+    return {"desktop": {"value": texto}}
+
+def modulo(tipo, **attrs):
+    return {"type": tipo, "attrs": attrs}
+
+def seccion(*modulos):
+    return {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": list(modulos)}]}]}
+
+def texto(t):
+    return modulo("divi/text", content={"innerContent": valor(f"<p>{t}</p>")})
+
+def parche_texto(t):
+    return {"content": {"innerContent": valor(t)}}
+
+T_ORIG, T_EDIT = f"Texto original {suffix}", f"Texto editado {suffix}"
+S_ORIG, S_NUEVA = f"Segunda original {suffix}", f"Segunda reconstruida {suffix}"
+H_ORIG, H_NUEVO = f"Titulo original {suffix}", f"Titulo reconstruido {suffix}"
+B_TEXTO = f"Boton original {suffix}"
+titulo = f"Prueba divi5 divi5-mcp-{suffix}"
+est = {}
+
+def crear():
+    n0 = int(script("--contar-paginas"))
+    secciones = [
+        seccion(
+            texto(T_ORIG),
+            modulo("divi/heading", title={"innerContent": valor(H_ORIG)}),
+            modulo("divi/button", button={"innerContent": valor({"text": B_TEXTO, "linkUrl": "https://example.com/original"})}),
+            modulo("divi/image", image={"innerContent": valor({"src": "https://example.com/a.png", "alt": "A"})}),
+        ),
+        seccion(texto(S_ORIG)),
+    ]
+    _, d = cli.ok("create-divi-page", {"title": titulo, "sections": secciones})
+    est["pagina"] = d["id"]
+    assert d["status"] == "draft" and script("--estado", d["id"]) == "draft", d
+    assert [n["path"] for n in d["nodes"]][:2] == ["0", "0.0"] and "0.0.0.0.3" in [n["path"] for n in d["nodes"]] and "0.1" in [n["path"] for n in d["nodes"]], d["nodes"]
+    assert all(re.fullmatch(r"[0-9a-f]{64}", n["fingerprint"]) for n in d["nodes"]), d["nodes"]
+    crudo = contenido(d["id"])
+    assert "<!-- wp:divi/placeholder" in crudo and "<!-- wp:divi/text " in crudo and "<!-- wp:divi/image " in crudo, crudo[:300]
+    assert script("--meta", d["id"], "_et_pb_use_divi_5") == "on" and script("--meta", d["id"], "_et_pb_use_builder") == "on"
+    assert int(script("--contar-paginas")) == n0 + 1
+    _, p = cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    assert script("--estado", d["id"]) == "publish", p
+    assert T_ORIG in frontend(d["id"]) and S_ORIG in frontend(d["id"])
+
+def leer():
+    nodos = por_ruta(huellas(est["pagina"]))
+    tipos = {n["type"] for n in nodos.values()}
+    assert {"divi/placeholder", "divi/section", "divi/row", "divi/column", "divi/text", "divi/heading", "divi/button", "divi/image"} <= tipos, tipos
+    assert all(re.fullmatch(r"[0-9a-f]{64}", n["attributes"]["fingerprint"]) for n in nodos.values()), "fingerprint"
+    assert nodos["0.0.0.0.0"]["type"] == "divi/text" and nodos["0.0.0.0.0"]["text"] == T_ORIG, nodos["0.0.0.0.0"]
+    assert nodos["0.0.0.0.1"]["type"] == "divi/heading" and nodos["0.0.0.0.1"]["text"] == H_ORIG
+    assert nodos["0.0.0.0.2"]["type"] == "divi/button" and nodos["0.1.0.0.0"]["text"] == S_ORIG
+    est["huella_vieja"] = nodos["0.0.0.0.0"]["attributes"]["fingerprint"]
+    est["original"] = contenido(est["pagina"])
+    est["paginas"] = int(script("--contar-paginas"))
+
+def editar_modulo():
+    p = est["pagina"]
+    nodos = por_ruta(huellas(p))
+    _, d = cli.ok("edit-divi-module", {"id": p, "path": "0.0.0.0.0", "fingerprint": nodos["0.0.0.0.0"]["attributes"]["fingerprint"], "content": parche_texto(f"<p>{T_EDIT}</p>")})
+    assert d["draft_of"] == p and d["id"] != p and d["path"] == "0.0.0.0.0", d
+    est["copia"] = d["id"]
+    assert contenido(p) == est["original"], "el original cambió"
+    assert script("--estado", p) == "publish" and script("--estado", d["id"]) == "draft"
+    assert int(script("--contar-paginas")) == est["paginas"] + 1, "debía nacer una sola copia"
+    assert T_EDIT in contenido(d["id"]) and T_ORIG not in contenido(d["id"]) and S_ORIG in contenido(d["id"])
+    releida = por_ruta(huellas(d["id"]))["0.0.0.0.0"]
+    assert releida["text"] == T_EDIT and releida["attributes"]["fingerprint"] == d["fingerprint"], (releida, d["fingerprint"])
+
+def reemplazar_seccion():
+    p, copia = est["pagina"], est["copia"]
+    nodos = por_ruta(huellas(copia))
+    assert nodos["0.1"]["type"] == "divi/section"
+    nueva = seccion(texto(S_NUEVA), modulo("divi/heading", title={"innerContent": valor(H_NUEVO)}))
+    _, d = cli.ok("edit-divi-section", {"id": p, "operation": "replace", "path": "0.1", "fingerprint": nodos["0.1"]["attributes"]["fingerprint"], "sections": [nueva]})
+    assert d["id"] == copia and d["draft_of"] == p, d
+    assert contenido(p) == est["original"], "el original cambió"
+    assert int(script("--contar-paginas")) == est["paginas"] + 1, "no debía nacer otra copia"
+    crudo = contenido(copia)
+    assert S_NUEVA in crudo and H_NUEVO in crudo and S_ORIG not in crudo and T_EDIT in crudo, "la copia no tiene lo reconstruido"
+    assert [n["path"] for n in d["nodes"]][:1] == ["0.1"] or "0.1" in [n["path"] for n in d["nodes"]], d["nodes"]
+
+def publicar_y_frontend():
+    p, copia = est["pagina"], est["copia"]
+    assert T_EDIT not in frontend(p), "el original ya mostraba el texto editado antes de publicar"
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (p, copia), m
+    assert int(script("--contar-paginas")) == est["paginas"], "la copia no se borró al publicar"
+    html = frontend(p)
+    for esperado in (T_EDIT, S_NUEVA, H_NUEVO, B_TEXTO):
+        assert esperado in html, f"el frontend no muestra «{esperado}»"
+    for viejo in (T_ORIG, S_ORIG):
+        assert viejo not in html, f"el frontend sigue mostrando «{viejo}»"
+    assert "wp:divi/" not in html and "<!-- wp:" not in html, "comentarios de bloque crudos en el frontend"
+    est["publicado"] = contenido(p)
+
+def sin_escribir(nombre, llamar, esperado_en_msg):
+    def fn():
+        n_pag, datos = script("--contar-paginas"), contenido(est["pagina"])
+        es_error, msg, _ = llamar()
+        assert es_error, "debía rechazarse"
+        for e in esperado_en_msg:
+            assert e in msg, f"falta «{e}» en: {msg[:300]!r}"
+        assert script("--contar-paginas") == n_pag, "cambió la cantidad de páginas (¿copia?)"
+        assert contenido(est["pagina"]) == datos == est["publicado"], "cambió el original"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+comprobar("create-divi-page: sección>fila>columna>texto+título+botón+imagen; borrador con bloques y metas; se publica", crear)
+comprobar("get-page-structure: nodos divi5 con path, tipo, texto y fingerprint", leer)
+comprobar("edit-divi-module: el texto va a la copia de trabajo; el original no cambia", editar_modulo)
+comprobar("edit-divi-section: reemplaza una sección en la misma copia; el original no cambia", reemplazar_seccion)
+comprobar("publicar la copia: el frontend muestra los textos nuevos y ningún comentario de bloque crudo", publicar_y_frontend)
+
+nodos_pub = por_ruta(huellas(est["pagina"])) if not fallas else {}
+def huella(ruta):
+    return nodos_pub[ruta]["attributes"]["fingerprint"]
+
+if nodos_pub:
+    p = est["pagina"]
+    sin_escribir("módulo divi/code (nexo_mcp_divi_module_denied)", lambda: cli.call("edit-divi-section", {"id": p, "operation": "insert", "path": "0.0.0.0", "position": "inside", "fingerprint": huella("0.0.0.0"), "sections": [{"type": "divi/code"}]}), ["divi/code", "no está en el catálogo"])
+    sin_escribir("shortcode en un texto (nexo_mcp_divi_shortcode_denied)", lambda: cli.call("edit-divi-module", {"id": p, "path": "0.0.0.0.0", "fingerprint": huella("0.0.0.0.0"), "content": parche_texto('<p>[gallery ids="1"]</p>')}), ["shortcode", "[gallery]"])
+    sin_escribir("enlace javascript: (nexo_mcp_divi_value_invalid)", lambda: cli.call("edit-divi-module", {"id": p, "path": "0.0.0.0.2", "fingerprint": huella("0.0.0.0.2"), "content": {"button": {"innerContent": valor({"text": "x", "linkUrl": "javascript:alert(1)"})}}}), ["linkUrl", "http, https, mailto, tel"])
+    sin_escribir("fingerprint viejo (nexo_mcp_divi_node_changed)", lambda: cli.call("edit-divi-module", {"id": p, "path": "0.0.0.0.0", "fingerprint": est["huella_vieja"], "content": parche_texto("<p>x</p>")}), ["la huella no coincide", "no se escribió nada"])
+    sin_escribir("divi/placeholder raíz (nexo_mcp_divi_operation_invalid)", lambda: cli.call("edit-divi-section", {"id": p, "operation": "replace", "path": "0", "fingerprint": huella("0"), "sections": [seccion(texto("x"))]}), ["divi/placeholder", "No se escribió nada"])
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de Divi 5 OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de Divi 5 tuvo comprobaciones fallidas"
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+fi
+if [ -n "$divi_tema_previo" ]; then
+	if wp theme activate "$divi_tema_previo" >/dev/null; then echo "Tema restaurado: $divi_tema_previo"; divi_tema_previo=""
+	else falla "no se pudo restaurar el tema $divi_tema_previo"; fi
 fi
 echo
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"

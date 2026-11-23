@@ -76,6 +76,9 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/migrate-elementor-page',
 		'nexo-mcp/list-dynamic-tags',
 		'nexo-mcp/set-dynamic-tag',
+		'nexo-mcp/edit-divi-module',
+		'nexo-mcp/create-divi-page',
+		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -406,6 +409,34 @@ final class ExtendedAbilityRegistrar {
 			$this->dynamic_set_schema(),
 			fn( array $input ) => $this->builders->set_dynamic_tag( $input ),
 			fn( array $input ) => $this->dynamic_tag_permission( $input )
+		);
+		$this->ability(
+			'edit-divi-module',
+			'Editar un módulo de Divi 5',
+			$this->divi_module_description(),
+			'write',
+			$this->divi_module_schema(),
+			fn( array $input ) => $this->builders->edit_divi_module( $input ),
+			fn( array $input ) => $this->elementor_page_permission( $input )
+		);
+		$this->ability(
+			'create-divi-page',
+			'Crear página de Divi 5 (borrador)',
+			$this->divi_page_description(),
+			'write',
+			$this->divi_page_schema(),
+			fn( array $input ) => $this->builders->create_divi_page( $input ),
+			// Como create-elementor-page: contenido nuevo, sin post al que atar la capacidad. Nunca publica.
+			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'edit-divi-section',
+			'Reconstruir secciones de Divi 5',
+			$this->divi_section_description(),
+			'write',
+			$this->divi_section_schema(),
+			fn( array $input ) => $this->builders->edit_divi_section( $input ),
+			fn( array $input ) => $this->elementor_page_permission( $input )
 		);
 		$this->ability(
 			'list-components',
@@ -1103,6 +1134,205 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: lista de {name, group, label, categories, settings, targets}. settings es el esquema de los ajustes admitidos del tag ({type: text | number | switch | enum | taxonomy, options?, min?, max?}); targets, las props donde sirve (widget.prop, por categoría). Los tags son de Elementor Pro: sin Pro (ningún tag registrado) devuelve una lista vacía, no un error.',
 			)
+		);
+	}
+
+	/**
+	 * Descripción de edit-divi-module.
+	 */
+	private function divi_module_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Cambia el contenido y/o el diseño de ESCRITORIO de un módulo de contenido de una página de Divi 5 (texto, título, botón, imagen, divisor, blurb, ícono, video, lista). Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+				'',
+				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes ni URLs javascript:.',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de edit-divi-module.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_module_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'          => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 o su copia de trabajo.',
+				),
+				'path'        => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del módulo (por ejemplo 0.0.0.0.1; ver get-page-structure).',
+				),
+				'fingerprint' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del módulo tal como la devolvió la lectura.',
+				),
+				'content'     => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+					'description'          => 'Atributos de contenido, con cada valor en <ruta>.desktop.value.',
+				),
+				'design'      => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+					'description'          => 'Atributos de diseño de escritorio (color, espaciado, tipografía), con cada valor en <ruta>.desktop.value.',
+				),
+				'draft'       => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'path', 'fingerprint' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción del árbol de módulos de Divi 5 que comparten create-divi-page y edit-divi-section.
+	 */
+	private function divi_tree_help(): string {
+		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes ni URLs javascript:. Máximo 200 módulos y 3 MB en la página resultante.';
+	}
+
+	/**
+	 * Descripción de create-divi-page.
+	 */
+	private function divi_page_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea una página de Divi 5 con módulos reales (secciones, filas, columnas y módulos de contenido) como BORRADOR. Nunca publica. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'ENTRADA: title y sections: la lista de secciones (sólo divi/section en la raíz; el divi/placeholder que envuelve el contenido lo pone el plugin). Cada módulo lleva builderVersion de la versión de Divi instalada.',
+				$this->divi_tree_help(),
+				'',
+				'SALIDA: id, status (draft), preview_url y nodes: lista plana de {path, type, fingerprint} con la ruta de cada nodo (úsala con nexo-mcp-edit-divi-section y nexo-mcp-edit-divi-module).',
+				'',
+				'ERRORES (no crean nada; si falla el guardado el borrador a medias se elimina): nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-divi-page.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_page_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'title'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'sections' => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Secciones: lista de nodos {type: "divi/section", attrs?, children?}. Ver la descripción de la herramienta.',
+					'items'       => array(
+						'type'                 => 'object',
+						'additionalProperties' => true,
+					),
+				),
+			),
+			'required'             => array( 'title', 'sections' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de edit-divi-section.
+	 */
+	private function divi_section_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Reemplaza, inserta o borra un nodo (sección, fila, columna o módulo) de una página de Divi 5 por su ruta. Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+				'',
+				'ENTRADA: id, operation (replace | insert | delete), path y fingerprint del nodo de referencia (se leen con nexo-mcp-get-page-structure o con la salida de nexo-mcp-create-divi-page), position (sólo con insert: before, after o inside; inside agrega al final de los hijos del nodo) y sections: el subárbol nuevo (lista de nodos; no se pasa con delete). Los nodos nuevos se validan contra el tipo real del padre: en una sección sólo caben filas, en una fila columnas, en una columna módulos de contenido, en un divi/icon-list sólo divi/icon-list-item. Los nodos fuera del subárbol reemplazado quedan byte a byte igual. Borrar el único elemento de la raíz (la última sección) se rechaza.',
+				$this->divi_tree_help(),
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de edit-divi-section.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_section_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'          => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 o su copia de trabajo.',
+				),
+				'operation'   => array(
+					'type'        => 'string',
+					'enum'        => array( 'replace', 'insert', 'delete' ),
+					'description' => 'replace cambia el nodo por sections; insert agrega sections junto al nodo; delete lo borra.',
+				),
+				'path'        => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del nodo de referencia (por ejemplo 0.1; ver get-page-structure).',
+				),
+				'fingerprint' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del nodo tal como la devolvió la lectura.',
+				),
+				'position'    => array(
+					'type'        => 'string',
+					'enum'        => array( 'before', 'after', 'inside' ),
+					'description' => 'Sólo con insert: antes, después o dentro (al final) del nodo.',
+				),
+				'sections'    => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Subárbol nuevo: lista de nodos {type, attrs?, children?}. No se pasa con delete.',
+					'items'       => array(
+						'type'                 => 'object',
+						'additionalProperties' => true,
+					),
+				),
+				'draft'       => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'operation', 'path', 'fingerprint' ),
+			'additionalProperties' => false,
 		);
 	}
 
