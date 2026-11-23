@@ -233,19 +233,26 @@ Reglas que siempre se cumplen:
   insertan en las páginas como un widget `e-component` que apunta a ellos
   (editar el componente lo cambia en todas las páginas). `list-components` lista
   los no archivados (`id`, `uid`, `title`, `status`, `modified`; con
-  `include_archived` también los archivados, marcados) sin el árbol.
+  `include_archived` también los archivados, marcados) sin el árbol; si
+  Elementor no puede leerlos responde `nexo_mcp_components_unreadable` (nunca
+  una lista vacía que se confunda con «no hay componentes»).
   `create-component` (`title` 2-200 caracteres y `elements`) valida el árbol con
   la misma lista cerrada de `create-elementor-page` (sin `e-component` ni
   `dynamic`), lo sanea con los parsers de Elementor y corre sus validadores
   (límite de 100 componentes, título y uid duplicados, sólo elementos atómicos,
   sin ciclos); lo crea en **borrador** con un uid propio (`nexo-` y 12
-  caracteres) y devuelve `id`, `uid`, `title` y `status`; publicarlo se hace en
-  el editor. `insert-component` (`id`, `draft`, `node_id`, `position`,
+  caracteres) y devuelve `id`, `uid`, `title` y `status` (si Elementor no
+  devuelve un id válido, `nexo_mcp_component_create_failed`); publicarlo se hace
+  en el editor. `insert-component` (`id`, `draft`, `node_id`, `position`,
   `component_id`) inserta la instancia por el camino de `edit-elementor-section`:
   copia de trabajo, bloqueo y respaldo; el original publicado no cambia hasta
   que se publica la copia. Un `component_id` que no existe, está archivado o en
   la papelera responde `nexo_mcp_component_not_found` (Elementor lo renderizaría
-  vacío sin avisar). **Sin overrides**: la instancia usa el componente tal cual;
+  vacío sin avisar). Se puede insertar cualquier componente utilizable, también
+  uno en borrador o de otro autor: es intencional, igual que en el editor de
+  Elementor (que no controla permisos por componente); quien tiene el scope ya
+  los ve en `list-components`, y la copia de trabajo no se publica sola.
+  **Sin overrides**: la instancia usa el componente tal cual;
   tampoco se editan, publican, archivan ni borran componentes por MCP, ni se
   insertan instancias dentro de componentes. Sin Pro con licencia (o sin el
   Editor V4) crear e insertar responden `nexo_mcp_components_unavailable` sin

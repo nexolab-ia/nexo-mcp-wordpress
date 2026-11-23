@@ -48,6 +48,12 @@ final class ComponentToolsTest extends NexoTestCase {
 	 */
 	private ?string $elementor_throws = null;
 
+	/** Id que devuelve Elementor al crear; null = el siguiente correlativo. */
+	private ?int $creator_returns = null;
+
+	/** Si el listado de Elementor lanza. */
+	private bool $lister_throws = false;
+
 	private bool $pro = true;
 
 	/**
@@ -64,13 +70,21 @@ final class ComponentToolsTest extends NexoTestCase {
 		$this->elementor_throws = null;
 		$this->pro              = true;
 		$this->existing         = array();
+		$this->creator_returns  = null;
+		$this->lister_throws    = false;
 	}
 
 	private function store(): ComponentStore {
 		return new ComponentStore(
 			new FakeSchemaGuard(),
 			fn(): bool => $this->pro,
-			fn(): array => $this->existing,
+			function (): array {
+				if ( $this->lister_throws ) {
+					throw new \RuntimeException( 'repositorio roto' );
+				}
+
+				return $this->existing;
+			},
 			fn( string $title, string $uid, array $elements ): ?string => $this->elementor_says,
 			function ( string $title, array $elements, string $status, string $uid ): int {
 				if ( null !== $this->elementor_throws ) {
@@ -78,7 +92,7 @@ final class ComponentToolsTest extends NexoTestCase {
 				}
 				$this->created[] = compact( 'title', 'elements', 'status', 'uid' );
 
-				return 500 + count( $this->created );
+				return $this->creator_returns ?? 500 + count( $this->created );
 			}
 		);
 	}
@@ -436,5 +450,30 @@ final class ComponentToolsTest extends NexoTestCase {
 		$this->create_tool()['execute_callback']( $input );
 
 		$this->assertStringNotContainsString( '<script', (string) wp_json_encode( $this->created[0]['elements'] ) );
+	}
+
+	public function test_si_elementor_no_devuelve_un_id_valido_crear_falla(): void {
+		foreach ( array( 0, -1 ) as $id ) {
+			$this->created         = array();
+			$this->creator_returns = $id;
+
+			$result = $this->create_tool()['execute_callback']( $this->input() );
+
+			$this->assertInstanceOf( \WP_Error::class, $result, (string) $id );
+			$this->assertSame( 'nexo_mcp_component_create_failed', $result->get_error_code(), (string) $id );
+		}
+	}
+
+	public function test_si_el_listado_de_elementor_falla_listar_devuelve_un_error_y_no_una_lista_vacia(): void {
+		$this->lister_throws = true;
+
+		$result = $this->abilities()[ self::LIST ]['execute_callback']( array() );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_components_unreadable', $result->get_error_code() );
+	}
+
+	public function test_listar_sin_componentes_sigue_devolviendo_una_lista_vacia(): void {
+		$this->assertSame( array( 'result' => array() ), $this->abilities()[ self::LIST ]['execute_callback']( array() ) );
 	}
 }

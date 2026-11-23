@@ -456,9 +456,9 @@ final class BuilderGateway {
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 *
-	 * @return array<int, array<string, mixed>>
+	 * @return array<int, array<string, mixed>>|\WP_Error
 	 */
-	public function list_components( array $input ): array {
+	public function list_components( array $input ) {
 		return ( $this->components ?? new ComponentStore() )->list( ! empty( $input['include_archived'] ) );
 	}
 

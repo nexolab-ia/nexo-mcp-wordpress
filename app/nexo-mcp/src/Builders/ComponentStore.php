@@ -43,7 +43,7 @@ final class ComponentStore {
 	private $can_create;
 
 	/**
-	 * Componentes existentes: fn(): array de {id, uid, title, status, modified, archived}.
+	 * Componentes existentes: fn(): array de {id, uid, title, status, modified, archived}. Lanza si no puede leerlos.
 	 *
 	 * @var callable
 	 */
@@ -131,7 +131,14 @@ final class ComponentStore {
 	 * @param int $id Id del post `elementor_component`.
 	 */
 	public function usable( int $id ): bool {
-		foreach ( ( $this->lister )() as $row ) {
+		try {
+			$rows = ( $this->lister )();
+		} catch ( \Throwable $e ) {
+			// Sin poder leer el repositorio no se inserta nada.
+			return false;
+		}
+
+		foreach ( $rows as $row ) {
 			if ( (int) ( $row['id'] ?? 0 ) === $id ) {
 				return empty( $row['archived'] ) && 'trash' !== ( $row['status'] ?? '' );
 			}
@@ -145,12 +152,22 @@ final class ComponentStore {
 	 *
 	 * @param bool $include_archived Incluir archivados (y marcar `archived`).
 	 *
-	 * @return array<int, array<string, mixed>>
+	 * @return array<int, array<string, mixed>>|\WP_Error `nexo_mcp_components_unreadable` si Elementor no pudo leerlos.
 	 */
-	public function list( bool $include_archived = false ): array {
+	public function list( bool $include_archived = false ) {
+		try {
+			$rows = ( $this->lister )();
+		} catch ( \Throwable $e ) {
+			// Un fallo no se informa como «no hay componentes».
+			return new \WP_Error(
+				'nexo_mcp_components_unreadable',
+				__( 'No se pudieron leer los componentes de Elementor.', 'nexo-mcp' ) . ' ' . self::plain_message( $e->getMessage() )
+			);
+		}
+
 		$out = array();
 
-		foreach ( ( $this->lister )() as $row ) {
+		foreach ( $rows as $row ) {
 			$archived = ! empty( $row['archived'] );
 
 			if ( $archived && ! $include_archived ) {
@@ -247,6 +264,13 @@ final class ComponentStore {
 			return new \WP_Error( 'nexo_mcp_component_invalid', self::plain_message( $e->getMessage() ) );
 		}
 
+		if ( ! is_int( $id ) || $id <= 0 ) {
+			return new \WP_Error(
+				'nexo_mcp_component_create_failed',
+				__( 'Elementor no devolvió el id del componente creado.', 'nexo-mcp' )
+			);
+		}
+
 		return array(
 			'id'     => $id,
 			'uid'    => $uid,
@@ -309,20 +333,17 @@ final class ComponentStore {
 
 		$out = array();
 
-		try {
-			foreach ( $repository::make()->all()->all() as $component ) {
-				$post  = get_post( (int) $component['id'] );
-				$out[] = array(
-					'id'       => (int) $component['id'],
-					'uid'      => (string) $component['uid'],
-					'title'    => (string) $component['title'],
-					'status'   => $post instanceof \WP_Post ? $post->post_status : '',
-					'modified' => $post instanceof \WP_Post ? $post->post_modified : '',
-					'archived' => ! empty( $component['is_archived'] ),
-				);
-			}
-		} catch ( \Throwable $e ) {
-			return array();
+		// Si el repositorio lanza, la excepción sube: list() la informa como error.
+		foreach ( $repository::make()->all()->all() as $component ) {
+			$post  = get_post( (int) $component['id'] );
+			$out[] = array(
+				'id'       => (int) $component['id'],
+				'uid'      => (string) $component['uid'],
+				'title'    => (string) $component['title'],
+				'status'   => $post instanceof \WP_Post ? $post->post_status : '',
+				'modified' => $post instanceof \WP_Post ? $post->post_modified : '',
+				'archived' => ! empty( $component['is_archived'] ),
+			);
 		}
 
 		return $out;

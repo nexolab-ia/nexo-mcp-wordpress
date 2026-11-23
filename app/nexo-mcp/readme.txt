@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.6.0
+Stable tag: 1.6.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,11 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.6.1 =
+* Corrección: `list-components` respondía una lista vacía si Elementor no podía leer los componentes, igual que si no hubiera ninguno; ahora responde `nexo_mcp_components_unreadable` con el motivo. Sin componentes sigue devolviendo una lista vacía.
+* Corrección: `create-component` daba por creado el componente aunque Elementor no devolviera un id válido; ahora responde `nexo_mcp_component_create_failed`.
+* Documentación: `insert-component` acepta cualquier componente utilizable, también uno en borrador o de otro autor, igual que el editor de Elementor.
 
 = 1.6.0 =
 * Nuevo: componentes de Elementor 4 como datos (requiere **Elementor Pro con licencia activa** y el Editor V4). Tres herramientas: `list-components` (los componentes no archivados: `id`, `uid`, `title`, `status`, `modified`), `create-component` (crea un componente en **borrador** a partir de un árbol atómico validado, con los validadores de Elementor: límite de 100, título y uid duplicados, sólo elementos atómicos, sin ciclos) e `insert-component` (inserta en una página una instancia `e-component` que apunta al componente, en la copia de trabajo: el original no cambia hasta publicar). Sin Pro con licencia, crear e insertar responden `nexo_mcp_components_unavailable` sin escribir; un `component_id` que no existe, está archivado o en la papelera responde `nexo_mcp_component_not_found`.
