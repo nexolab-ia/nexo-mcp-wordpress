@@ -29,7 +29,7 @@ tipografía base. Rama `feat/divi-diseno-global` desde `main` (c66aa66, v1.7.0).
 - [x] T1 (S1-S3) Sonda en el docker (Divi 5.19.1): dónde y cómo guarda Divi 5 la paleta global (colores globales `gcid-…`), las variables de diseño (números, tamaños, espaciado, fuentes, textos, imágenes, enlaces) y las fuentes y tipografía base (opciones, posts, REST del Visual Builder), cómo se referencian desde los módulos (`var(--gcid-…)`, `$variable(...)$`), qué invalida el CSS, si hay historial o deshacer propio, y qué hizo F4 para Elementor (`odd/tasks/estilos-globales.md`) que se pueda reusar (permiso `mcp:design_system`, deshacer). Escribir S4 y las tareas. Ruta: worker (sonda, context backstop). Commit: —
 - [x] T2 (S4, S5, S8 permiso/lectura/deshacer) scope y ajustes, `DiviDesignStore` (lectura, bloqueo, historial, deshacer, flush; dependencias de Divi inyectables), `get-divi-design-system`, `undo-divi-design-change`; PHPUnit. Ruta: worker. Risk: item 2 (scope y permiso nuevos). Commit: 99d0f82.
 - [x] T3 (S6, S7, S8 escrituras) `set-divi-global-color`, `delete-divi-global-color` (uso y `force`), `set-divi-variable`, `archive-divi-variable`, `set-divi-typography`, con validación y respaldo; avisos R1-001, R1-002, R3-undo-colors-customizer-ids y R3-undo-pop-unverified de L5; PHPUnit; humo en el docker. Ruta: worker. Risk: item 1 (reescribe opciones globales del sitio). Commit: ee3e5fc.
-- [x] T4 (S8 e2e/docs) e2e con Divi 5 (SKIP sin Divi), README/EQUIVALENCIAS/readme.txt, 1.8.0; avisos de L7. Ruta: worker. Commit: —
+- [x] T4 (S8 e2e/docs) e2e con Divi 5 (SKIP sin Divi), README/EQUIVALENCIAS/readme.txt, 1.8.0; avisos de L7. Ruta: worker. Commit: 51de328.
 
 ## Log
 
