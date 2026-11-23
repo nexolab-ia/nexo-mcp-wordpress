@@ -47,6 +47,8 @@ final class Settings {
 			// Cambia clases, variables, colores y tipografía de todo el sitio en vivo:
 			// apagado hasta que el dueño lo enciende (con respaldo y deshacer).
 			'design_system_tools_enabled' => false,
+			// Asignar datos dinámicos (tags de Elementor Pro) a elementos: apagado hasta que el dueño lo enciende.
+			'builders_dynamic_enabled'    => false,
 			'publishing_enabled'          => true,
 			'destructive_enabled'         => false,
 			'read_only'                   => true,

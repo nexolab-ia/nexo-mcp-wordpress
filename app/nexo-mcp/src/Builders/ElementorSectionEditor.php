@@ -245,7 +245,9 @@ final class ElementorSectionEditor {
 		}
 
 		$elements = $input['elements'] ?? null;
-		$checked  = $this->guard->validator()->validate(
+		// Un dato dinámico que el documento ya tiene (mismo id de nodo, mismo tipo, misma
+		// prop, mismo valor) no se rechaza; uno nuevo o cambiado sí (se asigna con set-dynamic-tag).
+		$checked = $this->guard->validator()->accepting_unchanged_dynamic( $tree )->validate(
 			$elements,
 			(string) $plan['parent_kind'],
 			(int) $plan['base_depth'],
@@ -261,7 +263,13 @@ final class ElementorSectionEditor {
 			return new \WP_Error( 'nexo_mcp_elementor_tree_invalid', 'elements: ' . __( 'debe ser una lista no vacía de elementos.', 'nexo-mcp' ) );
 		}
 
-		$checked = $this->guard->validate( $elements );
+		// Los datos dinámicos ya aprobados por el validador (idénticos a los guardados) no
+		// pasan por los analizadores de Elementor, que los comparan con los tags que registra
+		// el editor (y no todos los de texto, ver L5): se apartan y se devuelven tal cual
+		// después del saneado. Son el valor guardado, nunca texto nuevo del cliente.
+		$split = self::split_dynamic( $elements );
+
+		$checked = $this->guard->validate( $split['elements'] );
 
 		if ( is_wp_error( $checked ) ) {
 			return $checked;
@@ -269,15 +277,88 @@ final class ElementorSectionEditor {
 
 		// Lo que se guarda es lo saneado por Elementor, como en create-elementor-page
 		// (que pasa por Document::save): nunca el texto crudo del cliente.
-		$clean = $this->guard->sanitize( $elements );
+		$clean = $this->guard->sanitize( $split['elements'] );
 
 		if ( is_wp_error( $clean ) ) {
 			return $clean;
 		}
 
+		$clean = self::restore_dynamic( $clean, $split['dynamic'] );
+
 		$builder = new ElementorTreeBuilder( $this->id_generator );
 
 		return $builder->reserve( ElementorTree::collect_ids( $tree ) )->build( $clean );
+	}
+
+	/**
+	 * Aparta las props dinámicas de primer nivel de `settings` de una lista de nodos.
+	 *
+	 * @param array<int|string, mixed> $nodes Nodos del cliente (ya validados).
+	 *
+	 * @return array{elements: array<int|string, mixed>, dynamic: array<int|string, array{props: array<string, mixed>, children: array<int|string, mixed>}>}
+	 */
+	private static function split_dynamic( array $nodes ): array {
+		$dynamic = array();
+
+		foreach ( $nodes as $index => $node ) {
+			$props = array();
+
+			if ( is_array( $node ) && is_array( $node['settings'] ?? null ) ) {
+				foreach ( $node['settings'] as $key => $value ) {
+					if ( is_array( $value ) && 'dynamic' === ( $value['$$type'] ?? null ) ) {
+						$props[ $key ] = $value;
+						unset( $node['settings'][ $key ] );
+					}
+				}
+			}
+
+			$children = array();
+
+			if ( is_array( $node ) && is_array( $node['elements'] ?? null ) ) {
+				$inner            = self::split_dynamic( $node['elements'] );
+				$node['elements'] = $inner['elements'];
+				$children         = $inner['dynamic'];
+			}
+
+			if ( array() !== $props || array() !== $children ) {
+				$dynamic[ $index ] = array(
+					'props'    => $props,
+					'children' => $children,
+				);
+			}
+
+			$nodes[ $index ] = $node;
+		}
+
+		return array(
+			'elements' => $nodes,
+			'dynamic'  => $dynamic,
+		);
+	}
+
+	/**
+	 * Devuelve a su sitio las props dinámicas apartadas por {@see self::split_dynamic()}.
+	 *
+	 * @param array<int|string, mixed> $nodes   Nodos saneados (misma forma y orden que los apartados).
+	 * @param array<int|string, mixed> $dynamic Props apartadas.
+	 *
+	 * @return array<int|string, mixed>
+	 */
+	private static function restore_dynamic( array $nodes, array $dynamic ): array {
+		foreach ( $dynamic as $index => $kept ) {
+			if ( ! isset( $nodes[ $index ] ) || ! is_array( $nodes[ $index ] ) ) {
+				continue;
+			}
+
+			$settings                    = is_array( $nodes[ $index ]['settings'] ?? null ) ? $nodes[ $index ]['settings'] : array();
+			$nodes[ $index ]['settings'] = array_merge( $settings, $kept['props'] );
+
+			if ( array() !== $kept['children'] && is_array( $nodes[ $index ]['elements'] ?? null ) ) {
+				$nodes[ $index ]['elements'] = self::restore_dynamic( $nodes[ $index ]['elements'], $kept['children'] );
+			}
+		}
+
+		return $nodes;
 	}
 
 	/**

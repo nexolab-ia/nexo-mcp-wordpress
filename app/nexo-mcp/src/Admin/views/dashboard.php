@@ -74,6 +74,12 @@ $sensitive_options = array(
 		'confirm-title' => __( '¿Seguro que quieres activar los cambios al sistema de diseño?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá cambiar las clases, variables, colores y tipografía globales de Elementor de todo el sitio, y tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer el último.', 'nexo-mcp' ),
 	),
+	'builders_dynamic_enabled'    => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'dinámicos', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres permitir datos dinámicos en las páginas?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá asociar a textos e imágenes de las páginas datos del sitio (título, fecha, imagen destacada…) que se muestran a todos los visitantes. Sólo una lista cerrada de tags sin datos sensibles; el cambio va a la copia de trabajo.', 'nexo-mcp' ),
+	),
 	'extension_deletion_enabled'  => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
@@ -907,6 +913,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'design_system_tools_enabled' ); ?>
 							<?php checked( ! empty( $settings['design_system_tools_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Datos dinámicos de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Asocia datos del sitio (título, fecha, imagen destacada…) a textos e imágenes de Elementor 4. Requiere Elementor Pro y el módulo de constructores.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[builders_dynamic_enabled]"
+							value="1"
+							<?php $print_sensitive( 'builders_dynamic_enabled' ); ?>
+							<?php checked( ! empty( $settings['builders_dynamic_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

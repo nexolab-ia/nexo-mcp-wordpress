@@ -233,15 +233,51 @@ final class DynamicTagCatalog {
 	private $taxonomy_check;
 
 	/**
+	 * Título de un tag registrado: fn( string $name ): string; vacío si no hay.
+	 *
+	 * @var callable
+	 */
+	private $label_of;
+
+	/**
 	 * Construye el catálogo.
 	 *
 	 * @param callable|null $registered_tags fn(): array<int, string> con los nombres de los tags registrados.
 	 *                                        Por omisión, `\Elementor\Plugin::$instance->dynamic_tags->get_tags()`.
 	 * @param callable|null $taxonomy_check  fn( string ): bool, si es una taxonomía registrada y pública. Por omisión, la de WordPress.
+	 * @param callable|null $label_of        fn( string ): string, el título del tag registrado ('' si no hay). Por omisión, el de Elementor.
 	 */
-	public function __construct( ?callable $registered_tags = null, ?callable $taxonomy_check = null ) {
+	public function __construct( ?callable $registered_tags = null, ?callable $taxonomy_check = null, ?callable $label_of = null ) {
 		$this->registered_tags = $registered_tags ?? array( self::class, 'elementor_registered_tags' );
 		$this->taxonomy_check  = $taxonomy_check ?? array( self::class, 'public_taxonomy' );
+		$this->label_of        = $label_of ?? array( self::class, 'elementor_tag_label' );
+	}
+
+	/**
+	 * Tags del catálogo registrados en el sitio, con lo que hace falta para asignarlos.
+	 *
+	 * Sin tags registrados (sin Elementor Pro) devuelve una lista vacía, no un error.
+	 *
+	 * @return array<int, array{name: string, group: string, label: string, categories: array<int, string>, settings: array<string, array<string, mixed>>, targets: array<int, string>}>
+	 */
+	public function listing(): array {
+		$out = array();
+
+		foreach ( $this->available() as $name ) {
+			$tag   = self::TAGS[ $name ];
+			$label = trim( (string) ( $this->label_of )( $name ) );
+
+			$out[] = array(
+				'name'       => $name,
+				'group'      => $tag['group'],
+				'label'      => '' !== $label ? $label : $name,
+				'categories' => array( $tag['category'] ),
+				'settings'   => $tag['settings'],
+				'targets'    => array_keys( array_filter( self::TARGETS, static fn( string $category ): bool => $category === $tag['category'] ) ),
+			);
+		}
+
+		return $out;
 	}
 
 	/**
@@ -554,6 +590,29 @@ final class DynamicTagCatalog {
 		$tags = $plugin::$instance->dynamic_tags->get_tags();
 
 		return is_array( $tags ) ? array_map( 'strval', array_keys( $tags ) ) : array();
+	}
+
+	/**
+	 * Título del tag según Elementor ('' si no se puede leer).
+	 *
+	 * @param string $name Tag.
+	 */
+	public static function elementor_tag_label( string $name ): string {
+		$plugin = '\Elementor\Plugin';
+
+		if ( ! class_exists( $plugin ) || ! isset( $plugin::$instance->dynamic_tags ) ) {
+			return '';
+		}
+
+		try {
+			$tags     = $plugin::$instance->dynamic_tags->get_tags();
+			$instance = is_array( $tags ) && is_array( $tags[ $name ] ?? null ) ? ( $tags[ $name ]['instance'] ?? null ) : null;
+			$title    = is_object( $instance ) && method_exists( $instance, 'get_title' ) ? $instance->get_title() : '';
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+
+		return is_string( $title ) ? $title : '';
 	}
 
 	/**

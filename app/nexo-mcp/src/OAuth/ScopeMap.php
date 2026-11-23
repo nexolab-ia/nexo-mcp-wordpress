@@ -44,6 +44,7 @@ final class ScopeMap {
 		'mcp:commerce'         => Capabilities::COMMERCE,
 		'mcp:builders'         => Capabilities::BUILDERS,
 		'mcp:builder_attrs'    => Capabilities::BUILDER_ATTRS,
+		'mcp:builders:dynamic' => Capabilities::BUILDERS_DYNAMIC,
 		'mcp:publish'          => Capabilities::PUBLISH,
 		'mcp:destructive'      => Capabilities::DESTRUCTIVE,
 		'mcp:design_system'    => Capabilities::DESIGN_SYSTEM,
@@ -93,16 +94,18 @@ final class ScopeMap {
 	 * @var array<string, string>
 	 */
 	private const MODULE_SWITCH = array(
-		'mcp:content'       => 'content_tools_enabled',
-		'mcp:seo'           => 'seo_tools_enabled',
-		'mcp:appearance'    => 'appearance_tools_enabled',
-		'mcp:maintenance'   => 'maintenance_tools_enabled',
-		'mcp:commerce'      => 'woocommerce_tools_enabled',
-		'mcp:builders'      => 'builders_tools_enabled',
-		'mcp:builder_attrs' => 'builders_tools_enabled',
-		'mcp:publish'       => 'publishing_enabled',
-		'mcp:destructive'   => 'destructive_enabled',
-		'mcp:design_system' => 'design_system_tools_enabled',
+		'mcp:content'          => 'content_tools_enabled',
+		'mcp:seo'              => 'seo_tools_enabled',
+		'mcp:appearance'       => 'appearance_tools_enabled',
+		'mcp:maintenance'      => 'maintenance_tools_enabled',
+		'mcp:commerce'         => 'woocommerce_tools_enabled',
+		'mcp:builders'         => 'builders_tools_enabled',
+		'mcp:builder_attrs'    => 'builders_tools_enabled',
+		'mcp:publish'          => 'publishing_enabled',
+		'mcp:destructive'      => 'destructive_enabled',
+		'mcp:design_system'    => 'design_system_tools_enabled',
+		// Al final: el baseline de PHPStan fija las primeras entradas de esta lista.
+		'mcp:builders:dynamic' => 'builders_dynamic_enabled',
 	);
 
 	/**
@@ -121,6 +124,7 @@ final class ScopeMap {
 		'mcp:commerce'         => 'Administrar productos de WooCommerce',
 		'mcp:builders'         => 'Editar textos en páginas hechas con constructores visuales',
 		'mcp:builder_attrs'    => 'Cambiar enlaces e imágenes en páginas hechas con constructores visuales',
+		'mcp:builders:dynamic' => 'Asignar datos dinámicos de Elementor (título del sitio, imagen destacada…) a textos e imágenes de las páginas',
 		'mcp:publish'          => 'Publicar contenido',
 		'mcp:destructive'      => 'Eliminar contenido de forma permanente',
 		'mcp:design_system'    => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',

@@ -76,6 +76,13 @@ final class BuilderGateway {
 	private ?DesignKitOperations $design_kit;
 
 	/**
+	 * Catálogo de dynamic tags; se crea al usarlo.
+	 *
+	 * @var DynamicTagCatalog|null
+	 */
+	private ?DynamicTagCatalog $dynamic_tags;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -88,6 +95,7 @@ final class BuilderGateway {
 	 * @param DesignClassOperations|null    $design_classes   Operaciones de clases globales.
 	 * @param DesignVariableOperations|null $design_variables Operaciones de variables globales.
 	 * @param DesignKitOperations|null      $design_kit       Operaciones del Kit.
+	 * @param DynamicTagCatalog|null        $dynamic_tags     Catálogo de dynamic tags (las pruebas inyectan los tags registrados).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -96,7 +104,8 @@ final class BuilderGateway {
 		?DesignSystemWriter $design_writer = null,
 		?DesignClassOperations $design_classes = null,
 		?DesignVariableOperations $design_variables = null,
-		?DesignKitOperations $design_kit = null
+		?DesignKitOperations $design_kit = null,
+		?DynamicTagCatalog $dynamic_tags = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -105,6 +114,7 @@ final class BuilderGateway {
 		$this->design_classes   = $design_classes;
 		$this->design_variables = $design_variables;
 		$this->design_kit       = $design_kit;
+		$this->dynamic_tags     = $dynamic_tags;
 	}
 
 	/**
@@ -361,6 +371,55 @@ final class BuilderGateway {
 				'position'  => isset( $input['position'] ) && is_string( $input['position'] ) ? $input['position'] : '',
 				'elements'  => $input['elements'] ?? null,
 				'draft'     => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Lista los dynamic tags del catálogo cerrado que el sitio tiene registrados.
+	 *
+	 * Sin Elementor Pro no hay tags registrados: la lista sale vacía, no es un error.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_dynamic_tags(): array {
+		return ( $this->dynamic_tags ?? new DynamicTagCatalog() )->listing();
+	}
+
+	/**
+	 * Asigna un dynamic tag a una prop de un nodo atómico, en la copia de trabajo.
+	 *
+	 * Mismo permiso sobre el original y mismo camino de escritura que
+	 * {@see self::edit_elementor_section()}. Ver {@see DynamicTagAssigner}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_dynamic_tag( array $input ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		$assigner = new DynamicTagAssigner(
+			$this->settings,
+			new ElementorAdapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new ElementorSchemaGuard(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			$this->dynamic_tags ?? new DynamicTagCatalog()
+		);
+
+		return $assigner->assign(
+			$post,
+			array(
+				'node_id' => isset( $input['node_id'] ) && is_string( $input['node_id'] ) ? sanitize_text_field( $input['node_id'] ) : '',
+				'prop'    => isset( $input['prop'] ) && is_string( $input['prop'] ) ? $input['prop'] : '',
+				'tag'     => $input['tag'] ?? null,
+				'draft'   => $input['draft'] ?? false,
 			)
 		);
 	}
