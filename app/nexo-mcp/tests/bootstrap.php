@@ -343,6 +343,104 @@ function wp_json_encode( $data, $flags = 0 ) {
 function untrailingslashit( $value ) { return rtrim( (string) $value, '/\\' ); }
 function trailingslashit( $value ) { return untrailingslashit( $value ) . '/'; }
 function wp_parse_url( $url, $component = -1 ) { return parse_url( (string) $url, $component ); }
+
+// ------------------------------------------------------------ Bloques del núcleo
+// Réplicas mínimas de parse_blocks()/serialize_block() de WordPress (el núcleo no se
+// carga en las pruebas). Sólo se definen si faltan, para no pisar el real.
+if ( ! function_exists( 'has_blocks' ) ) {
+	function has_blocks( $content = null ): bool {
+		return false !== strpos( (string) $content, '<!-- wp:' );
+	}
+}
+
+if ( ! function_exists( 'parse_blocks' ) ) {
+	function parse_blocks( $content ): array {
+		$content = (string) $content;
+		$regex   = '/<!--\s+(?P<closer>\/)?wp:(?P<namespace>[a-z][a-z0-9_-]*\/)?(?P<name>[a-z][a-z0-9_-]*)\s+(?P<attrs>{(?:(?:[^}]+|}+(?=})|(?!}\s+\/?-->).)*+)?}\s+)?(?P<void>\/)?-->/s';
+		$found   = preg_match_all( $regex, $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		$out     = array();
+		$stack   = array();
+		$offset  = 0;
+
+		$add_text = static function ( string $text ) use ( &$out, &$stack ): void {
+			if ( '' === $text ) {
+				return;
+			}
+			if ( array() === $stack ) {
+				$out[] = array( 'blockName' => null, 'attrs' => array(), 'innerBlocks' => array(), 'innerHTML' => $text, 'innerContent' => array( $text ) );
+				return;
+			}
+			$top                   = count( $stack ) - 1;
+			$stack[ $top ]['innerHTML']    .= $text;
+			$stack[ $top ]['innerContent'][] = $text;
+		};
+		$attach   = static function ( array $block ) use ( &$out, &$stack ): void {
+			if ( array() === $stack ) {
+				$out[] = $block;
+				return;
+			}
+			$top                                = count( $stack ) - 1;
+			$stack[ $top ]['innerBlocks'][]     = $block;
+			$stack[ $top ]['innerContent'][]    = null;
+		};
+
+		foreach ( $found ? $matches : array() as $m ) {
+			$start = $m[0][1];
+			$add_text( substr( $content, $offset, $start - $offset ) );
+			$offset = $start + strlen( $m[0][0] );
+			$ns     = '' === $m['namespace'][0] ? 'core/' : $m['namespace'][0];
+			$name   = $ns . $m['name'][0];
+			$attrs  = '' === ( $m['attrs'][0] ?? '' ) ? array() : json_decode( $m['attrs'][0], true );
+			$block  = array( 'blockName' => $name, 'attrs' => is_array( $attrs ) ? $attrs : array(), 'innerBlocks' => array(), 'innerHTML' => '', 'innerContent' => array() );
+
+			if ( '' !== ( $m['closer'][0] ?? '' ) ) {
+				if ( array() !== $stack ) {
+					$done = array_pop( $stack );
+					$attach( $done );
+				}
+			} elseif ( '' !== ( $m['void'][0] ?? '' ) ) {
+				$attach( $block );
+			} else {
+				$stack[] = $block;
+			}
+		}
+
+		$add_text( substr( $content, $offset ) );
+
+		while ( array() !== $stack ) {
+			$attach( array_pop( $stack ) );
+		}
+
+		return $out;
+	}
+}
+
+if ( ! function_exists( 'serialize_block' ) ) {
+	function serialize_block( array $block ): string {
+		$html  = '';
+		$index = 0;
+		foreach ( $block['innerContent'] as $chunk ) {
+			$html .= is_string( $chunk ) ? $chunk : serialize_block( $block['innerBlocks'][ $index++ ] );
+		}
+		if ( null === $block['blockName'] ) {
+			return $html;
+		}
+		$name = 0 === strpos( $block['blockName'], 'core/' ) ? substr( $block['blockName'], 5 ) : $block['blockName'];
+		$attr = '';
+		if ( ! empty( $block['attrs'] ) ) {
+			$json = json_encode( $block['attrs'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			$json = str_replace( array( '--', '<', '>', '&', '\\"' ), array( '\\u002d\\u002d', '\\u003c', '\\u003e', '\\u0026', '\\u0022' ), (string) $json );
+			$attr = $json . ' ';
+		}
+		return '' === $html ? "<!-- wp:{$name} {$attr}/-->" : "<!-- wp:{$name} {$attr}-->\n{$html}\n<!-- /wp:{$name} -->";
+	}
+}
+
+if ( ! function_exists( 'serialize_blocks' ) ) {
+	function serialize_blocks( array $blocks ): string {
+		return implode( '', array_map( 'serialize_block', $blocks ) );
+	}
+}
 function rest_sanitize_boolean( $value ) {
 	if ( is_string( $value ) ) {
 		$value = strtolower( $value );

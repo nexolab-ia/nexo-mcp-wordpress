@@ -37,6 +37,10 @@ final class BuilderRegistry {
 		// del constructor.
 		$this->adapters = $adapters ?? array(
 			new ElementorAdapter(),
+			// Los bloques `divi/` son inequívocos; va antes que Divi 4 para que un
+			// `[et_pb_section` citado dentro de un texto de Divi 5 no lo reclame, y
+			// antes que el editor de bloques, que si no se quedaría la página.
+			new Divi5Adapter(),
 			new DiviAdapter(),
 			new WpBakeryAdapter(),
 			// Flatsome envuelve su layout en un bloque, así que va antes del editor
@@ -108,6 +112,11 @@ final class BuilderRegistry {
 
 		if ( function_exists( 'et_setup_theme' ) || defined( 'ET_BUILDER_VERSION' ) ) {
 			$active[] = 'divi';
+		}
+
+		// Divi 5 trae su propio constructor (bloques `divi/`) junto al de Divi 4.
+		if ( defined( 'ET_BUILDER_5_DIR' ) ) {
+			$active[] = 'divi5';
 		}
 
 		if ( defined( 'WPB_VC_VERSION' ) ) {
