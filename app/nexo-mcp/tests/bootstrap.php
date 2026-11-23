@@ -90,11 +90,23 @@ final class WP_Test_State {
 	/** Se llama una sola vez, en el primer `wp_cache_delete( id, 'post_meta' )` (justo tras obtener un bloqueo). */
 	public static ?\Closure $on_forget = null;
 
+	/** Si los filtros kses del contenido están activos (`kses_init_filters()` / `kses_remove_filters()`). */
+	public static bool $kses_active = false;
+
+	/** @var list<bool> Estado de los filtros kses en cada llamada a `wp_update_post()`. */
+	public static array $kses_during_save = array();
+
+	/** @var list<int> Contenidos cuya caché se limpió con `clean_post_cache()`. */
+	public static array $cleaned = array();
+
 	public static function reset(): void {
 		self::$cache_posts      = false;
 		self::$json_fail_in     = '';
 		self::$fail_update_post = false;
 		self::$on_forget        = null;
+		self::$kses_active      = false;
+		self::$kses_during_save = array();
+		self::$cleaned          = array();
 		self::$fail_trash       = false;
 		self::$post_cache  = array();
 		self::$options   = array();
@@ -597,6 +609,7 @@ function wp_cache_delete( $key, $group = '' ): bool {
 }
 function wp_update_post( $data, $wp_error = false ) {
 	$id = (int) ( $data['ID'] ?? 0 );
+	WP_Test_State::$kses_during_save[] = WP_Test_State::$kses_active;
 	if ( WP_Test_State::$fail_update_post ) {
 		return new WP_Error( 'db_update_error', 'No se pudo actualizar.' );
 	}
@@ -616,6 +629,21 @@ function wp_update_post( $data, $wp_error = false ) {
 		}
 	}
 	return $id;
+}
+
+if ( ! function_exists( 'has_filter' ) ) {
+	function has_filter( $hook, $callback = false ) {
+		return 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ? 10 : false;
+	}
+}
+if ( ! function_exists( 'kses_remove_filters' ) ) {
+	function kses_remove_filters(): void { WP_Test_State::$kses_active = false; }
+}
+if ( ! function_exists( 'kses_init_filters' ) ) {
+	function kses_init_filters(): void { WP_Test_State::$kses_active = true; }
+}
+if ( ! function_exists( 'clean_post_cache' ) ) {
+	function clean_post_cache( $post_id ): void { WP_Test_State::$cleaned[] = (int) $post_id; }
 }
 
 function wp_insert_post( $data, $wp_error = false ) {
@@ -646,4 +674,54 @@ function wp_register_ability( string $name, array $args ) {
 }
 function wp_register_ability_category( string $slug, array $args ) {
 	return true;
+}
+
+// El arranque de las pruebas no trae `wp_kses`: réplica mínima (etiquetas y atributos de la
+// lista, sin el contenido de script/style) sólo si el núcleo no está cargado.
+if ( ! function_exists( 'wp_kses' ) ) {
+	/**
+	 * @param string                              $content           HTML.
+	 * @param array<string, array<string, mixed>> $allowed_html      Etiquetas y atributos admitidos.
+	 * @param array<int, string>                  $allowed_protocols Esquemas admitidos.
+	 */
+	function wp_kses( $content, $allowed_html, $allowed_protocols = array() ): string {
+		$content = (string) preg_replace( '#<(script|style|iframe)\b[^>]*>.*?</\1>#is', '', $content );
+
+		return (string) preg_replace_callback(
+			'#<(/?)([a-z0-9]+)([^>]*)>#i',
+			static function ( array $m ) use ( $allowed_html, $allowed_protocols ): string {
+				$tag = strtolower( $m[2] );
+
+				if ( ! isset( $allowed_html[ $tag ] ) ) {
+					return '';
+				}
+
+				if ( '/' === $m[1] ) {
+					return '</' . $tag . '>';
+				}
+
+				$out = '';
+
+				preg_match_all( '#([a-z-]+)\s*=\s*("([^"]*)"|\'([^\']*)\')#i', $m[3], $attrs, PREG_SET_ORDER );
+
+				foreach ( $attrs as $attr ) {
+					$name  = strtolower( $attr[1] );
+					$value = '' !== ( $attr[3] ?? '' ) ? $attr[3] : ( $attr[4] ?? '' );
+
+					if ( ! isset( $allowed_html[ $tag ][ $name ] ) ) {
+						continue;
+					}
+
+					if ( 'href' === $name && 1 === preg_match( '#^([a-z][a-z0-9+.-]*):#i', $value, $scheme ) && ! in_array( strtolower( $scheme[1] ), $allowed_protocols, true ) ) {
+						continue;
+					}
+
+					$out .= ' ' . $name . '="' . $value . '"';
+				}
+
+				return '<' . $tag . $out . '>';
+			},
+			$content
+		);
+	}
 }

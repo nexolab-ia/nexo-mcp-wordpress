@@ -76,6 +76,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/migrate-elementor-page',
 		'nexo-mcp/list-dynamic-tags',
 		'nexo-mcp/set-dynamic-tag',
+		'nexo-mcp/edit-divi-module',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -406,6 +407,15 @@ final class ExtendedAbilityRegistrar {
 			$this->dynamic_set_schema(),
 			fn( array $input ) => $this->builders->set_dynamic_tag( $input ),
 			fn( array $input ) => $this->dynamic_tag_permission( $input )
+		);
+		$this->ability(
+			'edit-divi-module',
+			'Editar un módulo de Divi 5',
+			$this->divi_module_description(),
+			'write',
+			$this->divi_module_schema(),
+			fn( array $input ) => $this->builders->edit_divi_module( $input ),
+			fn( array $input ) => $this->elementor_page_permission( $input )
 		);
 		$this->ability(
 			'list-components',
@@ -1103,6 +1113,72 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: lista de {name, group, label, categories, settings, targets}. settings es el esquema de los ajustes admitidos del tag ({type: text | number | switch | enum | taxonomy, options?, min?, max?}); targets, las props donde sirve (widget.prop, por categoría). Los tags son de Elementor Pro: sin Pro (ningún tag registrado) devuelve una lista vacía, no un error.',
 			)
+		);
+	}
+
+	/**
+	 * Descripción de edit-divi-module.
+	 */
+	private function divi_module_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Cambia el contenido y/o el diseño de ESCRITORIO de un módulo de contenido de una página de Divi 5 (texto, título, botón, imagen, divisor, blurb, ícono, video, lista). Escribe en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
+				'',
+				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes ni URLs javascript:.',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de edit-divi-module.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_module_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'          => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 o su copia de trabajo.',
+				),
+				'path'        => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del módulo (por ejemplo 0.0.0.0.1; ver get-page-structure).',
+				),
+				'fingerprint' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del módulo tal como la devolvió la lectura.',
+				),
+				'content'     => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+					'description'          => 'Atributos de contenido, con cada valor en <ruta>.desktop.value.',
+				),
+				'design'      => array(
+					'type'                 => 'object',
+					'additionalProperties' => true,
+					'description'          => 'Atributos de diseño de escritorio (color, espaciado, tipografía), con cada valor en <ruta>.desktop.value.',
+				),
+				'draft'       => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'path', 'fingerprint' ),
+			'additionalProperties' => false,
 		);
 	}
 

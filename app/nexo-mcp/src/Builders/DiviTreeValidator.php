@@ -500,11 +500,11 @@ final class DiviTreeValidator {
 			case 'onoff':
 				return 'on' === $value || 'off' === $value ? $value : $this->invalid( $path, __( 'debe ser «on» u «off».', 'nexo-mcp' ) );
 			case 'family':
-				return 1 === preg_match( '/^[\p{L}\p{N} _\-]{1,80}$/u', $value ) ? $value : $this->invalid( $path, __( 'debe ser un nombre de fuente (letras, números, espacios, - y _).', 'nexo-mcp' ) );
+				return 1 === preg_match( '/^[\p{L}\p{N} _\-]{1,80}\z/u', $value ) ? $value : $this->invalid( $path, __( 'debe ser un nombre de fuente (letras, números, espacios, - y _).', 'nexo-mcp' ) );
 			case 'weight':
-				return 1 === preg_match( '/^(?:[1-9]00|normal|bold)$/', $value ) ? $value : $this->invalid( $path, __( 'debe ser 100-900, normal o bold.', 'nexo-mcp' ) );
+				return 1 === preg_match( '/^(?:[1-9]00|normal|bold)\z/', $value ) ? $value : $this->invalid( $path, __( 'debe ser 100-900, normal o bold.', 'nexo-mcp' ) );
 			case 'icon_unicode':
-				return 1 === preg_match( '/^(?:&#x[0-9a-f]{1,6};|%%\d{1,4}%%)$/i', $value ) ? $value : $this->invalid( $path, __( 'debe ser un código de ícono de Divi (&#x21; o %%3%%).', 'nexo-mcp' ) );
+				return 1 === preg_match( '/^(?:&#x[0-9a-f]{1,6};|%%\d{1,4}%%)\z/i', $value ) ? $value : $this->invalid( $path, __( 'debe ser un código de ícono de Divi (&#x21; o %%3%%).', 'nexo-mcp' ) );
 			default:
 				return $this->invalid( $path, __( 'tipo de valor desconocido.', 'nexo-mcp' ) );
 		}
@@ -647,7 +647,7 @@ final class DiviTreeValidator {
 		}
 
 		// Lo que se guarda es la salida de wp_kses: también se revisa, porque quitar etiquetas puede armar un shortcode.
-		$clean     = wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES );
+		$clean     = $this->force_safe_rel( wp_kses( $this->without_active_blocks( $value ), self::ALLOWED_HTML, DiviModuleCatalog::SCHEMES ) );
 		$shortcode = $this->registered_shortcode( $clean );
 
 		if ( null !== $shortcode ) {
@@ -655,6 +655,27 @@ final class DiviTreeValidator {
 		}
 
 		return $clean;
+	}
+
+	/**
+	 * Fuerza `rel="noopener noreferrer"` en los enlaces que abren en otra pestaña (`target`), contra el tabnabbing.
+	 *
+	 * @param string $html HTML ya saneado por `wp_kses`.
+	 */
+	private function force_safe_rel( string $html ): string {
+		return (string) preg_replace_callback(
+			'/<a\b([^>]*)>/i',
+			static function ( array $m ): string {
+				if ( 1 !== preg_match( '/(?<![\w-])target\s*=/i', $m[1] ) ) {
+					return $m[0];
+				}
+
+				$attrs = (string) preg_replace( '/\s+(?<![\w-])rel\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]*)/i', '', $m[1] );
+
+				return '<a' . rtrim( $attrs ) . ' rel="noopener noreferrer">';
+			},
+			$html
+		);
 	}
 
 	/**

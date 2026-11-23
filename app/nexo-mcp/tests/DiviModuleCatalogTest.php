@@ -191,4 +191,14 @@ final class DiviModuleCatalogTest extends TestCase {
 	public function test_url_values( string $value, bool $valid ): void {
 		$this->assertSame( $valid, DiviModuleCatalog::is_url( $value ) );
 	}
+
+	public function test_a_trailing_newline_never_validates(): void {
+		foreach ( array( "#fff\n", "rgb(1,2,3)\n", "gcid-x\n", "var(--gcid-x)\n", "\$variable({\"type\":\"color\",\"value\":{\"name\":\"gcid-x\",\"settings\":{}}})\$\n" ) as $value ) {
+			$this->assertFalse( DiviModuleCatalog::is_color( $value ), json_encode( $value ) );
+		}
+
+		foreach ( array( "10px\n", "0\n", "1.5em\n" ) as $value ) {
+			$this->assertFalse( DiviModuleCatalog::is_size( $value ), json_encode( $value ) );
+		}
+	}
 }

@@ -362,11 +362,11 @@ final class DiviModuleCatalog {
 	 * @param string $value Valor.
 	 */
 	public static function is_color( string $value ): bool {
-		return 1 === preg_match( '/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i', $value )
-			|| 1 === preg_match( '/^(?:rgb|hsl)a?\(\s*[0-9.]+(?:deg)?%?\s*[, ]\s*[0-9.]+%?\s*[, ]\s*[0-9.]+%?(?:\s*[,\/]\s*[0-9.]+%?)?\s*\)$/i', $value )
-			|| 1 === preg_match( '/^gcid-[a-z0-9-]+$/', $value )
-			|| 1 === preg_match( '/^var\(--gcid-[a-z0-9-]+\)$/', $value )
-			|| 1 === preg_match( '/^\$variable\(\{"type":"color","value":\{"name":"gcid-[a-z0-9-]+","settings":\{\}\}\}\)\$$/', $value );
+		return 1 === preg_match( '/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\z/i', $value )
+			|| 1 === preg_match( '/^(?:rgb|hsl)a?\(\s*[0-9.]+(?:deg)?%?\s*[, ]\s*[0-9.]+%?\s*[, ]\s*[0-9.]+%?(?:\s*[,\/]\s*[0-9.]+%?)?\s*\)\z/i', $value )
+			|| 1 === preg_match( '/^gcid-[a-z0-9-]+\z/', $value )
+			|| 1 === preg_match( '/^var\(--gcid-[a-z0-9-]+\)\z/', $value )
+			|| 1 === preg_match( '/^\$variable\(\{"type":"color","value":\{"name":"gcid-[a-z0-9-]+","settings":\{\}\}\}\)\$\z/', $value );
 	}
 
 	/**
@@ -375,7 +375,7 @@ final class DiviModuleCatalog {
 	 * @param string $value Valor.
 	 */
 	public static function is_size( string $value ): bool {
-		return 1 === preg_match( '/^(?:0|-?(?:\d+|\d*\.\d+)(?:px|em|rem|%|vw|vh))$/', $value );
+		return 1 === preg_match( '/^(?:0|-?(?:\d+|\d*\.\d+)(?:px|em|rem|%|vw|vh))\z/', $value );
 	}
 
 	/**

@@ -502,7 +502,7 @@ namespace NexoDev\NexoMCP\Tests {
 
 			$this->assertIsArray( $out );
 			$this->assertSame(
-				'<h2>T</h2><p>a <strong>b</strong> <em>c</em> <b>d</b> <i>e</i><br><span>f</span></p><ul><li>u</li></ul><ol><li>o</li></ol><a href="https://a.b" target="_blank" rel="noopener">l</a>dd',
+				'<h2>T</h2><p>a <strong>b</strong> <em>c</em> <b>d</b> <i>e</i><br><span>f</span></p><ul><li>u</li></ul><ol><li>o</li></ol><a href="https://a.b" target="_blank" rel="noopener noreferrer">l</a>dd',
 				$out[0]['children'][0]['children'][0]['children'][0]['attrs']['content']['innerContent']['desktop']['value']
 			);
 		}
@@ -630,6 +630,48 @@ namespace NexoDev\NexoMCP\Tests {
 			$this->assertIsArray( $rel );
 			$this->assertError( 'nexo_mcp_divi_value_invalid', self::MODULE_AT . '.attrs.image.innerContent.desktop.value.src', $v->validate_tree( $this->page( $mk( 'mailto:a@b.c' ) ) ) );
 			$this->assertError( 'nexo_mcp_divi_value_invalid', self::MODULE_AT . '.attrs.image.innerContent.desktop.value.src', $v->validate_tree( $this->page( $mk( 0 ) ) ) );
+		}
+
+		/**
+		 * @return array<string, array{0: string, 1: string, 2: array<string, mixed>, 3: string}>
+		 */
+		public static function trailing_newline_values(): array {
+			$font = static fn( string $key, string $value ): array => array( 'title' => array( 'decoration' => array( 'font' => array( 'font' => self::value( array( $key => $value ) ) ) ) ) );
+			$at   = 'title.decoration.font.font.desktop.value.';
+
+			return array(
+				'family'       => array( 'divi/heading', 'design', $font( 'family', "Roboto\n" ), $at . 'family' ),
+				'weight'       => array( 'divi/heading', 'design', $font( 'weight', "700\n" ), $at . 'weight' ),
+				'color'        => array( 'divi/heading', 'design', $font( 'color', "#fff\n" ), $at . 'color' ),
+				'gcid color'   => array( 'divi/heading', 'design', $font( 'color', "gcid-primary-color\n" ), $at . 'color' ),
+				'size'         => array( 'divi/heading', 'design', $font( 'size', "30px\n" ), $at . 'size' ),
+				'icon unicode' => array( 'divi/icon', 'content', array( 'icon' => array( 'innerContent' => self::value( array( 'unicode' => "&#x21;\n" ) ) ) ), 'icon.innerContent.desktop.value.unicode' ),
+			);
+		}
+
+		/**
+		 * @dataProvider trailing_newline_values
+		 * @param array<string, mixed> $attrs Atributos.
+		 */
+		public function test_a_trailing_newline_is_rejected_by_every_anchored_pattern( string $type, string $slot, array $attrs, string $path ): void {
+			$this->assertError( 'nexo_mcp_divi_value_invalid', $slot . '.' . $path, $this->validator()->validate_patch( $type, array( $slot => $attrs ) ) );
+		}
+
+		public function test_anchors_with_a_target_get_rel_noopener_noreferrer_forced(): void {
+			$cases = array(
+				'<p><a href="https://a.b" target="_blank">x</a></p>'                            => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
+				'<p><a href="https://a.b" target="_blank" rel="opener">x</a></p>'               => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
+				'<p><a href="https://a.b" rel="noopener" target="_blank">x</a></p>'             => '<p><a href="https://a.b" target="_blank" rel="noopener noreferrer">x</a></p>',
+				'<p><a href="https://a.b" rel="nofollow">x</a></p>'                              => '<p><a href="https://a.b" rel="nofollow">x</a></p>',
+				'<p><a href="https://a.b">x</a></p>'                                             => '<p><a href="https://a.b">x</a></p>',
+			);
+
+			foreach ( $cases as $input => $expected ) {
+				$out = $this->validator()->validate_patch( 'divi/text', array( 'content' => array( 'content' => array( 'innerContent' => self::value( $input ) ) ) ) );
+
+				$this->assertIsArray( $out, $input );
+				$this->assertSame( $expected, $out['content']['content']['innerContent']['desktop']['value'], $input ); // @phpstan-ignore-line
+			}
 		}
 	}
 

@@ -123,4 +123,12 @@ final class Divi5TreeTest extends TestCase {
 		$this->assertFalse( Divi5Tree::is_divi5( '[et_pb_section][/et_pb_section]' ) );
 		$this->assertFalse( Divi5Tree::is_divi5( 'texto <!-- wp:paragraph {"x":"wp:divi/"} /-->' ) );
 	}
+
+	public function test_a_path_with_a_trailing_newline_is_not_a_path(): void {
+		$tree = Divi5Tree::build( self::page() );
+
+		$this->assertNull( Divi5Tree::locate( $tree, "0\n" ) );
+		$this->assertNull( Divi5Tree::locate_block( parse_blocks( self::page() ), "0.0\n" ) );
+		$this->assertNotNull( Divi5Tree::locate( $tree, '0' ) );
+	}
 }

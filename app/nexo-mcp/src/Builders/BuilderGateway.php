@@ -512,6 +512,43 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Edita un módulo de una página de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5ModuleEditor}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function edit_divi_module( array $input ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			new DiviTreeValidator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'content'     => $input['content'] ?? null,
+				'design'      => $input['design'] ?? null,
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
 	 * Migra una página de Elementor 3 a elementos atómicos, en la copia de trabajo.
 	 *
 	 * Mismo permiso y mismo camino de escritura que {@see self::edit_elementor_section()}.

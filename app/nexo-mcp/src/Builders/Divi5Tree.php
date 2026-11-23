@@ -110,6 +110,23 @@ final class Divi5Tree {
 	}
 
 	/**
+	 * Devuelve los bloques con el de esa ruta sustituido; null si la ruta no existe.
+	 *
+	 * Conserva el resto tal cual (incluidos los freeform en blanco y el orden de `innerContent`).
+	 *
+	 * @param array<int, array<string, mixed>> $blocks Bloques sin filtrar.
+	 * @param string                           $path   Ruta `0.1.2`.
+	 * @param array<string, mixed>             $block  Bloque nuevo.
+	 *
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	public static function replace_block( array $blocks, string $path, array $block ): ?array {
+		$indices = self::indices( $path );
+
+		return null === $indices ? null : self::replace_at( $blocks, $indices, $block );
+	}
+
+	/**
 	 * Huella de un bloque: sha256 de su serialización con `serialize_block()`.
 	 *
 	 * @param array<string, mixed> $block Bloque de `parse_blocks()`.
@@ -129,6 +146,49 @@ final class Divi5Tree {
 		$node = self::locate( $tree, $path );
 
 		return null !== $node && '' !== $fingerprint && hash_equals( (string) $node['fingerprint'], $fingerprint );
+	}
+
+	/**
+	 * Sustituye el bloque de la ruta de índices, o devuelve null si no existe.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks  Bloques del nivel.
+	 * @param array<int, int>                  $indices Índices que faltan.
+	 * @param array<string, mixed>             $block   Bloque nuevo.
+	 *
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	private static function replace_at( array $blocks, array $indices, array $block ): ?array {
+		$wanted = array_shift( $indices );
+		$seen   = 0;
+
+		foreach ( $blocks as $key => $candidate ) {
+			if ( ! self::counts( $candidate ) ) {
+				continue;
+			}
+
+			if ( $seen++ !== $wanted ) {
+				continue;
+			}
+
+			if ( array() === $indices ) {
+				$blocks[ $key ] = $block;
+
+				return $blocks;
+			}
+
+			$inner = isset( $candidate['innerBlocks'] ) && is_array( $candidate['innerBlocks'] ) ? $candidate['innerBlocks'] : array();
+			$next  = self::replace_at( $inner, $indices, $block );
+
+			if ( null === $next ) {
+				return null;
+			}
+
+			$blocks[ $key ]['innerBlocks'] = $next;
+
+			return $blocks;
+		}
+
+		return null;
 	}
 
 	/**
@@ -152,7 +212,7 @@ final class Divi5Tree {
 	 * @return array<int, int>|null
 	 */
 	private static function indices( string $path ): ?array {
-		if ( 1 !== preg_match( '/^\d+(\.\d+)*$/', $path ) ) {
+		if ( 1 !== preg_match( '/^\d+(\.\d+)*\z/', $path ) ) {
 			return null;
 		}
 
