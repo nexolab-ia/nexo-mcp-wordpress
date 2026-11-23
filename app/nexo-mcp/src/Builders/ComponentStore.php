@@ -64,6 +64,13 @@ final class ComponentStore {
 	private $creator;
 
 	/**
+	 * Pro con licencia activa para insertar en páginas: fn(): bool.
+	 *
+	 * @var callable
+	 */
+	private $can_add;
+
+	/**
 	 * Construye el almacén.
 	 *
 	 * @param ElementorSchemaGuard|null $guard      Guarda de esquema (las pruebas ponen una sin Elementor).
@@ -71,19 +78,66 @@ final class ComponentStore {
 	 * @param callable|null             $lister     Componentes existentes.
 	 * @param callable|null             $validator  Validadores de Elementor.
 	 * @param callable|null             $creator    Creación en el repositorio de Elementor.
+	 * @param callable|null             $can_add    Insertar en páginas permitido (Pro con licencia).
 	 */
 	public function __construct(
 		?ElementorSchemaGuard $guard = null,
 		?callable $can_create = null,
 		?callable $lister = null,
 		?callable $validator = null,
-		?callable $creator = null
+		?callable $creator = null,
+		?callable $can_add = null
 	) {
 		$this->guard      = $guard ?? new ElementorSchemaGuard();
 		$this->can_create = $can_create ?? array( self::class, 'elementor_can_create' );
 		$this->lister     = $lister ?? array( self::class, 'elementor_list' );
 		$this->validator  = $validator ?? array( self::class, 'elementor_validate' );
 		$this->creator    = $creator ?? array( self::class, 'elementor_create' );
+		$this->can_add    = $can_add ?? array( self::class, 'elementor_can_add_to_page' );
+	}
+
+	/**
+	 * Guarda de esquema con la que se insertan instancias en una página.
+	 */
+	public function guard(): ElementorSchemaGuard {
+		return $this->guard;
+	}
+
+	/**
+	 * Comprueba que se puedan insertar instancias (Editor V4 y Pro con licencia activa).
+	 *
+	 * @return true|\WP_Error `nexo_mcp_components_unavailable` si no.
+	 */
+	public function require_insertable() {
+		$ready = $this->guard->require_v4();
+
+		if ( is_wp_error( $ready ) ) {
+			return new \WP_Error( 'nexo_mcp_components_unavailable', $ready->get_error_message() );
+		}
+
+		if ( ! (bool) ( $this->can_add )() ) {
+			return new \WP_Error(
+				'nexo_mcp_components_unavailable',
+				__( 'Insertar componentes requiere Elementor Pro con licencia activa.', 'nexo-mcp' )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Si el componente existe, no está archivado y no está en la papelera.
+	 *
+	 * @param int $id Id del post `elementor_component`.
+	 */
+	public function usable( int $id ): bool {
+		foreach ( ( $this->lister )() as $row ) {
+			if ( (int) ( $row['id'] ?? 0 ) === $id ) {
+				return empty( $row['archived'] ) && 'trash' !== ( $row['status'] ?? '' );
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -221,6 +275,15 @@ final class ComponentStore {
 		$controller = '\Elementor\Modules\Components\Components_Access_Controller';
 
 		return class_exists( $controller ) && (bool) $controller::can_create();
+	}
+
+	/**
+	 * Producción: Pro con licencia activa para insertar en páginas.
+	 */
+	public static function elementor_can_add_to_page(): bool {
+		$controller = '\Elementor\Modules\Components\Components_Access_Controller';
+
+		return class_exists( $controller ) && (bool) $controller::can_add_to_page();
 	}
 
 	/**

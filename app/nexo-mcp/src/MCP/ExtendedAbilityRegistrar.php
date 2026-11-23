@@ -78,6 +78,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-dynamic-tag',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
+		'nexo-mcp/insert-component',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -432,6 +433,15 @@ final class ExtendedAbilityRegistrar {
 			$this->component_create_schema(),
 			fn( array $input ) => $this->builders->create_component( $input ),
 			fn() => $this->component_create_permission()
+		);
+		$this->ability(
+			'insert-component',
+			'Insertar un componente de Elementor 4 en una página',
+			$this->component_insert_description(),
+			'write',
+			$this->component_insert_schema(),
+			fn( array $input ) => $this->builders->insert_component( $input ),
+			fn( array $input ) => $this->component_insert_permission( $input )
 		);
 		$this->ability(
 			'update-node-text',
@@ -976,6 +986,70 @@ final class ExtendedAbilityRegistrar {
 	private function component_create_permission(): bool {
 		return $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 			&& $this->module_write( 'builders_components_enabled', Capabilities::BUILDERS_COMPONENTS, 'edit_posts' );
+	}
+
+	/**
+	 * Permiso de insert-component: el de las herramientas de página de Elementor y, además, el scope propio.
+	 *
+	 * Como set-dynamic-tag: módulo de constructores y `edit_post` sobre el original Y la
+	 * capacidad `nexo_mcp_builders_components` con su interruptor `builders_components_enabled`.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 */
+	private function component_insert_permission( array $input ): bool {
+		return $this->elementor_page_permission( $input )
+			&& $this->module_write(
+				'builders_components_enabled',
+				Capabilities::BUILDERS_COMPONENTS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			);
+	}
+
+	/**
+	 * Descripción de insert-component.
+	 */
+	private function component_insert_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Inserta en una página de Elementor 4 una instancia de un componente (widget e-component que apunta al componente): si editás el componente, cambia en todas las páginas que lo usan. Escribe en la copia de trabajo de la página (se crea o se reutiliza) con respaldo: el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Sin overrides: la instancia usa el componente tal cual. Requiere Elementor Pro con licencia activa y el Editor V4 (si no, nexo_mcp_components_unavailable) y, además del permiso de constructores, el scope mcp:builders:components que el administrador enciende aparte.',
+				'',
+				'ENTRADA: id (página o su copia), node_id (nodo de referencia, ver nexo-mcp-get-page-structure), position (before, after o inside; inside sólo en un contenedor; en la raíz de la página no cabe un componente), component_id (id de nexo-mcp-list-components) y draft (opcional).',
+				'SALIDA: id (la copia), draft_of, preview_url, operation y node_ids con el id del nodo nuevo.',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_component_not_found (no existe, está archivado o en la papelera: Elementor lo renderizaría vacío sin avisar), nexo_mcp_components_unavailable, nexo_mcp_builder_node_missing y los errores de nexo-mcp-edit-elementor-section.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de insert-component.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function component_insert_schema(): array {
+		$section = $this->elementor_section_schema()['properties'];
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'           => $section['id'],
+				'draft'        => $section['draft'],
+				'node_id'      => $section['node_id'],
+				'position'     => array(
+					'type'        => 'string',
+					'enum'        => array( 'before', 'after', 'inside' ),
+					'description' => 'Dónde va la instancia respecto de node_id.',
+				),
+				'component_id' => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Id del componente (ver list-components): existente, no archivado ni en la papelera.',
+				),
+			),
+			'required'             => array( 'id', 'node_id', 'position', 'component_id' ),
+			'additionalProperties' => false,
+		);
 	}
 
 	/**

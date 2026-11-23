@@ -75,6 +75,13 @@ final class ElementorSectionEditor {
 	private $id_generator;
 
 	/**
+	 * Comprobación de componentes usables: fn( int ): bool; null = no se insertan instancias.
+	 *
+	 * @var callable|null
+	 */
+	private $component_exists;
+
+	/**
 	 * Construye el editor.
 	 *
 	 * @param Settings             $settings     Configuración.
@@ -84,6 +91,7 @@ final class ElementorSectionEditor {
 	 * @param ElementorSchemaGuard $guard        Guarda de esquema.
 	 * @param callable             $lock_check   fn( \WP_Post ): true|\WP_Error.
 	 * @param callable|null        $id_generator fn(): string, para pruebas.
+	 * @param callable|null        $component_exists fn( int ): bool; habilita `component_id` (insert-component).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -92,7 +100,8 @@ final class ElementorSectionEditor {
 		WorkingCopy $copies,
 		ElementorSchemaGuard $guard,
 		callable $lock_check,
-		?callable $id_generator = null
+		?callable $id_generator = null,
+		?callable $component_exists = null
 	) {
 		$this->settings     = $settings;
 		$this->adapter      = $adapter;
@@ -101,6 +110,8 @@ final class ElementorSectionEditor {
 		$this->guard        = $guard;
 		$this->lock_check   = $lock_check;
 		$this->id_generator = $id_generator;
+
+		$this->component_exists = $component_exists;
 	}
 
 	/**
@@ -227,6 +238,10 @@ final class ElementorSectionEditor {
 	 * @return array<int, array<string, mixed>>|\WP_Error
 	 */
 	private function build_new( array $input, array $tree, array $plan ) {
+		if ( array_key_exists( 'component_id', $input ) && 'insert' !== $plan['operation'] ) {
+			return new \WP_Error( 'nexo_mcp_elementor_tree_invalid', __( 'Una instancia de componente sólo se inserta (insert).', 'nexo-mcp' ) );
+		}
+
 		if ( 'delete' === $plan['operation'] ) {
 			if ( array_key_exists( 'elements', $input ) && null !== $input['elements'] ) {
 				return new \WP_Error(
@@ -242,6 +257,10 @@ final class ElementorSectionEditor {
 
 		if ( is_wp_error( $ready ) ) {
 			return $ready;
+		}
+
+		if ( array_key_exists( 'component_id', $input ) ) {
+			return $this->build_component( $input, $tree, $plan );
 		}
 
 		$elements = $input['elements'] ?? null;
@@ -291,6 +310,64 @@ final class ElementorSectionEditor {
 		$builder = new ElementorTreeBuilder( $this->id_generator );
 
 		return $builder->reserve( ElementorTree::collect_ids( $tree ) )->build( $clean );
+	}
+
+	/**
+	 * Arma la instancia de componente de insert-component (sin overrides).
+	 *
+	 * Sólo por insert y sólo con el comprobador de componentes inyectado. La instancia exacta
+	 * la valida {@see ElementorTreeValidator::accepting_components()}; no pasa por los analizadores
+	 * de Elementor porque no lleva texto del cliente: el id es un entero comprobado.
+	 *
+	 * @param array<string, mixed> $input Parámetros.
+	 * @param array<int, mixed>    $tree  Documento.
+	 * @param array<string, mixed> $plan  Plan de la operación.
+	 *
+	 * @return array<int, array<string, mixed>>|\WP_Error
+	 */
+	private function build_component( array $input, array $tree, array $plan ) {
+		if ( null === $this->component_exists ) {
+			return new \WP_Error( 'nexo_mcp_components_unavailable', __( 'Insertar componentes no está disponible.', 'nexo-mcp' ) );
+		}
+
+		if ( 'insert' !== $plan['operation'] ) {
+			return new \WP_Error( 'nexo_mcp_elementor_tree_invalid', __( 'Una instancia de componente sólo se inserta (insert).', 'nexo-mcp' ) );
+		}
+
+		if ( array_key_exists( 'elements', $input ) && null !== $input['elements'] ) {
+			return new \WP_Error( 'nexo_mcp_elementor_elements_forbidden', __( 'insert-component no recibe «elements»: inserta la instancia indicada.', 'nexo-mcp' ) );
+		}
+
+		$elements = array(
+			array(
+				'type'     => 'e-component',
+				'settings' => array(
+					'component_instance' => array(
+						'$$type' => 'component-instance',
+						'value'  => array(
+							'component_id' => array(
+								'$$type' => 'number',
+								'value'  => $input['component_id'],
+							),
+						),
+					),
+				),
+			),
+		);
+
+		$checked = $this->guard->validator()->accepting_components( $this->component_exists )->validate(
+			$elements,
+			(string) $plan['parent_kind'],
+			(int) $plan['base_depth'],
+			(int) $plan['nodes_without'],
+			ElementorTreeValidator::node_cap( ElementorTree::count_nodes( $tree ) )
+		);
+
+		if ( is_wp_error( $checked ) ) {
+			return $checked;
+		}
+
+		return ( new ElementorTreeBuilder( $this->id_generator ) )->reserve( ElementorTree::collect_ids( $tree ) )->build( $elements );
 	}
 
 	/**

@@ -386,6 +386,61 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Inserta una instancia de un componente de Elementor 4 en una página, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::edit_elementor_section()} (insert). Sin overrides.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function insert_component( array $input ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		$store = $this->components ?? new ComponentStore();
+		$ready = $store->require_insertable();
+
+		if ( is_wp_error( $ready ) ) {
+			return $ready;
+		}
+
+		$component = isset( $input['component_id'] ) && is_int( $input['component_id'] ) ? $input['component_id'] : 0;
+
+		if ( ! $store->usable( $component ) ) {
+			return new \WP_Error(
+				'nexo_mcp_component_not_found',
+				__( 'El componente no existe, está archivado o en la papelera.', 'nexo-mcp' )
+			);
+		}
+
+		$editor = new ElementorSectionEditor(
+			$this->settings,
+			new ElementorAdapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$store->guard(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			static fn( int $id ): bool => $store->usable( $id )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'operation'    => 'insert',
+				'node_id'      => isset( $input['node_id'] ) && is_string( $input['node_id'] ) ? sanitize_text_field( $input['node_id'] ) : '',
+				'position'     => isset( $input['position'] ) && is_string( $input['position'] ) ? $input['position'] : '',
+				'component_id' => $component,
+				'draft'        => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
 	 * Lista los dynamic tags del catálogo cerrado que el sitio tiene registrados.
 	 *
 	 * Sin Elementor Pro no hay tags registrados: la lista sale vacía, no es un error.
