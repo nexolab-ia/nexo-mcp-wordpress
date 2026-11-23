@@ -49,6 +49,8 @@ final class Settings {
 			'design_system_tools_enabled' => false,
 			// Asignar datos dinámicos (tags de Elementor Pro) a elementos: apagado hasta que el dueño lo enciende.
 			'builders_dynamic_enabled'    => false,
+			// Crear componentes de Elementor 4 (Pro): apagado hasta que el dueño lo enciende.
+			'builders_components_enabled' => false,
 			'publishing_enabled'          => true,
 			'destructive_enabled'         => false,
 			'read_only'                   => true,

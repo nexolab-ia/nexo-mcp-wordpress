@@ -76,6 +76,8 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/migrate-elementor-page',
 		'nexo-mcp/list-dynamic-tags',
 		'nexo-mcp/set-dynamic-tag',
+		'nexo-mcp/list-components',
+		'nexo-mcp/create-component',
 		'nexo-mcp/update-node-text',
 		'nexo-mcp/update-node-attribute',
 		'nexo-mcp/restore-builder-backup',
@@ -403,6 +405,33 @@ final class ExtendedAbilityRegistrar {
 			$this->dynamic_set_schema(),
 			fn( array $input ) => $this->builders->set_dynamic_tag( $input ),
 			fn( array $input ) => $this->dynamic_tag_permission( $input )
+		);
+		$this->ability(
+			'list-components',
+			'Listar componentes de Elementor 4',
+			'Lista los componentes de Elementor 4 (bloques reutilizables guardados como datos) no archivados: id, uid, title, status y modified, sin el árbol. Con include_archived también los archivados (campo archived). Sin el módulo de componentes la lista sale vacía.',
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'include_archived' => array(
+						'type'        => 'boolean',
+						'description' => 'Incluir también los componentes archivados (por omisión no).',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->list_components( $input ),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
+		);
+		$this->ability(
+			'create-component',
+			'Crear componente de Elementor 4 (borrador)',
+			$this->component_create_description(),
+			'write',
+			$this->component_create_schema(),
+			fn( array $input ) => $this->builders->create_component( $input ),
+			fn() => $this->component_create_permission()
 		);
 		$this->ability(
 			'update-node-text',
@@ -938,6 +967,58 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Permiso de create-component: el de constructores y, además, el scope propio.
+	 *
+	 * Crear un componente cambia el sitio, no sólo una página: exige el módulo de
+	 * constructores Y la capacidad `nexo_mcp_builders_components` con su interruptor
+	 * `builders_components_enabled`, que el dueño enciende a propósito.
+	 */
+	private function component_create_permission(): bool {
+		return $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
+			&& $this->module_write( 'builders_components_enabled', Capabilities::BUILDERS_COMPONENTS, 'edit_posts' );
+	}
+
+	/**
+	 * Descripción de create-component.
+	 */
+	private function component_create_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea un componente de Elementor 4 (bloque reutilizable guardado como datos) a partir de un árbol atómico. Nace como borrador y nunca se publica: se publica desde el editor de Elementor. Un componente es parte del sitio, no de una página. Requiere Elementor Pro con licencia activa y el Editor V4 (si no, nexo_mcp_components_unavailable y no se escribe nada) y, además del permiso de constructores, el scope mcp:builders:components que el administrador enciende aparte.',
+				'',
+				'ENTRADA: title (2 a 200 caracteres, único entre los componentes no archivados) y elements: el mismo árbol atómico y la misma lista cerrada que nexo-mcp-create-elementor-page (leé su descripción para tipos, props y estilos). No se admiten componentes anidados (e-component) ni datos dinámicos en esta entrega. Máximo 100 componentes en el sitio.',
+				'SALIDA: id, uid (generado por el plugin), title y status («draft»). Listalos con nexo-mcp-list-components.',
+				'ERRORES (no escriben nada): nexo_mcp_components_unavailable, nexo_mcp_component_invalid (título inválido o duplicado, límite de 100, ciclo, elementos no atómicos o rechazo de Elementor al guardar; trae el mensaje) y los errores de árbol de nexo-mcp-create-elementor-page (con su ruta).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-component.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function component_create_schema(): array {
+		$page = $this->elementor_page_schema();
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'title'    => array(
+					'type'        => 'string',
+					'minLength'   => 2,
+					'maxLength'   => 200,
+					'description' => 'Título del componente (único entre los no archivados).',
+				),
+				'elements' => $page['properties']['elements'],
+			),
+			'required'             => array( 'title', 'elements' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Descripción de list-dynamic-tags.
 	 */
 	private function dynamic_list_description(): string {
@@ -1442,7 +1523,7 @@ final class ExtendedAbilityRegistrar {
 		callable $callback,
 		callable $permission
 	): void {
-		$array_outputs = array( 'list-media', 'list-terms', 'list-revisions', 'list-menus', 'list-plugins', 'list-themes', 'list-dynamic-tags' );
+		$array_outputs = array( 'list-media', 'list-terms', 'list-revisions', 'list-menus', 'list-plugins', 'list-themes', 'list-dynamic-tags', 'list-components' );
 
 		// MCP exige que `outputSchema` describa un objeto. El adaptador envuelve
 		// por su cuenta los esquemas que no lo son, pero esa transformación no
