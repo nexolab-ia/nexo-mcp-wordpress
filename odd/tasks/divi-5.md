@@ -42,7 +42,7 @@ Crea plantillas con Theme Builder (encabezados, pies de página, cuerpo, archivo
 - [x] T3 (S8, S9, S11 catálogo) confirmar en `_all_modules_metadata.php` los nombres y atributos de los módulos del catálogo; `DiviModuleCatalog` + `DiviTreeValidator` (módulos, rutas, saneado); PHPUnit. Ruta: worker. Risk: item 2 (validador que decide qué HTML/URLs se guardan). Commit: 66e2412.
 - [x] T4 (S9, S11 edición, D1) `edit-divi-module` en la copia de trabajo, `fingerprint`, conserva breakpoints, escritura con kses quitado sólo para contenido validado; avisos R1-004 y R3-004 de L5; PHPUnit. Ruta: worker. Risk: item 2. Commit: 4d82490.
 - [x] T5 (S11 creación, D2) `create-divi-page` y `edit-divi-section`; avisos R3-001 y R3-002 de L7; PHPUnit. Ruta: worker. Commit: 129d04b.
-- [x] T6 (S11 e2e/docs) e2e con Divi 5 (SKIP sin Divi), README/EQUIVALENCIAS/readme.txt, 1.7.0; avisos R1-001, R1-002, R3-001 y R3-003 de L10. Ruta: worker. Commit: —
+- [x] T6 (S11 e2e/docs) e2e con Divi 5 (SKIP sin Divi), README/EQUIVALENCIAS/readme.txt, 1.7.0; avisos R1-001, R1-002, R3-001 y R3-003 de L10. Ruta: worker. Commit: db9cf37.
 
 ## Log
 
