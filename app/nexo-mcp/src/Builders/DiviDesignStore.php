@@ -754,7 +754,22 @@ final class DiviDesignStore {
 		}
 
 		// Deshacer reemplaza el área entera: si alguien la cambió después (p. ej. desde el panel de Divi) se perdería.
-		if ( ! $force && array_key_exists( 'written', $entry ) && ! $this->same_state( $this->area_state( $entry['area'], $entry['written'] ), $entry['written'] ) ) {
+		// Leer el estado actual también puede fallar (Divi): es un error con respaldo intacto, no una excepción.
+		try {
+			$changed = ! $force && array_key_exists( 'written', $entry ) && ! $this->same_state( $this->area_state( $entry['area'], $entry['written'] ), $entry['written'] );
+		} catch ( \Throwable $e ) {
+			return $this->fail(
+				$tool,
+				'nexo_mcp_divi_design_undo_failed',
+				sprintf(
+					/* translators: %s: motivo. */
+					__( 'No se pudo deshacer el último cambio: %s. El respaldo se conserva.', 'nexo-mcp' ),
+					$this->message( $e )
+				)
+			);
+		}
+
+		if ( $changed ) {
 			return $this->fail(
 				$tool,
 				'nexo_mcp_divi_design_changed_since',

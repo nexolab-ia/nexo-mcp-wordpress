@@ -36,6 +36,11 @@ final class DiviDesignOperationsTest extends NexoTestCase {
 	/** @var array<int, string> */
 	private array $suffixes = array();
 
+	private bool $locked = false;
+
+	/** @var array<int, bool> Si cada búsqueda de uso corrió dentro del bloqueo. */
+	private array $scan_locked = array();
+
 	protected function setUp(): void {
 		parent::setUp();
 		$this->active    = true;
@@ -51,6 +56,8 @@ final class DiviDesignOperationsTest extends NexoTestCase {
 		$this->scanned   = array();
 		$this->usage     = array();
 		$this->suffixes  = array( 'abcde12345', 'zzzzz99999' );
+		$this->locked    = false;
+		$this->scan_locked = array();
 	}
 
 	private function ops(): DiviDesignOperations {
@@ -78,13 +85,22 @@ final class DiviDesignOperationsTest extends NexoTestCase {
 				++$this->flushes;
 			},
 			function ( string $tool, string $status, $params, $result ): void {},
-			fn( callable $work ) => $work()
+			function ( callable $work ) {
+				$this->locked = true;
+
+				try {
+					return $work();
+				} finally {
+					$this->locked = false;
+				}
+			}
 		);
 
 		return new DiviDesignOperations(
 			$store,
 			function ( string $id ): array {
-				$this->scanned[] = $id;
+				$this->scanned[]     = $id;
+				$this->scan_locked[] = $this->locked;
 
 				return $this->usage[ $id ] ?? array();
 			},
@@ -299,6 +315,84 @@ final class DiviDesignOperationsTest extends NexoTestCase {
 		$this->assertSame( array( 12 ), $result['posts_affected'] );
 		$this->assertSame( array(), $this->colors );
 		$this->assertCount( 1, $this->history() );
+	}
+
+	public function test_la_busqueda_de_uso_corre_dentro_del_bloqueo_al_borrar(): void {
+		$this->ops()->delete_color( array( 'id' => 'gcid-aaaaaaaaaa' ) );
+
+		$this->assertSame( array( true ), $this->scan_locked );
+		$this->assertSame( array(), $this->colors );
+	}
+
+	public function test_el_uso_hallado_dentro_del_bloqueo_sigue_protegiendo_sin_escribir(): void {
+		$this->usage['gcid-aaaaaaaaaa'] = array( 7 );
+		$before                         = $this->snapshot();
+
+		$this->assert_rejected( $this->ops()->delete_color( array( 'id' => 'gcid-aaaaaaaaaa' ) ), 'nexo_mcp_divi_color_in_use', $before );
+		$this->assertSame( array( true ), $this->scan_locked );
+	}
+
+	public function test_el_escaneo_real_no_pierde_un_uso_por_ids_con_el_mismo_prefijo(): void {
+		$posts = array();
+
+		// 1500 entradas con ids de color que sólo comparten prefijo, y una al final con el uso real.
+		for ( $i = 1; $i <= 1500; $i++ ) {
+			$posts[ $i ] = array( 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '<!-- wp:divi/section --> var(--gcid-aaaaaaaaaa' . $i . ')' );
+		}
+
+		$posts[2000] = array( 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '<!-- wp:divi/section --> var(--gcid-aaaaaaaaaa)' );
+		$posts[2001] = array( 'post_type' => 'revision', 'post_status' => 'inherit', 'post_content' => '<!-- wp:divi/section --> var(--gcid-aaaaaaaaaa)' );
+		$posts[2002] = array( 'post_type' => 'page', 'post_status' => 'trash', 'post_content' => '<!-- wp:divi/section --> var(--gcid-aaaaaaaaaa)' );
+		$posts[2003] = array( 'post_type' => 'page', 'post_status' => 'draft', 'post_content' => '<!-- wp:divi/section --> {"name":"gcid-aaaaaaaaaa","settings":{}}' );
+		$posts[2004] = array( 'post_type' => 'page', 'post_status' => 'draft', 'post_content' => 'sin divi gcid-aaaaaaaaaa' );
+
+		$saved             = $GLOBALS['wpdb'];
+		$GLOBALS['wpdb']   = new class( $posts ) extends \WPDB_Test_Double {
+			public string $posts = 'wp_posts';
+
+			/** @param array<int, array<string, string>> $rows */
+			public function __construct( private array $rows ) {}
+
+			public function esc_like( string $text ): string {
+				return addcslashes( $text, '_%\\' );
+			}
+
+			public function get_results( $sql, $output = null ): array {
+				preg_match( '/ID > (\d+)/', (string) $sql, $after );
+				preg_match( '/LIMIT (\d+)/', (string) $sql, $limit );
+				preg_match_all( "/LIKE '%(.*?)%'/", (string) $sql, $likes );
+				$needles = array_map( static fn( string $n ): string => stripslashes( $n ), $likes[1] );
+				$out     = array();
+
+				foreach ( $this->rows as $id => $row ) {
+					if ( $id <= (int) ( $after[1] ?? 0 ) || 'revision' === $row['post_type'] || in_array( $row['post_status'], array( 'trash', 'auto-draft' ), true ) ) {
+						continue;
+					}
+
+					foreach ( $needles as $needle ) {
+						if ( ! str_contains( $row['post_content'], $needle ) ) {
+							continue 2;
+						}
+					}
+
+					$out[] = array( 'ID' => (string) $id, 'post_content' => $row['post_content'] );
+
+					if ( count( $out ) >= (int) ( $limit[1] ?? 1000 ) ) {
+						break;
+					}
+				}
+
+				return $out;
+			}
+		};
+
+		try {
+			$found = DiviDesignOperations::scan_color_usage( 'gcid-aaaaaaaaaa' );
+		} finally {
+			$GLOBALS['wpdb'] = $saved;
+		}
+
+		$this->assertSame( array( 2000, 2003 ), $found );
 	}
 
 	public function test_borrar_un_color_desconocido_no_escanea_ni_escribe(): void {

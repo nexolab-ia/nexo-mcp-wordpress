@@ -19,6 +19,11 @@ namespace NexoDev\NexoMCP\Builders;
 final class DiviDesignOperations {
 
 	/**
+	 * Filas por lote al buscar el uso de un color.
+	 */
+	private const SCAN_BATCH = 200;
+
+	/**
 	 * Almacén del diseño global.
 	 *
 	 * @var DiviDesignStore
@@ -197,25 +202,29 @@ final class DiviDesignOperations {
 		}
 
 		$force = true === ( $input['force'] ?? false );
-		$posts = array_values( array_map( 'intval', (array) ( $this->find_usage )( $id ) ) );
+		$posts = array();
 
-		if ( array() !== $posts && ! $force ) {
-			return new \WP_Error(
-				'nexo_mcp_divi_color_in_use',
-				sprintf(
-					/* translators: 1: id del color, 2: ids de las entradas. */
-					__( 'El color %1$s está en uso en estas entradas de Divi 5 (ids): %2$s. Borrarlo deja esos módulos sin color; no se borró nada. Repite con force: true (pide además el permiso destructivo) para borrarlo igual.', 'nexo-mcp' ),
-					$id,
-					implode( ', ', $posts )
-				),
-				array( 'post_ids' => $posts )
-			);
-		}
-
+		// La búsqueda de uso corre dentro del bloqueo de la tienda, junto con el borrado: comprobar y actuar
+		// es atómico y nadie puede empezar a usar el color entre una cosa y la otra.
 		$result = $this->store->update_colors(
-			function ( array $current ) use ( $id ) {
+			function ( array $current ) use ( $id, $force, &$posts ) {
 				if ( ! isset( $current[ $id ] ) ) {
 					return $this->not_found( $id );
+				}
+
+				$posts = array_values( array_map( 'intval', (array) ( $this->find_usage )( $id ) ) );
+
+				if ( array() !== $posts && ! $force ) {
+					return new \WP_Error(
+						'nexo_mcp_divi_color_in_use',
+						sprintf(
+							/* translators: 1: id del color, 2: ids de las entradas. */
+							__( 'El color %1$s está en uso en estas entradas de Divi 5 (ids): %2$s. Borrarlo deja esos módulos sin color; no se borró nada. Repite con force: true (pide además el permiso destructivo) para borrarlo igual.', 'nexo-mcp' ),
+							$id,
+							implode( ', ', $posts )
+						),
+						array( 'post_ids' => $posts )
+					);
 				}
 
 				unset( $current[ $id ] );
@@ -492,24 +501,43 @@ final class DiviDesignOperations {
 	public static function scan_color_usage( string $id ): array {
 		global $wpdb;
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Búsqueda puntual de uso, sin caché a propósito.
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT ID, post_content FROM {$wpdb->posts} WHERE post_type <> %s AND post_status NOT IN ('trash', 'auto-draft') AND post_content LIKE %s AND post_content LIKE %s ORDER BY ID ASC LIMIT 1000", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
-				'revision',
-				'%' . $wpdb->esc_like( $id ) . '%',
-				'%' . $wpdb->esc_like( 'wp:divi/' ) . '%'
-			),
-			ARRAY_A
-		);
-
 		$posts = array();
+		$after = 0;
+		$full  = false;
+		$found = 0;
+		$exact = '/' . preg_quote( $id, '/' ) . '(?![A-Za-z0-9_-])/';
 
-		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
-			if ( is_array( $row ) && isset( $row['post_content'], $row['ID'] ) && 1 === preg_match( '/' . preg_quote( $id, '/' ) . '(?![A-Za-z0-9_-])/', (string) $row['post_content'] ) ) {
-				$posts[] = (int) $row['ID'];
+		// Sin tope de filas: se recorre por lotes (clave `ID > último`) y cada lote se filtra con la expresión exacta,
+		// así un prefijo parecido (`gcid-abc` vs `gcid-abcd`) no puede agotar un límite y esconder un uso real.
+		do {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Búsqueda puntual de uso, sin caché a propósito.
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT ID, post_content FROM {$wpdb->posts} WHERE ID > %d AND post_type <> %s AND post_status NOT IN ('trash', 'auto-draft') AND post_content LIKE %s AND post_content LIKE %s ORDER BY ID ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
+					$after,
+					'revision',
+					'%' . $wpdb->esc_like( $id ) . '%',
+					'%' . $wpdb->esc_like( 'wp:divi/' ) . '%',
+					self::SCAN_BATCH
+				),
+				ARRAY_A
+			);
+			$rows = is_array( $rows ) ? $rows : array();
+
+			foreach ( $rows as $row ) {
+				if ( ! is_array( $row ) || ! isset( $row['ID'] ) ) {
+					continue;
+				}
+
+				$after = max( $after, (int) $row['ID'] );
+
+				if ( isset( $row['post_content'] ) && 1 === preg_match( $exact, (string) $row['post_content'] ) ) {
+					$posts[] = (int) $row['ID'];
+				}
 			}
-		}
+			$full  = count( $rows ) >= self::SCAN_BATCH;
+			$found = count( $posts );
+		} while ( $full && $found < 100 );
 
 		return array_slice( $posts, 0, 100 );
 	}

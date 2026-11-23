@@ -35,6 +35,12 @@ final class DiviDesignStoreTest extends NexoTestCase {
 	/** Si no es null, set_colors lanza esta excepción. */
 	private ?\Throwable $colors_throw = null;
 
+	/** Si no es null, get_colors lanza esta excepción. */
+	private ?\Throwable $colors_get_throw = null;
+
+	/** Si es true, set_colors guarda además una clave que Divi agrega al normalizar. */
+	private bool $colors_normalize = false;
+
 	/** Si no es null, set_variables devuelve este error. */
 	private ?\WP_Error $variables_error = null;
 
@@ -63,6 +69,8 @@ final class DiviDesignStoreTest extends NexoTestCase {
 		$this->audit           = array();
 		$this->flushes         = 0;
 		$this->colors_throw    = null;
+		$this->colors_get_throw = null;
+		$this->colors_normalize = false;
 		$this->variables_error = null;
 		$this->option_throw_key = null;
 		\WP_Test_State::$user_id = 7;
@@ -74,6 +82,10 @@ final class DiviDesignStoreTest extends NexoTestCase {
 			function (): array {
 				$this->log[] = 'get_colors';
 
+				if ( null !== $this->colors_get_throw ) {
+					throw $this->colors_get_throw;
+				}
+
 				return $this->colors;
 			},
 			function ( array $all ): void {
@@ -84,6 +96,12 @@ final class DiviDesignStoreTest extends NexoTestCase {
 				}
 
 				$this->colors = $all;
+
+				if ( $this->colors_normalize ) {
+					foreach ( array_keys( $this->colors ) as $id ) {
+						$this->colors[ $id ]['normalized'] = true;
+					}
+				}
 			},
 			function (): array {
 				$this->log[] = 'get_variables';
@@ -467,6 +485,50 @@ final class DiviDesignStoreTest extends NexoTestCase {
 		$this->assertSame( 'gcid-aaaaaaaaaa', array_key_first( $this->colors ) );
 		$this->assertSame( '#111111', $this->colors['gcid-aaaaaaaaaa']['color'] );
 		$this->assertSame( array(), $this->history() );
+	}
+
+	public function test_si_divi_normaliza_lo_escrito_el_historial_guarda_lo_que_quedo_y_deshacer_no_se_niega(): void {
+		$this->colors_normalize = true;
+		$store                  = $this->store();
+		$new                    = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$this->assertIsArray( $store->write_colors( $new, 't' ) );
+
+		$entry = $this->history()[0];
+		$this->assertTrue( $entry['written']['gcid-aaaaaaaaaa']['normalized'] );
+		$this->assertSame( $this->colors, $entry['written'] );
+		$this->assertArrayNotHasKey( 'normalized', $entry['previous']['gcid-aaaaaaaaaa'] );
+
+		$this->colors_normalize = false;
+		$result                 = $store->undo();
+		$this->assertIsArray( $result );
+		$this->assertSame( '#111111', $this->colors['gcid-aaaaaaaaaa']['color'] );
+		$this->assertSame( array(), $this->history() );
+	}
+
+	public function test_si_leer_el_estado_actual_falla_al_deshacer_da_error_auditado_y_no_toca_nada(): void {
+		$store = $this->store();
+		$new   = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$store->write_colors( $new, 't' );
+
+		$colors  = $this->colors;
+		$history = $this->history();
+		$flushes = $this->flushes;
+		$audited = count( $this->audit );
+		$this->log = array();
+
+		$this->colors_get_throw = new \RuntimeException( 'lector roto' );
+		$error                  = $this->assert_error( $store->undo(), 'nexo_mcp_divi_design_undo_failed' );
+
+		$this->assertStringContainsString( 'lector roto', $error->get_error_message() );
+		$this->assertSame( $colors, $this->colors );
+		$this->assertSame( $history, $this->history() );
+		$this->assertSame( $flushes, $this->flushes );
+		$this->assertNotContains( 'set_colors', $this->log );
+		$this->assertCount( $audited + 1, $this->audit );
+		$this->assertSame( array( 'undo-divi-design-change', 'error' ), array_slice( end( $this->audit ), 0, 2 ) );
+		$this->assertSame( array( 'error' => 'nexo_mcp_divi_design_undo_failed' ), end( $this->audit )[3] );
 	}
 
 	public function test_deshacer_variables_y_opciones_tambien_comprueban_el_estado(): void {

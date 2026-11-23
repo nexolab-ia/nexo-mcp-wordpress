@@ -319,7 +319,7 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'undo-divi-design-change',
 			'Deshacer el último cambio del diseño global de Divi',
-			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Requiere el scope mcp:divi_design que el administrador enciende aparte.',
+			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Requiere el scope mcp:divi_design que el administrador enciende aparte (y mcp:destructive con force).',
 			'write',
 			array(
 				'type'                 => 'object',
@@ -333,7 +333,7 @@ final class ExtendedAbilityRegistrar {
 				'additionalProperties' => false,
 			),
 			fn( array $input ) => $this->builders->undo_divi_design_change( true === ( $input['force'] ?? false ) ),
-			fn() => $this->divi_design_write()
+			fn( array $input = array() ) => $this->divi_design_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
 		);
 		$this->ability(
 			'set-divi-global-color',
@@ -2066,7 +2066,10 @@ final class ExtendedAbilityRegistrar {
 				'category'            => AbilityRegistrar::CATEGORY,
 				'input_schema'        => $input_schema,
 				'output_schema'       => $output_schema,
-				'execute_callback'    => function ( array $input ) use ( $name, $operation, $callback, $wraps_result ) {
+				'execute_callback'    => function ( $input = null ) use ( $name, $operation, $callback, $wraps_result ) {
+					// La Abilities API entrega null cuando el cliente no manda entrada: es lo mismo que `{}`.
+					$input = is_array( $input ) ? $input : array();
+
 					// Acciones irreversibles: sin la palabra exacta no se ejecuta.
 					$confirmed = IrreversibleActions::check( $name, $input );
 
@@ -2092,7 +2095,8 @@ final class ExtendedAbilityRegistrar {
 				// El parámetro es opcional porque la Abilities API sólo lo entrega
 				// cuando la ability declara un esquema de entrada, y este envoltorio
 				// cubre a todas por igual.
-				'permission_callback' => function ( array $input = array() ) use ( $name, $permission, $operation ) {
+				'permission_callback' => function ( $input = array() ) use ( $name, $permission, $operation ) {
+					$input   = is_array( $input ) ? $input : array();
 					$allowed = $permission( $input );
 
 					if ( true === $allowed ) {

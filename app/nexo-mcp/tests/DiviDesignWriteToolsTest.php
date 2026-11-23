@@ -250,6 +250,41 @@ final class DiviDesignWriteToolsTest extends NexoTestCase {
 		$this->assertTrue( $this->permission( 'delete-divi-global-color', array(), $plain ) );
 	}
 
+	public function test_deshacer_con_force_exige_ademas_el_permiso_destructivo_y_sin_force_no(): void {
+		$plain = array();
+		$force = array( 'force' => true );
+
+		$this->assertTrue( $this->permission( 'undo-divi-design-change', array( 'destructive_enabled' => false ), $plain ) );
+		$this->assertTrue( $this->permission( 'undo-divi-design-change', array( 'destructive_enabled' => false ), array( 'force' => false ) ) );
+		$this->assertTrue( $this->permission( 'undo-divi-design-change', array(), $force ) );
+		$this->assertNotTrue( $this->permission( 'undo-divi-design-change', array( 'destructive_enabled' => false ), $force ) );
+		$this->assertNotTrue( $this->permission( 'undo-divi-design-change', array( 'divi_design_tools_enabled' => false ), $force ) );
+
+		\WP_Test_State::$caps[ Capabilities::DESTRUCTIVE ] = false;
+		$this->assertNotTrue( $this->permission( 'undo-divi-design-change', array(), $force ) );
+		$this->assertTrue( $this->permission( 'undo-divi-design-change', array(), $plain ) );
+		$this->assertStringContainsString( 'mcp:destructive', $this->abilities()['nexo-mcp/undo-divi-design-change']['description'] );
+	}
+
+	public function test_deshacer_y_tipografia_aceptan_una_entrada_ausente_sin_error_de_tipo(): void {
+		$all = $this->abilities();
+
+		foreach ( array( 'undo-divi-design-change', 'set-divi-typography' ) as $name ) {
+			$this->assertTrue( $all[ 'nexo-mcp/' . $name ]['permission_callback']( null ), $name . ' permiso' );
+		}
+
+		$undo = $all['nexo-mcp/undo-divi-design-change']['execute_callback']( null );
+		$this->assertInstanceOf( \WP_Error::class, $undo );
+		$this->assertSame( 'nexo_mcp_divi_design_nothing_to_undo', $undo->get_error_code() );
+
+		$typo = $all['nexo-mcp/set-divi-typography']['execute_callback']( null );
+		$this->assertInstanceOf( \WP_Error::class, $typo );
+		$this->assertSame( 'nexo_mcp_divi_design_nothing_to_change', $typo->get_error_code() );
+
+		$this->assertSame( array( 'accent_color' => '#2ea3f2' ), $this->options );
+		$this->assertSame( array(), get_option( DiviDesignStore::HISTORY_OPTION, array() ) );
+	}
+
 	public function test_scopes_de_un_token(): void {
 		$all = $this->abilities();
 
