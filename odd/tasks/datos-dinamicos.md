@@ -25,7 +25,7 @@ elementos y widgets». Rama `feat/datos-dinamicos` desde `main` (b8cf9be, v1.4.3
 - [x] T1 (S4, S6) Confirmar en el WordPress de docker la lista de tags gratis de Elementor 4.4.1 (nombre, grupo, categorías, settings) y cuáles leen datos sensibles (meta, usuario, shortcode); cómo se definen los scopes del plugin (`Capabilities`, OAuth) y el registro de herramientas; si `e-heading.tag` tiene enum. Ruta: explore. Commit: —
 - [x] T2 (S7, S8 catálogo/validador) `DynamicTagCatalog` (opciones de los selects leídas de `wp-content/plugins/elementor-pro/modules/dynamic-tags/tags/*.php` en el docker), soporte de `dynamic` en `ElementorTreeValidator` (idéntico al original / modo asignar), verificación de `link` (url) en el docker, + PHPUnit. Ruta: worker (context backstop). Risk: item 2 (el validador acepta un `$$type` hoy prohibido; latente hasta T3). Commit: 63b2d90 (porción 1, ~1.300 líneas, ~600 pruebas).
 - [x] T3 (S3, S5, S8 herramientas/permiso) scope `mcp:builders:dynamic` y ajustes, `list-dynamic-tags`, `set-dynamic-tag`, gateway + PHPUnit. Ruta: worker (context backstop). Risk: item 2 (scope y permiso nuevos). Commit: 96f30cd.
-- [x] T4 (S8 e2e/docs) e2e local con Pro (se saltea sin Pro), README/EQUIVALENCIAS/readme.txt, 1.5.0. Ruta: padre + verify (Risk: item 2).
+- [x] T4 (S8 e2e/docs) e2e local con Pro (se saltea sin Pro), README/EQUIVALENCIAS/readme.txt, 1.5.0. Ruta: padre + verify (Risk: item 2). Ruta real: worker. Commit: 060c678.
 
 ## Log
 
