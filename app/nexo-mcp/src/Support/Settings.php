@@ -51,6 +51,8 @@ final class Settings {
 			'builders_dynamic_enabled'    => false,
 			// Crear componentes de Elementor 4 (Pro): apagado hasta que el dueño lo enciende.
 			'builders_components_enabled' => false,
+			// Cambia paleta, variables y tipografía globales de Divi 5 de todo el sitio en vivo: apagado hasta que el dueño lo enciende.
+			'divi_design_tools_enabled'   => false,
 			'publishing_enabled'          => true,
 			'destructive_enabled'         => false,
 			'read_only'                   => true,

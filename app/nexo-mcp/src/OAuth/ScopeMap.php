@@ -49,6 +49,7 @@ final class ScopeMap {
 		'mcp:publish'             => Capabilities::PUBLISH,
 		'mcp:destructive'         => Capabilities::DESTRUCTIVE,
 		'mcp:design_system'       => Capabilities::DESIGN_SYSTEM,
+		'mcp:divi_design'         => Capabilities::DIVI_DESIGN,
 		// Variantes de sólo consulta: apuntan a la misma capacidad que su módulo.
 		'mcp:seo:read'            => Capabilities::SEO,
 		'mcp:maintenance:read'    => Capabilities::MAINTENANCE,
@@ -108,6 +109,7 @@ final class ScopeMap {
 		// Al final: el baseline de PHPStan fija las primeras entradas de esta lista.
 		'mcp:builders:dynamic'    => 'builders_dynamic_enabled',
 		'mcp:builders:components' => 'builders_components_enabled',
+		'mcp:divi_design'         => 'divi_design_tools_enabled',
 	);
 
 	/**
@@ -131,6 +133,7 @@ final class ScopeMap {
 		'mcp:publish'             => 'Publicar contenido',
 		'mcp:destructive'         => 'Eliminar contenido de forma permanente',
 		'mcp:design_system'       => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',
+		'mcp:divi_design'         => 'Cambiar la paleta, las variables, las fuentes y la tipografía globales de Divi (afecta a todo el sitio)',
 		'mcp:seo:read'            => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
 		'mcp:maintenance:read'    => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
 	);

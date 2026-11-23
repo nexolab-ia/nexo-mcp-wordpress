@@ -79,6 +79,8 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/edit-divi-module',
 		'nexo-mcp/create-divi-page',
 		'nexo-mcp/edit-divi-section',
+		'nexo-mcp/get-divi-design-system',
+		'nexo-mcp/undo-divi-design-change',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -298,6 +300,24 @@ final class ExtendedAbilityRegistrar {
 			$this->confirmation_schema( 'undo-design-system-change' ),
 			fn() => $this->builders->undo_design_system_change(),
 			fn() => $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' )
+		);
+		$this->ability(
+			'get-divi-design-system',
+			'Obtener el diseño global de Divi 5',
+			'Lee el diseño global de Divi 5: la paleta de colores globales (id gcid-…, etiqueta, color y estado), las variables de diseño por tipo (numbers, strings, images, links, fonts y gradients —estos últimos sólo de lectura—, con id gvid-… y estado), los 5 colores del Customizer (accent, secondary_accent, header, font, link), las fuentes y pesos de títulos y cuerpo, el tamaño y la altura de línea del cuerpo (null = Divi usa su valor por defecto) y cuántos cambios hay para deshacer. Sólo lee. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+			'read',
+			$this->empty_schema(),
+			fn() => $this->builders->get_divi_design_system(),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'undo-divi-design-change',
+			'Deshacer el último cambio del diseño global de Divi',
+			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte.',
+			'write',
+			$this->empty_schema(),
+			fn() => $this->builders->undo_divi_design_change(),
+			fn() => $this->module_write( 'divi_design_tools_enabled', Capabilities::DIVI_DESIGN, 'manage_options' )
 		);
 		$this->ability(
 			'create-global-class',

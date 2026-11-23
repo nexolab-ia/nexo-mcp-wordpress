@@ -74,6 +74,15 @@ final class Capabilities {
 	public const DESIGN_SYSTEM = 'nexo_mcp_design_system';
 
 	/**
+	 * Cambiar el diseño global de Divi 5 (paleta, variables, fuentes y tipografía).
+	 *
+	 * Va aparte de BUILDERS y de DESIGN_SYSTEM (Elementor): cambia el aspecto de todo el sitio
+	 * en vivo, y habilitar Elementor no habilita Divi. Además la enciende aparte el interruptor
+	 * `divi_design_tools_enabled`.
+	 */
+	public const DIVI_DESIGN = 'nexo_mcp_divi_design';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {
