@@ -7,7 +7,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-wp() { docker compose run --rm -T --entrypoint wp setup "$@" 2>/dev/null; }
+# shellcheck source=wpcli.sh
+source tools/wpcli.sh
+wp() { wpcli "$@" 2>/dev/null; }
 
 compatible() { case "$1" in wordpress-seo) echo 28.7 ;; esac; }
 
