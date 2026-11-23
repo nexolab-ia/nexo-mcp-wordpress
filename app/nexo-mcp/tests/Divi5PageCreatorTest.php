@@ -22,12 +22,14 @@ final class Divi5PageCreatorTest extends NexoTestCase {
 		return Divi5SectionEditorTestFixtures::sections( $text );
 	}
 
-	private function creator( ?callable $active = null, ?callable $inserter = null ): Divi5PageCreator {
+	private function creator( ?callable $active = null, ?callable $inserter = null, ?callable $deleter = null ): Divi5PageCreator {
 		return new Divi5PageCreator(
 			new DiviTreeValidator( static fn( string $name ): bool => 'gallery' === $name ),
 			$active ?? static fn(): bool => true,
 			static fn(): string => '5.19.1',
-			$inserter
+			$inserter,
+			null,
+			$deleter
 		);
 	}
 
@@ -174,5 +176,40 @@ final class Divi5PageCreatorTest extends NexoTestCase {
 		$this->assertSame( 'nexo_mcp_divi_save_failed', $result->get_error_code() );
 		$this->assertSame( $before, $this->snapshot() );
 		$this->assertTrue( \WP_Test_State::$kses_active );
+	}
+
+	public function test_the_title_is_slashed_so_backslashes_survive_the_insert(): void {
+		$result = $this->creator()->create( array( 'title' => 'Ruta C:\\temp', 'sections' => self::sections() ) );
+
+		$this->assertIsArray( $result );
+		$this->assertContains( 'Ruta C:\\temp', \WP_Test_State::$slashed );
+	}
+
+	public function test_an_exception_message_never_reaches_the_error(): void {
+		$creator = $this->creator(
+			null,
+			static function (): void {
+				throw new \RuntimeException( 'SQLSTATE secreto en /var/www' );
+			}
+		);
+
+		$result = $creator->create( array( 'title' => 'Nueva', 'sections' => self::sections() ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_save_failed', $result->get_error_code() );
+		$this->assertStringNotContainsString( 'SQLSTATE', $result->get_error_message() );
+		$this->assertStringNotContainsString( '/var/www', $result->get_error_message() );
+	}
+
+	public function test_a_rollback_that_cannot_delete_the_draft_reports_the_orphan(): void {
+		\WP_Test_State::$mangle_insert = true;
+
+		$result = $this->creator( null, null, static fn( int $id ) => false )->create( array( 'title' => 'Nueva', 'sections' => self::sections() ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_builder_copy_orphan', $result->get_error_code() );
+		$data = $result->get_error_data();
+		$this->assertSame( 'nexo_mcp_divi_save_failed', $data['original_error'] );
+		$this->assertArrayHasKey( (int) $data['copy_id'], \WP_Test_State::$posts, 'el borrador sigue ahí y se avisa' );
 	}
 }

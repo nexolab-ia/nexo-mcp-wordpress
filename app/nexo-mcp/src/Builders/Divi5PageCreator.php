@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\WordPress\WorkingCopy;
+
 /**
  * Valida las secciones y crea la página: nunca la publica.
  *
@@ -57,6 +59,13 @@ final class Divi5PageCreator {
 	private $inserter;
 
 	/**
+	 * Borrado del borrador a medias: fn( int $id ): mixed (falsy si falla).
+	 *
+	 * @var callable
+	 */
+	private $deleter;
+
+	/**
 	 * Construye el creador.
 	 *
 	 * @param DiviTreeValidator|null $validator    Validador (por omisión, el de producción).
@@ -64,19 +73,22 @@ final class Divi5PageCreator {
 	 * @param callable|null          $version      fn(): string. Por omisión, la versión de Divi instalada.
 	 * @param callable|null          $inserter     fn( array ): int|\WP_Error. Por omisión, `wp_insert_post()` (sólo pruebas).
 	 * @param Divi5Adapter|null      $adapter      Adaptador de Divi 5.
+	 * @param callable|null          $deleter      fn( int ): mixed. Por omisión, `wp_delete_post( $id, true )` (sólo pruebas).
 	 */
 	public function __construct(
 		?DiviTreeValidator $validator = null,
 		?callable $divi5_active = null,
 		?callable $version = null,
 		?callable $inserter = null,
-		?Divi5Adapter $adapter = null
+		?Divi5Adapter $adapter = null,
+		?callable $deleter = null
 	) {
 		$this->validator    = $validator ?? new DiviTreeValidator();
 		$this->divi5_active = $divi5_active ?? array( Divi5ContentWriter::class, 'divi5_installed' );
 		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
 		$this->inserter     = $inserter ?? static fn( array $data ) => wp_insert_post( $data, true );
 		$this->adapter      = $adapter ?? new Divi5Adapter();
+		$this->deleter      = $deleter ?? static fn( int $id ) => wp_delete_post( $id, true );
 	}
 
 	/**
@@ -132,7 +144,7 @@ final class Divi5PageCreator {
 		$data     = array(
 			'post_type'    => 'page',
 			'post_status'  => 'draft',
-			'post_title'   => $title,
+			'post_title'   => wp_slash( $title ),
 			'post_content' => wp_slash( $content ),
 		);
 		$inserter = $this->inserter;
@@ -140,7 +152,7 @@ final class Divi5PageCreator {
 		try {
 			$post_id = Divi5ContentWriter::without_kses( static fn() => $inserter( $data ) );
 		} catch ( \Throwable $e ) {
-			return $this->failed( $e->getMessage() );
+			return $this->failed( __( 'error interno al guardar.', 'nexo-mcp' ) );
 		}
 
 		if ( is_wp_error( $post_id ) ) {
@@ -160,7 +172,7 @@ final class Divi5PageCreator {
 			Divi5ContentWriter::mark( $post );
 			$this->adapter->flush( $post );
 		} catch ( \Throwable $e ) {
-			return $this->rollback( $post_id, $e->getMessage() );
+			return $this->rollback( $post_id, __( 'error interno al guardar.', 'nexo-mcp' ) );
 		}
 
 		$tree  = Divi5Tree::build( $content );
@@ -185,7 +197,16 @@ final class Divi5PageCreator {
 	 * @param string $reason  Motivo.
 	 */
 	private function rollback( int $post_id, string $reason ): \WP_Error {
-		wp_delete_post( $post_id, true );
+		$error   = $this->failed( $reason );
+		$deleted = ( $this->deleter )( $post_id );
+
+		if ( ! $deleted ) {
+			$draft = get_post( $post_id );
+
+			return $draft instanceof \WP_Post
+				? WorkingCopy::orphan_error( $draft, $error )
+				: $error;
+		}
 
 		return $this->failed( $reason, true );
 	}

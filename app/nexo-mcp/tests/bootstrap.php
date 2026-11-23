@@ -92,6 +92,8 @@ final class WP_Test_State {
 
 	/** @var list<bool> Estado de los filtros kses en cada llamada a `wp_insert_post()`. */
 	public static array $kses_during_insert = array();
+	/** @var array<int, mixed> Valores que pasaron por wp_slash(). */
+	public static array $slashed = array();
 
 	/** Si es true, `wp_trash_post()` falla (devuelve false). */
 	public static bool $fail_trash = false;
@@ -118,6 +120,7 @@ final class WP_Test_State {
 		self::$fail_insert_post = false;
 		self::$mangle_insert    = false;
 		self::$kses_during_insert = array();
+		self::$slashed            = array();
 		self::$cleaned          = array();
 		self::$fail_trash       = false;
 		self::$post_cache  = array();
@@ -353,7 +356,7 @@ function wp_kses_post( $text ) { return preg_replace( '#<script[^>]*>.*?</script
 function wp_strip_all_tags( $text ) { return strip_tags( (string) $text ); }
 function absint( $value ) { return abs( (int) $value ); }
 function wp_unslash( $value ) { return $value; }
-function wp_slash( $value ) { return $value; }
+function wp_slash( $value ) { WP_Test_State::$slashed[] = $value; return $value; }
 function wp_json_encode( $data, $flags = 0 ) {
 	if ( '' !== WP_Test_State::$json_fail_in ) {
 		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS, 5 ) as $frame ) { // phpcs:ignore

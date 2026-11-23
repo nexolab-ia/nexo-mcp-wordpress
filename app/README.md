@@ -267,6 +267,48 @@ Reglas que siempre se cumplen:
   texto, sin entidades HTML. Se probó con Elementor Pro 4.4.1
   (`tools/prueba_adaptadores.sh`, sección F7, sólo con Pro con licencia; sin eso
   se saltea).
+- **Divi 5 (módulos reales, sin permiso nuevo)**: Divi 5 guarda las páginas como
+  bloques `<!-- wp:divi/… {JSON} -->` (`divi/placeholder` > `section` > `row` >
+  `column` > módulos). `Divi5Adapter` los reconoce antes que Gutenberg; las
+  páginas de **Divi 4** (shortcodes `[et_pb_*]`) siguen con el adaptador de
+  siempre, sin cambios (la migración no está en esta entrega). Divi 5 no tiene
+  ids de nodo: cada nodo se direcciona por `path` (índices desde la raíz, p. ej.
+  `0.0.0.0.1`) y `fingerprint` (hash del nodo serializado). **Toda escritura exige
+  el `fingerprint` leído**: si la página cambió, `nexo_mcp_divi_node_changed` y no
+  se escribe nada. Tres herramientas, con el permiso de constructores (son
+  páginas; no hay scope nuevo):
+  - `get-page-structure` devuelve para Divi 5 una lista plana con `id` = `path`,
+    `type` (`divi/text`…), texto, y en `attributes` el `fingerprint`, la etiqueta,
+    el enlace y la imagen.
+  - `edit-divi-module` (`id`, `draft`, `path`, `fingerprint`, `content`,
+    `design`): cambia el contenido y/o el diseño **de escritorio** de un módulo del
+    catálogo; tablet, teléfono, hover y todo lo no tocado se conservan.
+  - `create-divi-page` (`title`, `sections`) crea un **borrador** con un árbol de
+    secciones (el `divi/placeholder` raíz lo pone el plugin) y
+    `edit-divi-section` (`id`, `draft`, `operation`: `replace`/`insert`/`delete`,
+    `path`, `fingerprint`, `position`, `sections`) reconstruye por ruta. El
+    placeholder raíz sólo admite `insert` con `position: inside`
+    (`nexo_mcp_divi_operation_invalid` en lo demás).
+  - **Catálogo cerrado**: estructura (`divi/section`, `row`, `column`) y módulos de
+    contenido `divi/text`, `heading`, `button`, `image`, `divider`, `blurb`,
+    `icon`, `video` e `icon-list` (con `icon-list-item`); hasta 200 nodos y 3 MB.
+    Sólo se escribe el valor de **escritorio** (`desktop.value`): `tablet`,
+    `phone` y `hover` en lo que se escribe se rechazan (`nexo_mcp_divi_attr_denied`).
+  - **Se rechaza sin escribir**: `divi/code`, `fullwidth-code`, `shortcode-module` y
+    cualquier módulo fuera del catálogo (`nexo_mcp_divi_module_denied`), `htmlBefore`/
+    `htmlAfter` y CSS propio, shortcodes en el texto (`nexo_mcp_divi_shortcode_denied`),
+    enlaces que no sean http/https/mailto/tel o relativos (`javascript:`) e
+    imágenes que no sean un adjunto existente o una URL http/https
+    (`nexo_mcp_divi_value_invalid`). El texto rico pasa por `wp_kses` con una lista
+    corta de etiquetas y sin `target`.
+  - **Copia de trabajo**: igual que en Elementor, una página publicada se edita en su
+    copia (el original no cambia hasta publicarla con `set-content-status`),
+    con respaldo y bloqueo; nunca publica. El kses del núcleo corrompe los
+    comentarios de bloque si el usuario no tiene `unfiltered_html`, así que el plugin
+    quita esos filtros sólo durante el guardado y sólo para contenido que ya pasó
+    el catálogo. Sin Divi 5 activo: `nexo_mcp_divi5_required`; una página que no es
+    Divi 5: `nexo_mcp_divi_not_divi5`. Se probó con Divi 5.19.1
+    (`tools/prueba_adaptadores.sh`, sección Divi 5; sin Divi 5 se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -461,7 +503,10 @@ Pro enciende `builders_dynamic_enabled` sólo durante la sección y lo restaura
 al final, también si la corrida se corta. La de componentes (F7) pide además
 la licencia activa: sin ella imprime `SKIP` y no falla; con ella enciende
 `builders_components_enabled` (y la capacidad, si falta) sólo durante la sección,
-los restaura y borra los componentes que creó. Con Pro instalado, wp-cli necesita más
+los restaura y borra los componentes que creó. La de Divi 5 necesita el tema Divi 5:
+sin él imprime `SKIP` y no falla; si está instalado pero no activo, lo activa sólo
+durante la sección y devuelve el tema anterior (también si la corrida se corta), y
+borra las páginas, copias y directorios `et-cache` que creó. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el
