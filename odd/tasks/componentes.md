@@ -25,7 +25,7 @@ Fase F7 del soporte de Elementor 4 (ver `odd/tasks/elementor-v4.md`): «F7 compo
 - [x] T1 (S2, S3, S6) Confirmar en el docker cómo Elementor crea un componente (camino del REST `create`/`create-validate`: post, estado, metas, uid, estilos, validadores), cómo se guarda y se renderiza una instancia `e-component` en una página (sonda en borrador, borrada al final) y qué pasa sin Pro o sin licencia. Escribir S7. Ruta: explore + worker (sonda, context backstop). Commit: —
 - [x] T2 (S5, S7 permiso/listar/crear) scope `mcp:builders:components` y ajustes, `ComponentStore` (envuelve repositorio y validadores de Elementor, disponibilidad inyectable), `list-components`, `create-component` + PHPUnit. Ruta: worker (context backstop). Risk: item 2 (scope, capacidad y permiso nuevos). Commit: f4fa321.
 - [x] T3 (S7 insertar) opt-in `e-component` en `ElementorTreeValidator`, `insert-component` por el camino de edit-section + PHPUnit. Ruta: worker (context backstop). Risk: item 2 (el validador acepta un tipo hoy prohibido). Commit: 6e68910.
-- [x] T4 (S7 e2e/docs) e2e local con Pro (SKIP sin Pro), README/EQUIVALENCIAS/readme.txt, 1.6.0. Ruta: worker. Commit: —
+- [x] T4 (S7 e2e/docs) e2e local con Pro (SKIP sin Pro), README/EQUIVALENCIAS/readme.txt, 1.6.0. Ruta: worker. Commit: c40d3c2.
 
 ## Log
 
