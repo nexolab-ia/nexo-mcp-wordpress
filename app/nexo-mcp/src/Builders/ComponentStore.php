@@ -237,14 +237,14 @@ final class ComponentStore {
 		$rejection = ( $this->validator )( $title, $uid, $tree );
 
 		if ( null !== $rejection ) {
-			return new \WP_Error( 'nexo_mcp_component_invalid', $rejection );
+			return new \WP_Error( 'nexo_mcp_component_invalid', self::plain_message( $rejection ) );
 		}
 
 		try {
 			$id = ( $this->creator )( $title, $tree, 'draft', $uid );
 		} catch ( \Throwable $e ) {
 			// Elementor ya borró el post a medias.
-			return new \WP_Error( 'nexo_mcp_component_invalid', $e->getMessage() );
+			return new \WP_Error( 'nexo_mcp_component_invalid', self::plain_message( $e->getMessage() ) );
 		}
 
 		return array(
@@ -253,6 +253,15 @@ final class ComponentStore {
 			'title'  => $title,
 			'status' => 'draft',
 		);
+	}
+
+	/**
+	 * Los mensajes de Elementor llegan con entidades HTML (`&#039;`): se devuelven como texto.
+	 *
+	 * @param string $message Mensaje de Elementor.
+	 */
+	private static function plain_message( string $message ): string {
+		return html_entity_decode( $message, ENT_QUOTES, 'UTF-8' );
 	}
 
 	/**

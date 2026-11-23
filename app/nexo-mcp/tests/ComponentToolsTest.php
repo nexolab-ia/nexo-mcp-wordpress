@@ -394,6 +394,20 @@ final class ComponentToolsTest extends NexoTestCase {
 		$this->assertStringContainsString( 'Settings validation failed. title: invalid_value', $result->get_error_message() );
 	}
 
+	public function test_el_mensaje_de_los_validadores_llega_sin_entidades_html(): void {
+		$this->elementor_says = 'El t&iacute;tulo del componente &#039;Tarjeta&#039; est&aacute; duplicado &amp; &quot;repetido&quot;.';
+
+		$result = $this->assert_rejected( $this->create_tool()['execute_callback']( $this->input() ), 'nexo_mcp_component_invalid' );
+		$this->assertSame( 'El título del componente \'Tarjeta\' está duplicado & "repetido".', $result->get_error_message() );
+	}
+
+	public function test_el_mensaje_de_una_excepcion_de_elementor_llega_sin_entidades_html(): void {
+		$this->elementor_throws = 'El componente &#039;X&#039; falla';
+
+		$result = $this->assert_rejected( $this->create_tool()['execute_callback']( $this->input() ), 'nexo_mcp_component_invalid' );
+		$this->assertSame( "El componente 'X' falla", $result->get_error_message() );
+	}
+
 	public function test_los_validadores_reciben_el_titulo_el_uid_y_el_arbol_que_se_guardara(): void {
 		$seen  = array();
 		$store = new ComponentStore(

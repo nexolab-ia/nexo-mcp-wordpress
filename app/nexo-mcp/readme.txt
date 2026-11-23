@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.5.0
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -19,6 +19,7 @@ Nexo MCP expone un servidor MCP en `/wp-json/nexo-mcp/v1/mcp` construido sobre l
 * Herramientas de lectura, escritura, constructores visuales (Gutenberg, Elementor, Flatsome, Divi, WPBakery y shortcodes, con respaldo antes de editar), SEO (Yoast, Rank Math, AIOSEO, SEOPress o nativo), campos ACF, medios, menús, apariencia, mantenimiento de plugins en dos pasos y WooCommerce opcional.
 * Las ediciones a contenido publicado van primero a una copia de trabajo.
 * Datos dinámicos de Elementor (requiere Elementor Pro): `list-dynamic-tags` y `set-dynamic-tag` asignan, de una lista cerrada de tags sin datos sensibles, un dato dinámico (título del sitio, título de la entrada, imagen destacada…) a un título, párrafo, botón o imagen atómico, siempre en la copia de trabajo. Permiso propio, apagado por defecto: un tag se evalúa para todo visitante.
+* Componentes de Elementor 4 (requiere Elementor Pro con licencia activa): `list-components`, `create-component` (borrador, árbol atómico validado) e `insert-component` (instancia en la copia de trabajo de una página). Permiso propio, apagado por defecto; sin overrides.
 * Acciones irreversibles con confirmación explícita.
 * Límites de tasa y de subidas, auditoría con redacción de datos sensibles, sanitización de contenido y política HTTPS.
 * Purga de caché de los proveedores conocidos.
@@ -64,6 +65,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.6.0 =
+* Nuevo: componentes de Elementor 4 como datos (requiere **Elementor Pro con licencia activa** y el Editor V4). Tres herramientas: `list-components` (los componentes no archivados: `id`, `uid`, `title`, `status`, `modified`), `create-component` (crea un componente en **borrador** a partir de un árbol atómico validado, con los validadores de Elementor: límite de 100, título y uid duplicados, sólo elementos atómicos, sin ciclos) e `insert-component` (inserta en una página una instancia `e-component` que apunta al componente, en la copia de trabajo: el original no cambia hasta publicar). Sin Pro con licencia, crear e insertar responden `nexo_mcp_components_unavailable` sin escribir; un `component_id` que no existe, está archivado o en la papelera responde `nexo_mcp_component_not_found`.
+* Nuevo: interruptor «Componentes de Elementor» (`builders_components_enabled`, **apagado por defecto**, marcado como sensible), capacidad `nexo_mcp_builders_components` (administrador) y scope OAuth `mcp:builders:components`. Crear un componente cambia el sitio, no sólo una página.
+* Sin overrides: las instancias usan el componente tal cual. No se editan, publican, archivan ni borran componentes por MCP (se hace en el editor de Elementor). `create-elementor-page`, `edit-elementor-section` y `migrate-elementor-page` siguen rechazando `e-component`.
+* Corrección: los mensajes de los validadores de Elementor llegan como texto, sin entidades HTML (`&#039;`).
 
 = 1.5.0 =
 * Nuevo: datos dinámicos de Elementor (requiere **Elementor Pro** y Elementor 4 con el Editor V4 activo). Dos herramientas: `list-dynamic-tags` (los tags permitidos que el sitio tiene registrados, con `name`, `group`, `label`, `categories`, `settings` y destinos) y `set-dynamic-tag` (asigna un tag a una prop de un elemento atómico en la copia de trabajo de la página, con el mismo camino que `edit-elementor-section`: el original publicado no cambia, respalda antes de guardar y nunca publica). Destinos: `e-heading.title`, `e-paragraph.paragraph` y `e-button.text` (tags de texto) y `e-image.image` (tags de imagen); el tag debe ser de la categoría de la prop. Los enlaces (`link`) quedan fuera.
