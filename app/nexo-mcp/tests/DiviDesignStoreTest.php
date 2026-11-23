@@ -38,6 +38,9 @@ final class DiviDesignStoreTest extends NexoTestCase {
 	/** Si no es null, set_variables devuelve este error. */
 	private ?\WP_Error $variables_error = null;
 
+	/** Si no es null, set_option lanza al escribir esta clave. */
+	private ?string $option_throw_key = null;
+
 	protected function setUp(): void {
 		parent::setUp();
 		$this->active          = true;
@@ -61,6 +64,7 @@ final class DiviDesignStoreTest extends NexoTestCase {
 		$this->flushes         = 0;
 		$this->colors_throw    = null;
 		$this->variables_error = null;
+		$this->option_throw_key = null;
 		\WP_Test_State::$user_id = 7;
 	}
 
@@ -100,6 +104,10 @@ final class DiviDesignStoreTest extends NexoTestCase {
 			fn(): array => $this->options,
 			function ( string $key, $value ): void {
 				$this->log[] = 'set_option:' . $key;
+
+				if ( $key === $this->option_throw_key ) {
+					throw new \RuntimeException( 'opcion rota' );
+				}
 
 				if ( null === $value ) {
 					unset( $this->options[ $key ] );
@@ -417,5 +425,204 @@ final class DiviDesignStoreTest extends NexoTestCase {
 		$this->assertSame( $new, $this->colors );
 		$this->assertCount( 1, $this->history() );
 		$this->assertSame( 'error', $this->audit[1][1] );
+	}
+
+	public function test_el_historial_guarda_tambien_lo_que_escribio_el_conector(): void {
+		$new = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$this->assertIsArray( $this->store()->write_colors( $new, 't' ) );
+		$this->assertSame( $new, $this->history()[0]['written'] );
+
+		$this->assertIsArray( $this->store()->write_variables( 'numbers', array( 'gvid-n1' => array( 'label' => 'R', 'value' => '1px', 'order' => 1, 'status' => 'active' ) ), 't' ) );
+		$this->assertSame( array( 'gvid-n1' => array( 'label' => 'R', 'value' => '1px', 'order' => 1, 'status' => 'active' ) ), $this->history()[1]['written'] );
+
+		$this->assertIsArray( $this->store()->write_theme_options( array( 'body_font' => 'Lato' ), 't' ) );
+		$this->assertSame( array( 'body_font' => 'Lato' ), $this->history()[2]['written'] );
+	}
+
+	public function test_deshacer_se_niega_si_el_estado_cambio_despues_y_no_toca_nada(): void {
+		$store = $this->store();
+		$new   = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$store->write_colors( $new, 't' );
+
+		// Alguien cambia la paleta desde el panel de Divi.
+		$this->colors['gcid-aaaaaaaaaa']['color'] = '#00ff00';
+		$colors  = $this->colors;
+		$history = $this->history();
+		$flushes = $this->flushes;
+		$this->log = array();
+
+		$error = $this->assert_error( $store->undo(), 'nexo_mcp_divi_design_changed_since' );
+
+		$this->assertNotSame( '', $error->get_error_message() );
+		$this->assertSame( $colors, $this->colors );
+		$this->assertSame( $history, $this->history() );
+		$this->assertSame( $flushes, $this->flushes );
+		$this->assertNotContains( 'set_colors', $this->log );
+		$this->assertSame( 'error', end( $this->audit )[1] );
+
+		$ok = $store->undo( true );
+		$this->assertIsArray( $ok );
+		$this->assertSame( 'gcid-aaaaaaaaaa', array_key_first( $this->colors ) );
+		$this->assertSame( '#111111', $this->colors['gcid-aaaaaaaaaa']['color'] );
+		$this->assertSame( array(), $this->history() );
+	}
+
+	public function test_deshacer_variables_y_opciones_tambien_comprueban_el_estado(): void {
+		$store = $this->store();
+		$store->write_variables( 'numbers', array( 'gvid-n1' => array( 'label' => 'R', 'value' => '1px', 'order' => 1, 'status' => 'active' ) ), 't' );
+		$this->variables['numbers']['gvid-n1']['value'] = '99px';
+		$vars = $this->variables;
+		$this->assert_error( $store->undo(), 'nexo_mcp_divi_design_changed_since' );
+		$this->assertSame( $vars, $this->variables );
+		$this->assertCount( 1, $this->history() );
+
+		$this->assertIsArray( $store->undo( true ) );
+
+		$store->write_theme_options( array( 'body_font' => 'Lato' ), 't' );
+		$this->options['body_font'] = 'Otra';
+		$opts = $this->options;
+		$this->assert_error( $store->undo(), 'nexo_mcp_divi_design_changed_since' );
+		$this->assertSame( $opts, $this->options );
+		$this->assertCount( 1, $this->history() );
+	}
+
+	public function test_deshacer_sin_cambios_ajenos_sigue_funcionando_con_el_valor_escrito_igual(): void {
+		$store = $this->store();
+		$store->write_theme_options( array( 'body_font_size' => '16' ), 't' );
+		$this->options['body_font_size'] = 16; // Mismo valor, otro tipo: no es un cambio.
+
+		$this->assertIsArray( $store->undo() );
+		$this->assertSame( '14', $this->options['body_font_size'] );
+	}
+
+	public function test_si_las_opciones_fallan_a_mitad_se_revierten_las_ya_escritas_y_no_queda_historial(): void {
+		$this->option_throw_key = 'body_font';
+		$opts                   = $this->options;
+		$colors                 = $this->colors;
+		$vars                   = $this->variables;
+
+		$error = $this->assert_error(
+			$this->store()->write_theme_options( array( 'accent_color' => '#ff0000', 'heading_font' => 'Lato', 'body_font' => 'Lato', 'body_font_size' => '20' ), 'set-divi-typography' ),
+			'nexo_mcp_divi_design_write_failed'
+		);
+
+		$this->assertStringContainsString( 'opcion rota', $error->get_error_message() );
+		$this->assertSame( $opts, $this->options, 'todo vuelve a como estaba, incluso lo que no existía' );
+		$this->assertArrayNotHasKey( 'body_font', $this->options );
+		$this->assertSame( $colors, $this->colors );
+		$this->assertSame( $vars, $this->variables );
+		$this->assertSame( array(), $this->history() );
+		$this->assertContains( 'set_option:accent_color', $this->log );
+		$this->assertSame( 'error', $this->audit[0][1] );
+	}
+
+	public function test_deshacer_colores_no_devuelve_los_ids_del_customizer(): void {
+		update_option(
+			DiviDesignStore::HISTORY_OPTION,
+			array(
+				array(
+					'area'     => 'colors',
+					'previous' => array(
+						'gcid-aaaaaaaaaa'    => array( 'color' => '#111111', 'label' => 'Base', 'status' => 'active' ),
+						'gcid-primary-color' => array( 'color' => '#ff0000', 'label' => 'Primary', 'status' => 'active' ),
+						'gcid-link-color'    => array( 'color' => '#00ff00', 'label' => 'Link', 'status' => 'active' ),
+					),
+					'written'  => $this->colors,
+					'tool'     => 't',
+					'user'     => 1,
+					'date'     => '2026-01-01 00:00:00',
+				),
+			),
+			false
+		);
+
+		$this->assertIsArray( $this->store()->undo() );
+		$this->assertSame( array( 'gcid-aaaaaaaaaa' ), array_keys( $this->colors ) );
+		$this->assertSame( '#2ea3f2', $this->options['accent_color'] );
+	}
+
+	public function test_el_estado_actual_ignora_los_ids_del_customizer_al_comparar_colores(): void {
+		$store = $this->store();
+		$new   = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$store->write_colors( $new, 't' );
+		// Divi suele devolver también los del Customizer en la lista.
+		$this->colors['gcid-primary-color'] = array( 'color' => '#2ea3f2', 'label' => 'Primary', 'status' => 'active' );
+
+		$this->assertIsArray( $store->undo() );
+	}
+
+	public function test_si_no_se_puede_sacar_la_entrada_del_historial_no_se_informa_exito(): void {
+		$store = $this->store();
+		$new   = $this->colors;
+		$new['gcid-aaaaaaaaaa']['color'] = '#ff0000';
+		$store->write_colors( $new, 't' );
+		$this->audit = array();
+
+		\WP_Test_State::$fail_update_option = DiviDesignStore::HISTORY_OPTION;
+		$error = $this->assert_error( $store->undo(), 'nexo_mcp_divi_design_history_failed' );
+
+		$this->assertNotSame( '', $error->get_error_message() );
+		$this->assertCount( 1, $this->history(), 'la entrada sigue en la pila' );
+		$this->assertSame( 'error', $this->audit[0][1] );
+	}
+
+	public function test_update_colors_corre_el_cambio_bajo_el_bloqueo_y_un_error_no_escribe(): void {
+		$colors = $this->colors;
+		$vars   = $this->variables;
+		$opts   = $this->options;
+		$this->log = array();
+
+		$result = $this->store()->update_colors(
+			function ( array $current ) {
+				$this->log[] = 'mutate';
+
+				return new \WP_Error( 'nexo_mcp_divi_design_not_found', 'no' );
+			},
+			't'
+		);
+
+		$this->assert_error( $result, 'nexo_mcp_divi_design_not_found' );
+		$this->assertSame( array( 'lock', 'get_colors', 'mutate' ), array_slice( $this->log, 0, 3 ) );
+		$this->assert_nothing_changed( $colors, $vars, $opts );
+		$this->assertSame( array(), $this->audit );
+
+		$ok = $this->store()->update_colors(
+			function ( array $current ) {
+				$current['gcid-cccccccccc'] = array( 'color' => '#333333', 'label' => 'Nuevo', 'status' => 'active' );
+
+				return $current;
+			},
+			't'
+		);
+		$this->assertIsArray( $ok );
+		$this->assertArrayHasKey( 'gcid-cccccccccc', $this->colors );
+		$this->assertSame( 'colors', $this->history()[0]['area'] );
+	}
+
+	public function test_update_variables_cambia_un_tipo_bajo_el_bloqueo(): void {
+		$result = $this->store()->update_variables(
+			'numbers',
+			function ( array $current ) {
+				$current['gvid-n1']['value'] = '20px';
+
+				return $current;
+			},
+			't'
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame( '20px', $this->variables['numbers']['gvid-n1']['value'] );
+		$this->assertSame( '12px', $this->history()[0]['previous']['gvid-n1']['value'] );
+
+		$this->assert_error( $this->store()->update_variables( 'gradients', fn( array $c ) => $c, 't' ), 'nexo_mcp_divi_design_type_invalid' );
+	}
+
+	public function test_read_options_expone_el_estado_para_validar(): void {
+		$this->assertSame( $this->colors, array_intersect_key( $this->store()->current_colors(), $this->colors ) );
+		$this->assertSame( $this->variables['numbers'], $this->store()->current_variables( 'numbers' ) );
+		$this->assertSame( array(), $this->store()->current_variables( 'strings' ) );
 	}
 }

@@ -69,7 +69,7 @@ final class DiviDesignStore {
 	 *
 	 * @var array<int, string>
 	 */
-	private const CUSTOMIZER_COLOR_IDS = array( 'gcid-primary-color', 'gcid-secondary-color', 'gcid-heading-color', 'gcid-body-color', 'gcid-link-color' );
+	public const CUSTOMIZER_COLOR_IDS = array( 'gcid-primary-color', 'gcid-secondary-color', 'gcid-heading-color', 'gcid-body-color', 'gcid-link-color' );
 
 	/**
 	 * Tipografía: nombre público => clave en `et_divi`.
@@ -283,22 +283,43 @@ final class DiviDesignStore {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function write_colors( array $all, string $tool ) {
-		// Los 5 colores del Customizer viven en `et_divi` (no en esta lista): `set_global_colors` los escribiría
-		// sin respaldo, así que se quitan; se cambian con `write_theme_options`.
-		foreach ( array_keys( $all ) as $id ) {
-			if ( in_array( $id, self::CUSTOMIZER_COLOR_IDS, true ) ) {
-				unset( $all[ $id ] );
-			}
-		}
+		return $this->update_colors( static fn(): array => $all, $tool );
+	}
 
+	/**
+	 * Cambia los colores globales: lee, cambia y escribe la lista completa bajo el mismo bloqueo.
+	 *
+	 * @param callable $mutate fn( array $current ): array|\WP_Error. Recibe la lista actual (sin los ids del
+	 *                         Customizer, que viven en `et_divi`) y devuelve la completa; un error no escribe nada.
+	 * @param string   $tool   Herramienta que escribe.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function update_colors( callable $mutate, string $tool ) {
 		return $this->write(
 			$tool,
 			'colors',
-			fn() => $this->colors(),
-			function () use ( $all ) {
-				( $this->set_colors )( $all );
+			function () use ( $mutate ) {
+				$previous = $this->colors();
+				$new      = $mutate( $this->without_customizer_ids( $previous ) );
 
-				return null;
+				if ( is_wp_error( $new ) ) {
+					return $new;
+				}
+
+				// Los 5 colores del Customizer viven en `et_divi` (no en esta lista): `set_global_colors` los
+				// escribiría sin respaldo, así que se quitan; se cambian con `write_theme_options`.
+				$new = $this->without_customizer_ids( $new );
+
+				return array(
+					'previous' => $previous,
+					'written'  => $new,
+					'apply'    => function () use ( $new ) {
+						( $this->set_colors )( $new );
+
+						return null;
+					},
+				);
 			}
 		);
 	}
@@ -313,6 +334,19 @@ final class DiviDesignStore {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function write_variables( string $type, array $all, string $tool ) {
+		return $this->update_variables( $type, static fn(): array => $all, $tool );
+	}
+
+	/**
+	 * Cambia las variables de un tipo: lee, cambia y escribe bajo el mismo bloqueo.
+	 *
+	 * @param string   $type   Numbers, strings, images, links o fonts.
+	 * @param callable $mutate fn( array $current ): array|\WP_Error. Recibe la lista de ese tipo y devuelve la completa.
+	 * @param string   $tool   Herramienta que escribe.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function update_variables( string $type, callable $mutate, string $tool ) {
 		if ( ! $this->available() ) {
 			return Divi5ContentWriter::required_error();
 		}
@@ -331,22 +365,33 @@ final class DiviDesignStore {
 		return $this->write(
 			$tool,
 			'variables:' . $type,
-			function () use ( $type ) {
-				$stored = $this->variables();
+			function () use ( $type, $mutate ) {
+				$stored   = $this->variables();
+				$previous = isset( $stored[ $type ] ) && is_array( $stored[ $type ] ) ? $stored[ $type ] : null;
+				$new      = $mutate( $previous ?? array() );
 
-				return isset( $stored[ $type ] ) && is_array( $stored[ $type ] ) ? $stored[ $type ] : null;
-			},
-			function () use ( $type, $all ) {
-				$stored          = $this->variables();
-				$stored[ $type ] = $all;
+				if ( is_wp_error( $new ) ) {
+					return $new;
+				}
 
-				return ( $this->set_variables )( $stored );
+				return array(
+					'previous' => $previous,
+					'written'  => $new,
+					'apply'    => function () use ( $type, $new ) {
+						$stored          = $this->variables();
+						$stored[ $type ] = $new;
+
+						return ( $this->set_variables )( $stored );
+					},
+				);
 			}
 		);
 	}
 
 	/**
 	 * Escribe opciones de `et_divi` (colores del Customizer, fuentes y tipografía).
+	 *
+	 * Todo o nada: si una opción falla, las ya escritas vuelven a su valor anterior y no queda historial.
 	 *
 	 * @param array<string, mixed> $changes Clave de `et_divi` => valor nuevo.
 	 * @param string               $tool    Herramienta que escribe.
@@ -385,35 +430,71 @@ final class DiviDesignStore {
 					$previous[ (string) $key ] = array_key_exists( $key, $options ) ? $options[ $key ] : null;
 				}
 
-				return $previous;
-			},
-			function () use ( $changes ) {
-				foreach ( $changes as $key => $value ) {
-					( $this->set_option )( (string) $key, $value );
-				}
+				return array(
+					'previous' => $previous,
+					'written'  => $changes,
+					'apply'    => function () use ( $changes, $previous ) {
+						$done = array();
 
-				return null;
+						try {
+							foreach ( $changes as $key => $value ) {
+								$done[] = (string) $key;
+								( $this->set_option )( (string) $key, $value );
+							}
+						} catch ( \Throwable $e ) {
+							$this->revert_options( $done, $previous );
+
+							throw $e;
+						}
+
+						return null;
+					},
+				);
 			}
 		);
 	}
 
 	/**
+	 * Colores globales actuales (sin bloqueo; para validar antes de escribir).
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function current_colors(): array {
+		return $this->colors();
+	}
+
+	/**
+	 * Variables actuales de un tipo (sin bloqueo; para validar antes de escribir).
+	 *
+	 * @param string $type Tipo de variable.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function current_variables( string $type ): array {
+		$stored = $this->variables();
+
+		return isset( $stored[ $type ] ) && is_array( $stored[ $type ] ) ? $stored[ $type ] : array();
+	}
+
+	/**
 	 * Deshace el último cambio del diseño global.
+	 *
+	 * @param bool $force Restaurar aunque el área haya cambiado después de lo que escribió el conector.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo() {
+	public function undo( bool $force = false ) {
 		if ( ! $this->available() ) {
 			return Divi5ContentWriter::required_error();
 		}
 
-		return ( $this->lock )( fn() => $this->undo_locked() );
+		return ( $this->lock )( fn() => $this->undo_locked( $force ) );
 	}
 
 	/**
 	 * Historial guardado (los más viejos primero); lo malformado se ignora.
 	 *
-	 * @return array<int, array{area: string, previous: mixed, tool: string, user: int, date: string}>
+	 * @return array<int, array{area: string, previous: mixed, tool: string, user: int, date: string, written?: mixed}>
 	 */
 	public function history(): array {
 		$stored = get_option( self::HISTORY_OPTION, array() );
@@ -429,13 +510,19 @@ final class DiviDesignStore {
 				continue;
 			}
 
-			$entries[] = array(
+			$normal = array(
 				'area'     => $entry['area'],
 				'previous' => $entry['previous'],
 				'tool'     => isset( $entry['tool'] ) && is_string( $entry['tool'] ) ? $entry['tool'] : '',
 				'user'     => isset( $entry['user'] ) ? (int) $entry['user'] : 0,
 				'date'     => isset( $entry['date'] ) && is_string( $entry['date'] ) ? $entry['date'] : '',
 			);
+
+			if ( array_key_exists( 'written', $entry ) ) {
+				$normal['written'] = $entry['written'];
+			}
+
+			$entries[] = $normal;
 		}
 
 		return $entries;
@@ -444,43 +531,47 @@ final class DiviDesignStore {
 	/**
 	 * Protocolo común de escritura: bloqueo, respaldo, escritura, flush y Actividad.
 	 *
-	 * @param string   $tool  Herramienta.
-	 * @param string   $area  Área respaldada.
-	 * @param callable $read  fn(): mixed. Valor anterior del área.
-	 * @param callable $apply fn(): null|\WP_Error|true. Escribe con las funciones de Divi.
+	 * @param string   $tool Herramienta.
+	 * @param string   $area Área respaldada.
+	 * @param callable $plan fn(): \WP_Error|array{previous: mixed, written: mixed, apply: callable}. Corre bajo el
+	 *                       bloqueo: lee el estado, calcula lo que se escribe y da la función que lo escribe con Divi.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function write( string $tool, string $area, callable $read, callable $apply ) {
+	private function write( string $tool, string $area, callable $plan ) {
 		if ( ! $this->available() ) {
 			return Divi5ContentWriter::required_error();
 		}
 
-		return ( $this->lock )( fn() => $this->write_locked( $tool, $area, $read, $apply ) );
+		return ( $this->lock )( fn() => $this->write_locked( $tool, $area, $plan ) );
 	}
 
 	/**
 	 * Cuerpo de `write()` bajo el bloqueo.
 	 *
-	 * @param string   $tool  Herramienta.
-	 * @param string   $area  Área respaldada.
-	 * @param callable $read  Lectura del valor anterior.
-	 * @param callable $apply Escritura.
+	 * @param string   $tool Herramienta.
+	 * @param string   $area Área respaldada.
+	 * @param callable $plan Plan de escritura.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function write_locked( string $tool, string $area, callable $read, callable $apply ) {
+	private function write_locked( string $tool, string $area, callable $plan ) {
 		try {
-			$previous = $read();
+			$step = $plan();
 		} catch ( \Throwable $e ) {
 			return $this->fail( $tool, 'nexo_mcp_divi_design_write_failed', $this->message( $e ) );
+		}
+
+		if ( is_wp_error( $step ) ) {
+			return $step;
 		}
 
 		$old_history = get_option( self::HISTORY_OPTION, null );
 		$history     = $this->history();
 		$history[]   = array(
 			'area'     => $area,
-			'previous' => $previous,
+			'previous' => $step['previous'],
+			'written'  => $step['written'],
 			'tool'     => $tool,
 			'user'     => get_current_user_id(),
 			'date'     => gmdate( 'Y-m-d H:i:s' ),
@@ -501,7 +592,7 @@ final class DiviDesignStore {
 		}
 
 		try {
-			$written = $apply();
+			$written = ( $step['apply'] )();
 		} catch ( \Throwable $e ) {
 			$this->restore_history( $old_history );
 
@@ -515,6 +606,7 @@ final class DiviDesignStore {
 		}
 
 		$this->flush();
+		$this->record_actual_state( $history, $area, $step['written'] );
 
 		$result = array(
 			'area'           => $area,
@@ -527,11 +619,128 @@ final class DiviDesignStore {
 	}
 
 	/**
+	 * Si Divi guardó el área distinta de lo pedido (normaliza), el historial recuerda lo que quedó guardado.
+	 *
+	 * Un fallo aquí es seguro: deshacer se negaría y `force` lo permite.
+	 *
+	 * @param array<int, array<string, mixed>> $history Historial recién guardado.
+	 * @param string                           $area    Área.
+	 * @param mixed                            $written Lo que se pidió escribir.
+	 */
+	private function record_actual_state( array $history, string $area, $written ): void {
+		try {
+			$actual = $this->area_state( $area, $written );
+
+			if ( $this->same_state( $actual, $written ) ) {
+				return;
+			}
+
+			$last                        = array_key_last( $history );
+			$history[ $last ]['written'] = $actual;
+			update_option( self::HISTORY_OPTION, $history, false );
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
+	 * Estado actual de un área, en la forma en que se escribió.
+	 *
+	 * @param string $area    Área.
+	 * @param mixed  $written Lo escrito (para saber qué claves de las opciones mirar).
+	 *
+	 * @return mixed
+	 */
+	private function area_state( string $area, $written ) {
+		if ( 'colors' === $area ) {
+			return $this->without_customizer_ids( $this->colors() );
+		}
+
+		if ( str_starts_with( $area, 'variables:' ) ) {
+			return $this->current_variables( substr( $area, 10 ) );
+		}
+
+		$options = $this->options();
+		$state   = array();
+
+		foreach ( is_array( $written ) ? array_keys( $written ) : array() as $key ) {
+			$state[ (string) $key ] = array_key_exists( $key, $options ) ? $options[ $key ] : null;
+		}
+
+		return $state;
+	}
+
+	/**
+	 * Igualdad de estados: mismas claves y valores; un número y su texto son lo mismo (Divi guarda `'14'` o `14`).
+	 *
+	 * @param mixed $a Un estado.
+	 * @param mixed $b Otro.
+	 */
+	private function same_state( $a, $b ): bool {
+		if ( is_array( $a ) && is_array( $b ) ) {
+			if ( count( $a ) !== count( $b ) ) {
+				return false;
+			}
+
+			foreach ( $a as $key => $value ) {
+				if ( ! array_key_exists( $key, $b ) || ! $this->same_state( $value, $b[ $key ] ) ) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		if ( is_scalar( $a ) && is_scalar( $b ) ) {
+			return (string) $a === (string) $b;
+		}
+
+		return $a === $b;
+	}
+
+	/**
+	 * Quita los ids de los colores del Customizer de una lista de colores.
+	 *
+	 * @param array<string, mixed> $colors Lista.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function without_customizer_ids( array $colors ): array {
+		foreach ( array_keys( $colors ) as $id ) {
+			if ( in_array( $id, self::CUSTOMIZER_COLOR_IDS, true ) ) {
+				unset( $colors[ $id ] );
+			}
+		}
+
+		return $colors;
+	}
+
+	/**
+	 * Devuelve las opciones ya escritas a su valor anterior (todo o nada); un fallo aquí no tapa el original.
+	 *
+	 * @param array<int, string>   $keys     Claves tocadas.
+	 * @param array<string, mixed> $previous Valores anteriores (null = no existía).
+	 */
+	private function revert_options( array $keys, array $previous ): void {
+		foreach ( array_reverse( $keys ) as $key ) {
+			try {
+				( $this->set_option )( $key, $previous[ $key ] ?? null );
+			} catch ( \Throwable $e ) {
+				continue;
+			}
+		}
+
+		$this->flush();
+	}
+
+	/**
 	 * Cuerpo de `undo()` bajo el bloqueo.
+	 *
+	 * @param bool $force Restaurar aunque el área haya cambiado después.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function undo_locked() {
+	private function undo_locked( bool $force ) {
 		// Se relee dentro del bloqueo: otro proceso pudo escribir o deshacer mientras se esperaba.
 		$history = $this->history();
 		$entry   = end( $history );
@@ -541,6 +750,15 @@ final class DiviDesignStore {
 			return new \WP_Error(
 				'nexo_mcp_divi_design_nothing_to_undo',
 				__( 'No hay ningún cambio del diseño global de Divi para deshacer.', 'nexo-mcp' )
+			);
+		}
+
+		// Deshacer reemplaza el área entera: si alguien la cambió después (p. ej. desde el panel de Divi) se perdería.
+		if ( ! $force && array_key_exists( 'written', $entry ) && ! $this->same_state( $this->area_state( $entry['area'], $entry['written'] ), $entry['written'] ) ) {
+			return $this->fail(
+				$tool,
+				'nexo_mcp_divi_design_changed_since',
+				__( 'Esta área del diseño global cambió después del último cambio del conector (por ejemplo desde el panel de Divi); deshacer pisaría ese cambio y no se restauró nada. Repite con force: true para restaurarla igual.', 'nexo-mcp' )
 			);
 		}
 
@@ -564,6 +782,15 @@ final class DiviDesignStore {
 		update_option( self::HISTORY_OPTION, $history, false );
 		$this->flush();
 
+		// Lo que cuenta es lo guardado: si la entrada sigue en la pila no se informa éxito.
+		if ( get_option( self::HISTORY_OPTION, null ) !== $history ) {
+			return $this->fail(
+				$tool,
+				'nexo_mcp_divi_design_history_failed',
+				__( 'El valor anterior se restauró, pero no se pudo sacar el cambio del historial: sigue en la pila y deshacerlo de nuevo pedirá force. Revisa el estado con get-divi-design-system.', 'nexo-mcp' )
+			);
+		}
+
 		$result = array(
 			'area'       => $entry['area'],
 			'tool'       => $entry['tool'],
@@ -586,7 +813,7 @@ final class DiviDesignStore {
 	 */
 	private function restore( string $area, $previous ): void {
 		if ( 'colors' === $area && is_array( $previous ) ) {
-			( $this->set_colors )( $previous );
+			( $this->set_colors )( $this->without_customizer_ids( $previous ) );
 
 			return;
 		}
