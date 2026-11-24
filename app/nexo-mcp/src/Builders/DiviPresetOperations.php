@@ -876,6 +876,11 @@ final class DiviPresetOperations {
 	 * @param \WP_Error $error Error del validador.
 	 */
 	private function attrs_error( \WP_Error $error ): \WP_Error {
+		// El contenido dinámico denegado conserva su propio código (con `data.path`), como en el resto de escrituras de Divi.
+		if ( 'nexo_mcp_divi_dynamic_denied' === $error->get_error_code() ) {
+			return $error;
+		}
+
 		$data = $error->get_error_data();
 		$path = is_array( $data ) && isset( $data['path'] ) && is_string( $data['path'] ) ? $data['path'] : 'attrs';
 

@@ -696,4 +696,48 @@ final class DiviDesignOperationsTest extends NexoTestCase {
 		$this->assertSame( $before[0], $this->colors );
 		$this->assertSame( 'archived', $this->variables['fonts']['gvid-zzzzz99999']['status'], 'lo creado queda archivado, no se borra' );
 	}
+
+	// --- Parche 1.9.1: sin tokens dinámicos en valores globales ----------------------------------
+
+	/**
+	 * @return array<string, array{string, mixed}>
+	 */
+	public static function dynamic_variable_values(): array {
+		$token = '$variable({"type":"content","value":{"name":"custom_meta__edit_last","settings":{}}})$';
+
+		return array(
+			'strings'         => array( 'strings', $token ),
+			'strings in text' => array( 'strings', 'Hola ' . $token ),
+			'strings entity'  => array( 'strings', '&#36;variable(x)' ),
+			'strings case'    => array( 'strings', '$VARIABLE(x)' ),
+			'links'           => array( 'links', '/x?a=' . $token ),
+			'links encoded'   => array( 'links', '/x?a=%24variable(' ),
+			'images'          => array( 'images', 'https://ex.test/a.png?x=$variable(' ),
+		);
+	}
+
+	/**
+	 * @dataProvider dynamic_variable_values
+	 * @param mixed $value Valor.
+	 */
+	public function test_una_variable_global_no_lleva_tokens_dinamicos_y_no_escribe(string $type, $value ): void {
+		$before = $this->snapshot();
+
+		$this->assert_rejected( $this->ops()->set_variable( array( 'type' => $type, 'label' => 'V', 'value' => $value ) ), 'nexo_mcp_divi_dynamic_denied', $before, 'value' );
+	}
+
+	public function test_una_etiqueta_con_token_dinamico_se_rechaza_en_variables_y_colores(): void {
+		$before = $this->snapshot();
+
+		$this->assert_rejected( $this->ops()->set_variable( array( 'type' => 'numbers', 'label' => '$variable(x)$', 'value' => '1' ) ), 'nexo_mcp_divi_dynamic_denied', $before, 'label' );
+		$this->assert_rejected( $this->ops()->set_color( array( 'label' => '&#36;variable(x)', 'color' => '#123456' ) ), 'nexo_mcp_divi_dynamic_denied', $before, 'label' );
+	}
+
+	public function test_los_valores_normales_de_variables_siguen_igual(): void {
+		$this->suffixes = array( 'aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc' );
+		$this->assertIsArray( $this->ops()->set_variable( array( 'type' => 'strings', 'label' => 'Lema', 'value' => 'Precio $5 (variable)' ) ) );
+		$this->assertIsArray( $this->ops()->set_variable( array( 'type' => 'links', 'label' => 'Tienda', 'value' => 'https://ex.test/tienda?a=1' ) ) );
+		$this->assertIsArray( $this->ops()->set_variable( array( 'type' => 'images', 'label' => 'Logo', 'value' => 'https://ex.test/logo.png' ) ) );
+		$this->assertSame( 'Precio $5 (variable)', $this->variables['strings']['gvid-aaaaaaaaaa']['value'] );
+	}
 }

@@ -675,6 +675,10 @@ final class DiviDesignOperations {
 	 * @return string|\WP_Error
 	 */
 	private function image( $value ) {
+		if ( DiviTreeValidator::has_dynamic_token( $value ) ) {
+			return $this->dynamic( 'value' );
+		}
+
 		if ( is_int( $value ) || ( is_string( $value ) && 1 === preg_match( '/\A\d+\z/', $value ) ) ) {
 			$url = ( $this->attachment_url )( (int) $value );
 
@@ -696,6 +700,10 @@ final class DiviDesignOperations {
 	 * @return string|\WP_Error
 	 */
 	private function link( $value ) {
+		if ( DiviTreeValidator::has_dynamic_token( $value ) ) {
+			return $this->dynamic( 'value' );
+		}
+
 		$error = $this->invalid( 'value', __( 'debe ser un enlace http, https, mailto, tel o una ruta relativa, sin espacios ni comillas.', 'nexo-mcp' ) );
 
 		if ( ! is_string( $value ) || '' === $value || strlen( $value ) > 2000 || 1 === preg_match( '/[\s<>"\'\\\\\x00-\x1F\x7F]/', $value ) ) {
@@ -804,6 +812,11 @@ final class DiviDesignOperations {
 	 * @return string|\WP_Error
 	 */
 	private function plain_text( $value, string $path, int $max ) {
+		// Divi resuelve los `$variable(…)$` también dentro del valor de una variable global al renderizar.
+		if ( DiviTreeValidator::has_dynamic_token( $value ) ) {
+			return $this->dynamic( $path );
+		}
+
 		$text = is_string( $value ) ? trim( $value ) : null;
 
 		if ( null !== $text && '' !== $text && mb_strlen( $text ) <= $max && 1 !== preg_match( '/[<>\x00-\x1F\x7F]/', $text ) ) {
@@ -818,6 +831,15 @@ final class DiviDesignOperations {
 				$max
 			)
 		);
+	}
+
+	/**
+	 * Error de contenido dinámico (token `$variable(…)$`) no habilitado.
+	 *
+	 * @param string $path Campo.
+	 */
+	private function dynamic( string $path ): \WP_Error {
+		return new \WP_Error( 'nexo_mcp_divi_dynamic_denied', $path . ': ' . DiviTreeValidator::dynamic_reason(), array( 'path' => $path ) );
 	}
 
 	/**

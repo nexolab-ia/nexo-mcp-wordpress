@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.9.0
+Stable tag: 1.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,9 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.9.1 =
+* Seguridad: Divi 5 resuelve al renderizar cualquier cadena de una página que contenga un token de contenido dinámico `$variable({…})$`, y hasta ahora el validador lo dejaba pasar en texto y texto rico, así que un cliente con el permiso de constructores podía publicar a visitantes anónimos datos privados del sitio (meta personalizado o protegido, emails de usuarios). Ahora ningún valor que escribe el MCP en Divi 5 puede llevar ese token: se rechaza con `nexo_mcp_divi_dynamic_denied` (`data.path` con el campo) en `create-divi-page`, `edit-divi-section` y `edit-divi-module` (texto, texto rico, enlaces, imágenes, ajustes de diseño), en los `attrs` de `set-divi-preset` y en las etiquetas y valores de texto, enlace e imagen de `set-divi-variable` y de `set-divi-global-color` (Divi también resuelve tokens dentro de las variables globales). Se comprueba el valor recibido y el ya saneado, y también las formas ofuscadas (mayúsculas, `\u0024`, `&#36;`, `&dollar;`, `%24`, etiquetas intercaladas) y el marcador heredado `@ET-DC@`. Lo que ya estaba guardado en una página (p. ej. hecho en el Visual Builder) no se toca ni se revisa mientras la edición no lo reescriba. `module.advanced.loop` (bucles de consulta) sigue sin poderse escribir. El contenido dinámico y los bucles se habilitarán más adelante con permiso propio.
 
 = 1.9.0 =
 * Nuevo: presets de módulos de Divi 5 con scope propio `mcp:divi_presets` (capacidad `nexo_mcp_divi_presets` que el instalador da al administrador al actualizar a 1.9.0; interruptor `divi_presets_tools_enabled` apagado por defecto): `get-divi-presets` (se lee con el permiso de constructores), `set-divi-preset` (crear, editar y renombrar presets de módulo y de grupo de opciones), `set-divi-default-preset` y `delete-divi-preset`. Cambian el sitio en vivo con respaldo y deshacer: comparten con el diseño global el historial de 20 cambios (tope de 2 MiB) y `undo-divi-design-change`, que ahora acepta `area` (`colors`, `variables`, `theme_options` o `presets`) para deshacer el último cambio de esa área sin que otra área en la cima de la pila lo bloquee; cada área pide su permiso y `force` exige además el permiso destructivo.
