@@ -20,6 +20,7 @@ use NexoDev\NexoMCP\Audit\AuditLogger;
 use NexoDev\NexoMCP\Audit\AuditRepository;
 use NexoDev\NexoMCP\Authentication\ApplicationPasswordManager;
 use NexoDev\NexoMCP\Authentication\AuthenticationContext;
+use NexoDev\NexoMCP\Builders\DiviLoopGuard;
 use NexoDev\NexoMCP\Installation\Installer;
 use NexoDev\NexoMCP\Licensing\LicenseClient;
 use NexoDev\NexoMCP\Media\UploadController;
@@ -126,6 +127,9 @@ final class Plugin {
 
 		$seo_gateway = new SeoGateway();
 		$seo_gateway->register_frontend_hooks();
+
+		// Bucles de consulta de Divi 5 escritos por el conector: sólo publicado y sin contraseña (S7).
+		( new DiviLoopGuard() )->register();
 
 		$content_gateway = new ContentAdminGateway( $this->settings );
 
