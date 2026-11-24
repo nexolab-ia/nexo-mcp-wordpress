@@ -154,6 +154,53 @@ final class DiviDynamicToolsTest extends NexoTestCase {
 		$this->assertSame( 'nexo_mcp_divi_dynamic_unavailable', $all[ self::LIST ]['execute_callback']( array( 'post_id' => 100 ) )->get_error_code() );
 	}
 
+	public function test_a_resolver_failure_in_listing_comes_back_as_the_tools_error_with_nothing_listed(): void {
+		\WP_Test_State::$abilities = array();
+		$settings                  = $this->settings( array( 'read_only' => false ) );
+		$build                     = function ( DiviDynamicCatalog $catalog ) use ( $settings ): array {
+			( new ExtendedAbilityRegistrar(
+				$settings,
+				new PermissionPolicy( $settings ),
+				new ToolExecutor( new AuditLogger( new AuditRepository() ) ),
+				new ContentAdminGateway( $settings ),
+				new SeoGateway(),
+				new AppearanceGateway(),
+				new MaintenanceGateway(),
+				new ProductGateway( $settings ),
+				new BuilderGateway( null, null, $settings, null, null, null, null, null, null, null, null, null, null, $catalog )
+			) )->register_abilities();
+
+			return \WP_Test_State::$abilities;
+		};
+		$boom                      = static function (): array {
+			throw new \RuntimeException( 'falla' );
+		};
+
+		$divi_down = $build( new DiviDynamicCatalog( static fn(): bool => true, $boom, static fn(): array => array(), static fn(): string => 'page', static fn(): array => array() ) );
+		$result    = $divi_down[ self::LIST ]['execute_callback']( array( 'post_id' => 100 ) );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_dynamic_unavailable', $result->get_error_code() );
+
+		$acf_down = $build( new DiviDynamicCatalog( static fn(): bool => true, static fn(): array => array(), $boom, static fn(): string => 'page', static fn(): array => array() ) );
+		$result   = $acf_down[ self::LIST ]['execute_callback']( array() );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_dynamic_unavailable', $result->get_error_code() );
+		$this->assertStringContainsString( 'ACF', $result->get_error_message() );
+	}
+
+	public function test_loop_sources_are_listed_apart_and_never_mixed_into_sources(): void {
+		$result = $this->abilities()[ self::LIST ]['execute_callback']( array() );
+
+		$this->assertIsArray( $result );
+		$this->assertContains( 'loop_post_title', array_column( $result['loop_sources'], 'name' ) );
+		$this->assertContains( 'loop_product_sku', array_column( $result['loop_sources'], 'name' ) );
+		$this->assertNotContains( 'loop_user_email', array_column( $result['loop_sources'], 'name' ) );
+
+		foreach ( $result['sources'] as $source ) {
+			$this->assertStringStartsNotWith( 'loop_', $source['name'] );
+		}
+	}
+
 	public function test_the_other_divi_read_tools_keep_their_registration(): void {
 		$all = $this->abilities();
 

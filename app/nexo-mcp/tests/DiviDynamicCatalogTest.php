@@ -422,7 +422,7 @@ final class DiviDynamicCatalogTest extends TestCase {
 	public function test_names_outside_the_closed_list_are_denied(): void {
 		$catalog = $this->catalog();
 
-		foreach ( array( 'post_meta_key', 'post_author_url', 'post_author_bio', 'post_author_profile_picture', 'post_comment_count', 'post_link_url_post', 'post_link_url_page', 'loop_post_title', 'loop_user_email', 'bogus', '', 'POST_TITLE', 'post_title ', 'custom_meta_', 'custom_meta__edit_last', 'custom_meta__oculto', 'custom_meta_correo', 'custom_meta_manual_custom_field_value', 'gvid-aaaaaaaaaa', 'product_description', 'product_stock_quantity' ) as $name ) {
+		foreach ( array( 'post_meta_key', 'post_author_url', 'post_author_bio', 'post_author_profile_picture', 'post_comment_count', 'post_link_url_post', 'post_link_url_page', 'loop_post_meta_key_manual_custom_field', 'loop_user_email', 'bogus', '', 'POST_TITLE', 'post_title ', 'custom_meta_', 'custom_meta__edit_last', 'custom_meta__oculto', 'custom_meta_correo', 'custom_meta_manual_custom_field_value', 'gvid-aaaaaaaaaa', 'product_description', 'product_stock_quantity' ) as $name ) {
 			$result = $catalog->validate_token( $this->token( $name ), 'text', self::PRODUCT );
 			$this->assertError( 'nexo_mcp_divi_dynamic_denied', $result, '' );
 			$this->assertStringContainsString( 'lista', $result->get_error_message(), $name );

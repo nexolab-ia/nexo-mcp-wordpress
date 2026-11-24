@@ -226,6 +226,116 @@ final class DiviDynamicCatalog {
 	);
 
 	/**
+	 * Fuentes por elemento de un bucle del conector (S7): espejo de S6 con los nombres `loop_*` de Divi.
+	 *
+	 * `requires`: `loop` (cualquier bucle del conector), `loop_taxonomy` (el tipo del bucle tiene taxonomías públicas) o
+	 * `loop_product` (el bucle es de productos de WooCommerce). Nunca usuarios, términos, menús ni meta personalizado:
+	 * esas familias `loop_*` de Divi no están aquí y se rechazan siempre.
+	 *
+	 * @var array<string, array{label: string, category: string, requires: string, settings: array<string, array<string, mixed>>}>
+	 */
+	private const LOOP_SOURCES = array(
+		'loop_post_title'                => array(
+			'label'    => 'Título de cada elemento del bucle',
+			'category' => 'text',
+			'requires' => 'loop',
+			'settings' => self::BEFORE_AFTER,
+		),
+		'loop_post_excerpt'              => array(
+			'label'    => 'Extracto de cada elemento del bucle',
+			'category' => 'text',
+			'requires' => 'loop',
+			'settings' => self::BEFORE_AFTER + array(
+				'words'           => array(
+					'type' => 'number',
+					'min'  => 1,
+					'max'  => 500,
+				),
+				'read_more_label' => array( 'type' => 'text' ),
+			),
+		),
+		'loop_post_date'                 => array(
+			'label'    => 'Fecha de publicación de cada elemento del bucle',
+			'category' => 'text',
+			'requires' => 'loop',
+			'settings' => self::BEFORE_AFTER + array(
+				'date_format'        => array(
+					'type'    => 'enum',
+					'options' => self::DATE_FORMATS,
+				),
+				'custom_date_format' => array( 'type' => 'date_format' ),
+			),
+		),
+		'loop_post_author'               => array(
+			'label'    => 'Autor (nombre público) de cada elemento del bucle',
+			'category' => 'text',
+			'requires' => 'loop',
+			'settings' => self::BEFORE_AFTER + array(
+				'name_format'      => array(
+					'type'    => 'enum',
+					'options' => array( 'display_name', 'first_last_name', 'last_first_name', 'first_name', 'last_name', 'nickname' ),
+				),
+				'link'             => array( 'type' => 'onoff' ),
+				'link_destination' => array(
+					'type'    => 'enum',
+					'options' => array( 'author_archive', 'author_website' ),
+					'default' => 'author_archive',
+					'when'    => array( 'link' => 'on' ),
+				),
+			),
+		),
+		'loop_post_terms'                => array(
+			'label'    => 'Términos (categorías, etiquetas…) de cada elemento del bucle',
+			'category' => 'text',
+			'requires' => 'loop_taxonomy',
+			'settings' => self::BEFORE_AFTER + array(
+				'links'         => array( 'type' => 'onoff' ),
+				'separator'     => array( 'type' => 'text' ),
+				'taxonomy_type' => array(
+					'type'     => 'taxonomy',
+					'defaults' => array( 'category', 'product_cat' ),
+				),
+			),
+		),
+		'loop_post_link'                 => array(
+			'label'    => 'URL de cada elemento del bucle',
+			'category' => 'url',
+			'requires' => 'loop',
+			'settings' => array(),
+		),
+		'loop_post_featured_image'       => array(
+			'label'    => 'Imagen destacada de cada elemento del bucle',
+			'category' => 'image',
+			'requires' => 'loop',
+			'settings' => array(),
+		),
+		'loop_product_title'             => array(
+			'label'    => 'Título de cada producto del bucle (WooCommerce)',
+			'category' => 'text',
+			'requires' => 'loop_product',
+			'settings' => self::BEFORE_AFTER,
+		),
+		'loop_product_price_current'     => array(
+			'label'    => 'Precio actual de cada producto del bucle (WooCommerce)',
+			'category' => 'text',
+			'requires' => 'loop_product',
+			'settings' => self::BEFORE_AFTER,
+		),
+		'loop_product_sku'               => array(
+			'label'    => 'SKU de cada producto del bucle (WooCommerce)',
+			'category' => 'text',
+			'requires' => 'loop_product',
+			'settings' => self::BEFORE_AFTER,
+		),
+		'loop_product_short_description' => array(
+			'label'    => 'Descripción corta de cada producto del bucle (WooCommerce)',
+			'category' => 'text',
+			'requires' => 'loop_product',
+			'settings' => self::BEFORE_AFTER,
+		),
+	);
+
+	/**
 	 * Divi 5 activo: fn(): bool.
 	 *
 	 * @var callable
@@ -301,6 +411,50 @@ final class DiviDynamicCatalog {
 	}
 
 	/**
+	 * Nombres de las fuentes por elemento de un bucle del conector (`loop_*`), aparte de {@see self::names()}.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function loop_names(): array {
+		return array_keys( self::LOOP_SOURCES );
+	}
+
+	/**
+	 * Si una fuente `loop_*` de la lista se puede usar en un bucle de ese tipo de contenido (los productos de
+	 * WooCommerce sólo en un bucle de `product`; que el tipo tenga taxonomías se comprueba al validar).
+	 *
+	 * @param string $name      Opción.
+	 * @param string $post_type Tipo del bucle.
+	 */
+	public static function loop_allows( string $name, string $post_type ): bool {
+		return isset( self::LOOP_SOURCES[ $name ] ) && ( 'loop_product' !== self::LOOP_SOURCES[ $name ]['requires'] || 'product' === $post_type );
+	}
+
+	/**
+	 * Nombres `loop_*` que aparecen en una cadena con tokens (cualquier forma de `loop_<algo>`), o vacío si no hay token.
+	 *
+	 * @param string $value Cadena.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function loop_token_names( string $value ): array {
+		if ( ! DiviTreeValidator::has_dynamic_token( $value ) || false === preg_match_all( '/loop_[a-z0-9_]+/i', $value, $match ) ) {
+			return array();
+		}
+
+		return array_values( array_unique( $match[0] ) );
+	}
+
+	/**
+	 * Indica si el valor es EXACTAMENTE un token de contenido bien formado, sin texto ni etiquetas alrededor.
+	 *
+	 * @param string $value Valor del campo.
+	 */
+	public static function is_single_token( string $value ): bool {
+		return null !== self::parse( $value );
+	}
+
+	/**
 	 * Fuentes que se pueden usar, con etiqueta, categoría y esquema de ajustes.
 	 *
 	 * Sin `$post_id` devuelve toda la lista cerrada y los campos de ACF de todos los grupos activos (cada una con su
@@ -365,19 +519,64 @@ final class DiviDynamicCatalog {
 	}
 
 	/**
+	 * Fuentes por elemento de un bucle del conector, con su esquema de ajustes y dónde valen (`requires`).
+	 *
+	 * Con `$post_id` sólo las que Divi registra para esa página. Las taxonomías de `taxonomy_type` son las del tipo del
+	 * bucle, que se conoce al escribir (aquí se publica el esquema sin cerrar).
+	 *
+	 * @param int|null $post_id Página, o null.
+	 *
+	 * @return array<int, array{name: string, label: string, category: string, source: string, requires: string, settings: array<string, array<string, mixed>>, forced: array<string, string>}>|\WP_Error
+	 */
+	public function loop_listing( ?int $post_id = null ) {
+		if ( ! $this->active() ) {
+			return $this->unavailable();
+		}
+
+		$out = array();
+
+		foreach ( self::LOOP_SOURCES as $name => $source ) {
+			if ( null !== $post_id ) {
+				$reason = $this->registry_reason( $name, $source['category'], $post_id );
+
+				if ( $reason instanceof \WP_Error ) {
+					return $reason;
+				}
+
+				if ( null !== $reason ) {
+					continue;
+				}
+			}
+
+			$out[] = array(
+				'name'     => $name,
+				'label'    => $source['label'],
+				'category' => $source['category'],
+				'source'   => 'divi-loop',
+				'requires' => $source['requires'],
+				'settings' => $this->schema( $source['settings'], null ),
+				'forced'   => 'text' === $source['category'] ? array( 'enable_html' => 'off' ) : array(),
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Valida un token de contenido dinámico y devuelve su forma canónica.
 	 *
 	 * Los errores llevan sólo el motivo; quien llama le pone la ruta. Códigos: `nexo_mcp_divi_dynamic_unavailable`
 	 * (sin Divi 5), `nexo_mcp_divi_dynamic_denied` (no es exactamente un token bien formado, la opción no está en la
 	 * lista, no aplica a la página o es de otra categoría que el campo) y `nexo_mcp_divi_dynamic_invalid` (ajustes inválidos).
 	 *
-	 * @param string $value    Valor del campo, tal como lo manda el cliente.
-	 * @param string $category Categoría del campo: `text`, `url` o `image`.
-	 * @param int    $post_id  Página donde se escribe (el original, no la copia).
+	 * @param string      $value    Valor del campo, tal como lo manda el cliente.
+	 * @param string      $category Categoría del campo: `text`, `url` o `image`.
+	 * @param int         $post_id  Página donde se escribe (el original, no la copia).
+	 * @param string|null $loop_type Tipo de contenido del bucle del conector (propio o de un ancestro) donde está el campo, o null si no hay uno: sólo con él valen las fuentes `loop_*`.
 	 *
 	 * @return string|\WP_Error
 	 */
-	public function validate_token( string $value, string $category, int $post_id ) {
+	public function validate_token( string $value, string $category, int $post_id, ?string $loop_type = null ) {
 		if ( ! $this->active() ) {
 			return $this->unavailable();
 		}
@@ -417,7 +616,7 @@ final class DiviDynamicCatalog {
 			);
 		}
 
-		$reason = $this->not_applicable( $name, $post_id );
+		$reason = $this->not_applicable( $name, $post_id, $loop_type );
 
 		if ( $reason instanceof \WP_Error ) {
 			return $reason;
@@ -427,7 +626,7 @@ final class DiviDynamicCatalog {
 			return $this->denied( $reason );
 		}
 
-		$clean = $this->normalize_settings( $name, $source['category'], $this->schema( $source['settings'], $post_id ), $settings );
+		$clean = $this->normalize_settings( $name, $source['category'], $this->schema( $source['settings'], $post_id, $loop_type ), $settings );
 
 		if ( $clean instanceof \WP_Error ) {
 			return $clean;
@@ -603,6 +802,10 @@ final class DiviDynamicCatalog {
 			return self::SOURCES[ $name ];
 		}
 
+		if ( isset( self::LOOP_SOURCES[ $name ] ) ) {
+			return self::LOOP_SOURCES[ $name ];
+		}
+
 		if ( str_starts_with( $name, self::ACF_PREFIX ) ) {
 			$fields = $this->acf( $post_id );
 
@@ -624,14 +827,21 @@ final class DiviDynamicCatalog {
 	}
 
 	/**
-	 * Motivo por el que una fuente de la lista no aplica a la página, o null si aplica.
+	 * Motivo por el que una fuente de la lista no aplica a la página (o, las `loop_*`, al bucle), o null si aplica.
 	 *
-	 * @param string $name    Opción de la lista.
-	 * @param int    $post_id Página.
+	 * @param string      $name      Opción de la lista.
+	 * @param int         $post_id   Página.
+	 * @param string|null $loop_type Tipo del bucle del conector en que está el campo, o null.
 	 *
 	 * @return string|\WP_Error|null El motivo, el error de «no disponible» si Divi no pudo responder, o null si aplica.
 	 */
-	private function not_applicable( string $name, int $post_id ) {
+	private function not_applicable( string $name, int $post_id, ?string $loop_type = null ) {
+		if ( isset( self::LOOP_SOURCES[ $name ] ) ) {
+			$reason = $this->loop_context_reason( $name, $loop_type );
+
+			return null !== $reason ? $reason : $this->registry_reason( $name, self::LOOP_SOURCES[ $name ]['category'], $post_id );
+		}
+
 		if ( ! isset( self::SOURCES[ $name ] ) ) {
 			return null;
 		}
@@ -655,6 +865,59 @@ final class DiviDynamicCatalog {
 			);
 		}
 
+		return $this->registry_reason( $name, $source['category'], $post_id );
+	}
+
+	/**
+	 * Motivo por el que una fuente `loop_*` no vale donde se quiere poner (fuera de un bucle del conector, tipo sin
+	 * productos o sin taxonomías), o null.
+	 *
+	 * @param string      $name      Opción `loop_*`.
+	 * @param string|null $loop_type Tipo del bucle, o null si no hay un bucle del conector en la cadena.
+	 */
+	private function loop_context_reason( string $name, ?string $loop_type ): ?string {
+		if ( null === $loop_type ) {
+			return sprintf(
+				/* translators: %s: opción. */
+				__( 'la opción «%s» sólo vale dentro de un módulo con un bucle de consulta del conector (nexo-mcp-set-divi-loop), propio o de un ancestro, y este campo no está en uno.', 'nexo-mcp' ),
+				$name
+			);
+		}
+
+		$requires = self::LOOP_SOURCES[ $name ]['requires'];
+
+		if ( 'loop_product' === $requires && 'product' !== $loop_type ) {
+			return sprintf(
+				/* translators: 1: opción, 2: tipo del bucle. */
+				__( 'la opción «%1$s» sólo aplica a bucles de productos de WooCommerce y este bucle es de «%2$s».', 'nexo-mcp' ),
+				$name,
+				$loop_type
+			);
+		}
+
+		if ( 'loop_taxonomy' === $requires && array() === $this->taxonomies( $loop_type ) ) {
+			return sprintf(
+				/* translators: 1: opción, 2: tipo del bucle. */
+				__( 'la opción «%1$s» necesita un tipo de contenido con taxonomías públicas y el del bucle («%2$s») no tiene.', 'nexo-mcp' ),
+				$name,
+				$loop_type
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Lo que Divi registra para la página: si no registra la opción o la registra con otro tipo, el motivo; si Divi no
+	 * puede responder, el error; si coincide, null.
+	 *
+	 * @param string $name     Opción de la lista.
+	 * @param string $category Categoría esperada.
+	 * @param int    $post_id  Página.
+	 *
+	 * @return string|\WP_Error|null
+	 */
+	private function registry_reason( string $name, string $category, int $post_id ) {
 		$registered = $this->registered( $post_id );
 
 		if ( $registered instanceof \WP_Error ) {
@@ -669,9 +932,9 @@ final class DiviDynamicCatalog {
 			);
 		}
 
-		$divi_type = $registered[ $name ]['type'] ?? $source['category'];
+		$divi_type = $registered[ $name ]['type'] ?? $category;
 
-		return $divi_type === $source['category']
+		return $divi_type === $category
 			? null
 			: sprintf(
 				/* translators: 1: opción, 2: tipo que registra Divi. */
@@ -684,15 +947,16 @@ final class DiviDynamicCatalog {
 	/**
 	 * Esquema de ajustes que se publica de una fuente, con la taxonomía cerrada a las de la página.
 	 *
-	 * @param array<string, array<string, mixed>> $settings Ajustes de la fuente.
-	 * @param int|null                            $post_id  Página, o null.
+	 * @param array<string, array<string, mixed>> $settings  Ajustes de la fuente.
+	 * @param int|null                            $post_id   Página, o null.
+	 * @param string|null                         $loop_type Tipo del bucle (las taxonomías salen de él en vez de la página), o null.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
-	private function schema( array $settings, ?int $post_id ): array {
+	private function schema( array $settings, ?int $post_id, ?string $loop_type = null ): array {
 		foreach ( $settings as $key => $rule ) {
-			if ( 'taxonomy' === $rule['type'] && null !== $post_id ) {
-				$options          = $this->taxonomies( (string) ( $this->post_type_of )( $post_id ) );
+			if ( 'taxonomy' === $rule['type'] && ( null !== $post_id || null !== $loop_type ) ) {
+				$options          = $this->taxonomies( null !== $loop_type ? $loop_type : (string) ( $this->post_type_of )( (int) $post_id ) );
 				$default          = $this->default_taxonomy( $rule, $options );
 				$settings[ $key ] = array(
 					'type'    => 'enum',
