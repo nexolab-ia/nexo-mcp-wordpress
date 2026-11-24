@@ -118,6 +118,13 @@ final class BuilderGateway {
 	private ?DiviPresetOperations $divi_preset_ops;
 
 	/**
+	 * Catálogo de fuentes de contenido dinámico de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviDynamicCatalog|null
+	 */
+	private ?DiviDynamicCatalog $divi_dynamic;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -136,6 +143,7 @@ final class BuilderGateway {
 	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
 	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
+	 * @param DiviDynamicCatalog|null       $divi_dynamic     Catálogo de contenido dinámico de Divi (las pruebas inyectan Divi, ACF y los tipos).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -150,7 +158,8 @@ final class BuilderGateway {
 		?DiviDesignStore $divi_design = null,
 		?DiviDesignOperations $divi_design_ops = null,
 		?DiviPresetStore $divi_presets = null,
-		?DiviPresetOperations $divi_preset_ops = null
+		?DiviPresetOperations $divi_preset_ops = null,
+		?DiviDynamicCatalog $divi_dynamic = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -165,6 +174,7 @@ final class BuilderGateway {
 		$this->divi_design_ops  = $divi_design_ops;
 		$this->divi_presets     = $divi_presets;
 		$this->divi_preset_ops  = $divi_preset_ops;
+		$this->divi_dynamic     = $divi_dynamic;
 	}
 
 	/**
@@ -682,6 +692,44 @@ final class BuilderGateway {
 	 */
 	public function list_dynamic_tags(): array {
 		return ( $this->dynamic_tags ?? new DynamicTagCatalog() )->listing();
+	}
+
+	/**
+	 * Lista las fuentes de contenido dinámico de Divi 5 de la lista cerrada, con su esquema de ajustes.
+	 *
+	 * Con `post_id` (la página o su copia de trabajo; se usa el original) sólo lo que aplica a ella.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `post_id?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_dynamic_sources( array $input ) {
+		$catalog = $this->divi_dynamic ?? new DiviDynamicCatalog();
+		$out     = array();
+		$post_id = null;
+
+		if ( array_key_exists( 'post_id', $input ) ) {
+			$post = $this->resolve_page_or_copy( array( 'id' => $input['post_id'] ) );
+
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$post_id          = WorkingCopy::original_id_for( (int) $post->ID );
+			$out['post_id']   = $post_id;
+			$out['post_type'] = $post->post_type;
+		}
+
+		$sources = $catalog->listing( $post_id );
+
+		if ( is_wp_error( $sources ) ) {
+			return $sources;
+		}
+
+		$out['sources'] = $sources;
+		$out['targets'] = DiviDynamicCatalog::targets();
+
+		return $out;
 	}
 
 	/**

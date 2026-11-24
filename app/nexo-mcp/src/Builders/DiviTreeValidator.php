@@ -28,7 +28,15 @@ namespace NexoDev\NexoMCP\Builders;
  *
  * Todo error lleva el código de la regla, la ruta en el mensaje (`nodes[0].children[1].attrs.title.innerContent.tablet: …`)
  * y la ruta en `error_data`. Códigos: `nexo_mcp_divi_module_denied`, `_attr_denied`, `_value_invalid`,
- * `_nesting_invalid`, `_shortcode_denied`, `_dynamic_denied` (token `$variable(…)$`), `_tree_invalid` (forma), `_too_many_nodes` y `_too_large`.
+ * `_nesting_invalid`, `_shortcode_denied`, `_dynamic_denied` (token `$variable(…)$`), `_dynamic_invalid` y
+ * `_dynamic_unavailable` (sólo con contexto dinámico), `_tree_invalid` (forma), `_too_many_nodes` y `_too_large`.
+ *
+ * Contenido dinámico: por omisión (1.9.1) todo token `$variable(…)$` se rechaza. {@see self::with_dynamic()} devuelve
+ * una copia que, para una página dada, acepta en un campo de texto, enlace o imagen un valor que sea exactamente UN
+ * token de la lista cerrada de {@see DiviDynamicCatalog} con ajustes válidos y de la categoría del campo, y lo guarda en
+ * su forma canónica (re-serializada por el catálogo, nunca la cadena del cliente). Las claves de diseño, las
+ * etiquetas administrativas y los presets nunca admiten tokens. Quien llama decide si pasa el contexto
+ * (`PermissionPolicy::can_write_divi_dynamic()`).
  */
 final class DiviTreeValidator {
 
@@ -108,6 +116,27 @@ final class DiviTreeValidator {
 	private int $nodes = 0;
 
 	/**
+	 * Catálogo de contenido dinámico del contexto «permitir dinámico», o null (todo token se rechaza).
+	 *
+	 * @var DiviDynamicCatalog|null
+	 */
+	private ?DiviDynamicCatalog $dynamic = null;
+
+	/**
+	 * Página (el original) a la que se escribe, para el catálogo dinámico.
+	 *
+	 * @var int
+	 */
+	private int $dynamic_post = 0;
+
+	/**
+	 * Si el valor que se valida está en un campo que admite token (sólo dentro de una hoja de contenido y con contexto).
+	 *
+	 * @var bool
+	 */
+	private bool $token_slot = false;
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param callable|null $shortcode_exists fn( string $name ): bool. Por omisión, `shortcode_exists()`.
@@ -120,6 +149,23 @@ final class DiviTreeValidator {
 		$this->attachment_url   = $attachment_url ?? static fn( int $id ) => wp_get_attachment_url( $id );
 		$this->presets          = $presets ?? static fn(): array => (array) DiviPresetStore::divi_get_data();
 		$this->module_groups    = $module_groups ?? array( DiviPresetStore::class, 'divi_module_groups' );
+	}
+
+	/**
+	 * Copia del validador que admite tokens de contenido dinámico de la lista cerrada para una página.
+	 *
+	 * El validador original no cambia. Sólo se llama cuando el permiso de escribir dinámico vale para la página.
+	 *
+	 * @param DiviDynamicCatalog $catalog Catálogo de fuentes dinámicas.
+	 * @param int                $post_id Página (el original, no la copia de trabajo) donde se escribe.
+	 */
+	public function with_dynamic( DiviDynamicCatalog $catalog, int $post_id ): self {
+		$copy               = clone $this;
+		$copy->dynamic      = $catalog;
+		$copy->dynamic_post = $post_id;
+		$copy->token_slot   = false;
+
+		return $copy;
 	}
 
 	/**
@@ -223,6 +269,14 @@ final class DiviTreeValidator {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function validate_preset_attrs( string $module, $attrs, ?string $group_id = null, string $display = 'attrs' ) {
+		if ( null !== $this->dynamic ) {
+			// Un preset vale para todo el sitio: nunca lleva tokens, aunque quien escribe tenga el contexto dinámico.
+			$closed          = clone $this;
+			$closed->dynamic = null;
+
+			return $closed->validate_preset_attrs( $module, $attrs, $group_id, $display );
+		}
+
 		if ( ! DiviModuleCatalog::has( $module ) ) {
 			return $this->error( 'nexo_mcp_divi_module_denied', 'module', $this->denied_reason( $module ) );
 		}
@@ -629,7 +683,7 @@ final class DiviTreeValidator {
 			$shown = $display . '.' . $key;
 
 			if ( array_key_exists( $path, $specs ) ) {
-				$leaf = $this->walk_leaf( $child, $specs[ $path ], $shown );
+				$leaf = $this->walk_leaf( $child, $specs[ $path ], $shown, $path );
 
 				if ( is_wp_error( $leaf ) ) {
 					return $leaf;
@@ -684,13 +738,14 @@ final class DiviTreeValidator {
 	/**
 	 * Valida el valor de una ruta: sólo `{desktop: {value}}`.
 	 *
-	 * @param mixed  $node  Valor recibido.
-	 * @param mixed  $spec  Especificación del catálogo.
-	 * @param string $shown Ruta para los mensajes.
+	 * @param mixed  $node   Valor recibido.
+	 * @param mixed  $spec   Especificación del catálogo.
+	 * @param string $shown  Ruta para los mensajes.
+	 * @param string $dotted Ruta del catálogo del atributo (`title.innerContent`).
 	 *
 	 * @return array{desktop: array{value: mixed}}|\WP_Error
 	 */
-	private function walk_leaf( $node, $spec, string $shown ) {
+	private function walk_leaf( $node, $spec, string $shown, string $dotted = '' ) {
 		if ( ! is_array( $node ) ) {
 			return $this->error( 'nexo_mcp_divi_value_invalid', $shown, __( 'debe ser {"desktop": {"value": …}}.', 'nexo-mcp' ) );
 		}
@@ -735,6 +790,19 @@ final class DiviTreeValidator {
 
 		$where = $shown . '.desktop.value';
 
+		if ( null !== $this->dynamic && 'module.meta.adminLabel' !== $dotted ) {
+			// Con el contexto dinámico los tokens se resuelven cadena por cadena en check_value (aceptar uno o rechazarlo).
+			$this->token_slot = true;
+
+			try {
+				$value = $this->check_value( $desktop['value'], $spec, $where );
+			} finally {
+				$this->token_slot = false;
+			}
+
+			return is_wp_error( $value ) ? $value : array( 'desktop' => array( 'value' => $value ) );
+		}
+
 		// Antes de sanear: lo que manda el cliente. Después: lo que se guardaría (quitar etiquetas o normalizar una URL puede armar un token).
 		$found = self::dynamic_token_path( $desktop['value'], $where );
 
@@ -767,6 +835,64 @@ final class DiviTreeValidator {
 	 * @return mixed|\WP_Error
 	 */
 	private function check_value( $value, $spec, string $path ) {
+		if ( $this->token_slot && is_string( $value ) ) {
+			return $this->check_string_with_tokens( $value, $spec, $path );
+		}
+
+		return $this->check_value_closed( $value, $spec, $path );
+	}
+
+	/**
+	 * Valor de texto en un campo que admite token: un token válido se devuelve canónico; lo demás se sanea como siempre y no puede armar un token.
+	 *
+	 * @param string $value Valor.
+	 * @param mixed  $spec  Especificación del campo.
+	 * @param string $path  Ruta del valor.
+	 *
+	 * @return mixed|\WP_Error
+	 */
+	private function check_string_with_tokens( string $value, $spec, string $path ) {
+		if ( self::has_dynamic_token( $value ) ) {
+			return $this->check_token( $value, $spec, $path );
+		}
+
+		$clean = $this->check_value_closed( $value, $spec, $path );
+
+		// Quitar etiquetas o normalizar una URL puede armar un token: se revisa lo que se guardaría.
+		return is_string( $clean ) && self::has_dynamic_token( $clean ) ? $this->dynamic_error( $path ) : $clean;
+	}
+
+	/**
+	 * Acepta un token (devolviendo su forma canónica) o lo rechaza con el código y la ruta del campo.
+	 *
+	 * @param string $value Valor con el token.
+	 * @param mixed  $spec  Especificación del campo.
+	 * @param string $path  Ruta del valor.
+	 *
+	 * @return string|\WP_Error
+	 */
+	private function check_token( string $value, $spec, string $path ) {
+		$category = DiviDynamicCatalog::category_of_spec( $spec );
+
+		if ( null === $category || null === $this->dynamic ) {
+			return $this->error( 'nexo_mcp_divi_dynamic_denied', $path, __( 'este campo no admite contenido dinámico (sólo texto, enlaces e imágenes de contenido).', 'nexo-mcp' ) );
+		}
+
+		$token = $this->dynamic->validate_token( $value, $category, $this->dynamic_post );
+
+		return $token instanceof \WP_Error ? $this->error( (string) $token->get_error_code(), $path, $token->get_error_message() ) : $token;
+	}
+
+	/**
+	 * Valida y sanea un valor sin admitir tokens (el comportamiento de 1.9.1; el que resuelve cada hoja).
+	 *
+	 * @param mixed  $value Valor.
+	 * @param mixed  $spec  Especificación.
+	 * @param string $path  Ruta del valor.
+	 *
+	 * @return mixed|\WP_Error
+	 */
+	private function check_value_closed( $value, $spec, string $path ) {
 		if ( is_array( $spec ) && isset( $spec['enum'] ) ) {
 			if ( ! is_string( $value ) || ! in_array( $value, $spec['enum'], true ) ) {
 				return $this->invalid( $path, sprintf( /* translators: %s: valores admitidos. */ __( 'debe ser uno de: %s.', 'nexo-mcp' ), implode( ', ', $spec['enum'] ) ) );

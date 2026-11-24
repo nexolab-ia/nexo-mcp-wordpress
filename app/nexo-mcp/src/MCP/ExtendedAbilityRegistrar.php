@@ -92,6 +92,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-preset',
 		'nexo-mcp/set-divi-default-preset',
 		'nexo-mcp/delete-divi-preset',
+		'nexo-mcp/list-divi-dynamic-sources',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -748,6 +749,27 @@ final class ExtendedAbilityRegistrar {
 			$this->empty_schema(),
 			fn() => $this->builders->list_dynamic_tags(),
 			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
+		);
+		$this->ability(
+			'list-divi-dynamic-sources',
+			'Listar fuentes de contenido dinámico de Divi 5',
+			$this->divi_dynamic_list_description(),
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'post_id' => array(
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Página (o su copia de trabajo) para la que se quiere la lista: sólo lo que Divi registra para ella (productos de WooCommerce, taxonomías, campos de ACF de sus grupos). Sin él, toda la lista cerrada.',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->list_divi_dynamic_sources( $input ),
+			fn( array $input ) => isset( $input['post_id'] )
+				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
 			'set-dynamic-tag',
@@ -1481,6 +1503,22 @@ final class ExtendedAbilityRegistrar {
 				'Lista los datos dinámicos (dynamic tags de Elementor) que se pueden asignar con nexo-mcp-set-dynamic-tag y que este sitio tiene registrados. Es una lista cerrada de tags sin datos sensibles (título, lema, URL y logo del sitio; título, extracto, fecha, URL, imagen destacada y términos de la entrada; título y URL de archivo; nombre del autor; fecha actual): shortcode, request-arg, user-info, campos personalizados, ACF y el resto no se pueden asignar.',
 				'',
 				'SALIDA: lista de {name, group, label, categories, settings, targets}. settings es el esquema de los ajustes admitidos del tag ({type: text | number | switch | enum | taxonomy, options?, min?, max?}); targets, las props donde sirve (widget.prop, por categoría). Los tags son de Elementor Pro: sin Pro (ningún tag registrado) devuelve una lista vacía, no un error.',
+			)
+		);
+	}
+
+	/**
+	 * Descripción de list-divi-dynamic-sources.
+	 */
+	private function divi_dynamic_list_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Lista las fuentes de contenido dinámico de Divi 5 que el conector deja usar en una página (lista cerrada, sin meta personalizado, sin usuarios y sin enlaces a otros posts): de la entrada (título, extracto, fecha, autor, categorías y etiquetas, enlace, URL, imagen destacada), del sitio (título, lema, URL, logo), la fecha actual, WooCommerce básico (precio, SKU y descripción corta; el título de un producto es post_title) y los campos de texto, área de texto y número de ACF (custom_meta_<nombre del campo>, sólo de grupos de campos registrados, nunca claves de meta crudas ni las que empiezan por _). Sólo lee. Requiere Divi 5 activo: si no, nexo_mcp_divi_dynamic_unavailable.',
+				'',
+				'SALIDA: {post_id?, post_type?, sources, targets}. sources: lista de {name, label, category (text | url | image), source (divi | acf), requires (\'\' | taxonomy | product), settings, forced}. settings es el esquema de los ajustes admitidos de la opción ({type: text | number | onoff | enum | taxonomy, options?, min?, max?, pattern?}); before y after son texto plano sin etiquetas, shortcodes, $ ni \\; forced indica lo que el conector fija siempre (enable_html: off en las de texto). targets: por módulo, las rutas de contenido donde cabe cada categoría (text en títulos, textos, botones y alt; url en enlaces; image en src). Con post_id sólo lo que aplica a esa página (los de WooCommerce sólo en un producto, categorías y etiquetas sólo si el tipo tiene taxonomías, los campos de ACF de los grupos que aplican a ella).',
+				'',
+				'Esta herramienta sólo lista: asignar un token a un módulo no se hace con create-divi-page, edit-divi-module ni edit-divi-section (siguen rechazando todo $variable(…)$ con nexo_mcp_divi_dynamic_denied). Errores: nexo_mcp_builder_not_found, nexo_mcp_builder_invalid_id (post_id).',
 			)
 		);
 	}
