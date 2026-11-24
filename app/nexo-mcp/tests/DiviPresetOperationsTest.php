@@ -834,7 +834,7 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 	}
 
 	public function test_un_uso_truncado_avisa_con_post_ids_truncated_y_el_total_en_el_error(): void {
-		$ids                            = range( 1, 100 );
+		$ids                            = range( 1, DiviPresetOperations::MAX_POST_IDS );
 		$this->usage['module:p-text-2'] = $ids;
 		$this->totals['module:p-text-2'] = 250;
 		$before                         = $this->snapshot();
@@ -847,13 +847,13 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 	}
 
 	public function test_un_uso_truncado_con_force_devuelve_el_total_y_la_marca(): void {
-		$this->usage['module:p-text-2']  = range( 1, 100 );
+		$this->usage['module:p-text-2']  = range( 1, DiviPresetOperations::MAX_POST_IDS );
 		$this->totals['module:p-text-2'] = 250;
 
 		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2', 'force' => true ) );
 
 		$this->assertIsArray( $result );
-		$this->assertCount( 100, $result['posts_affected'] );
+		$this->assertCount( DiviPresetOperations::MAX_POST_IDS, $result['posts_affected'] );
 		$this->assertTrue( $result['posts_affected_truncated'] );
 		$this->assertSame( 250, $result['posts_affected_total'] );
 	}
@@ -868,7 +868,7 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 		$this->assertArrayNotHasKey( 'posts_affected_total', $result );
 	}
 
-	public function test_el_escaneo_real_devuelve_cien_ids_y_el_total_completo(): void {
+	public function test_el_escaneo_real_devuelve_el_tope_de_ids_y_el_total_completo(): void {
 		$posts = array();
 
 		for ( $i = 1; $i <= 450; $i++ ) {
@@ -877,8 +877,8 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 
 		$found = $this->scan( 'module', 'big', $posts );
 
-		$this->assertCount( 100, $found['post_ids'] );
-		$this->assertSame( range( 1, 100 ), $found['post_ids'] );
+		$this->assertCount( DiviPresetOperations::MAX_POST_IDS, $found['post_ids'] );
+		$this->assertSame( range( 1, DiviPresetOperations::MAX_POST_IDS ), $found['post_ids'] );
 		$this->assertSame( 450, $found['total'], 'cuenta todos los lotes, no se detiene en el tope de ids' );
 	}
 }

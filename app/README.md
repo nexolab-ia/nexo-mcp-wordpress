@@ -374,7 +374,12 @@ Reglas que siempre se cumplen:
     en los nodos de `create-divi-page`/`edit-divi-section`. Escribe `modulePreset` y
     `groupPreset` (con el nombre de grupo que da Divi) en el bloque; `null` los quita. Usa
     el permiso de constructores y la copia de trabajo; no pide el scope de presets. El id
-    debe existir para ese módulo o grupo (`nexo_mcp_divi_preset_unknown` con `data.path`);
+    debe existir para ese módulo o grupo (`nexo_mcp_divi_preset_unknown` con `data.path`; un
+    preset de grupo hecho para otro módulo, por su `moduleName`, tampoco vale). Validar que
+    existe y guardar la página corren bajo el bloqueo de presets, el mismo del borrado
+    (después del de la página): un borrado no puede dejar una página apuntando a un preset
+    borrado, y si está ocupado se responde `nexo_mcp_busy` sin escribir. Sin `preset` no se
+    toma;
     `modulePreset`/`groupPreset` crudos dentro de `attrs` siguen rechazados.
     `get-page-structure` expone `preset` en cada módulo. Los attrs propios del módulo
     ganan al preset.

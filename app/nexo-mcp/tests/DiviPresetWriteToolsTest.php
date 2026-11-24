@@ -212,6 +212,9 @@ final class DiviPresetWriteToolsTest extends NexoTestCase {
 			$this->assertStringContainsString( $needle, $all[ self::DELETE ]['description'], $needle );
 		}
 
+		$this->assertStringContainsString( '(hasta ' . DiviPresetOperations::MAX_POST_IDS . ';', $all[ self::DELETE ]['description'], 'el tope sale de la constante' );
+		$this->assertStringContainsString( 'más de ' . DiviPresetOperations::MAX_POST_IDS . ')', $all[ self::DELETE ]['description'] );
+
 		$this->assertTrue( $all[ self::DELETE ]['meta']['annotations']['destructive'] );
 		$this->assertFalse( $all[ self::SET ]['meta']['annotations']['destructive'] );
 		$this->assertFalse( $all[ self::DEFAULT ]['meta']['annotations']['destructive'] );

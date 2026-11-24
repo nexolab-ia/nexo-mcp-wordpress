@@ -204,6 +204,37 @@ final class DiviPresetApplyTest extends NexoTestCase {
 		$this->assertStringStartsWith( $path . ': ', $result->get_error_message() );
 	}
 
+	public function test_un_preset_de_grupo_de_otro_modulo_se_rechaza_aunque_el_grupo_coincida(): void {
+		// Mismo grupo (divi/background, module.decoration.background) disponible en el título, pero el preset se hizo para divi/text.
+		$validator = new DiviTreeValidator(
+			null,
+			static fn( int $id ) => false,
+			fn(): array => $this->catalog(),
+			static fn( string $module ): array => array( self::BG => 'divi/background' )
+		);
+
+		$wrong = $validator->validate_preset_ref( 'divi/heading', array( 'groups' => array( self::BG => 'g-bg-1' ) ) );
+		$this->assertInstanceOf( \WP_Error::class, $wrong );
+		$this->assertSame( 'nexo_mcp_divi_preset_unknown', $wrong->get_error_code() );
+		$this->assertSame( array( 'path' => 'preset.groups.' . self::BG ), $wrong->get_error_data() );
+
+		$right = $validator->validate_preset_ref( 'divi/text', array( 'groups' => array( self::BG => 'g-bg-1' ) ) );
+		$this->assertSame( array( self::BG => array( 'presetId' => array( 'g-bg-1' ), 'groupName' => 'divi/background' ) ), $right['groups'] );
+	}
+
+	public function test_un_preset_de_grupo_sin_modulename_se_acepta_en_cualquier_modulo_del_grupo(): void {
+		$catalog = $this->catalog();
+		unset( $catalog['group']['divi/background']['items']['g-bg-1']['moduleName'] );
+		$validator = new DiviTreeValidator(
+			null,
+			static fn( int $id ) => false,
+			static fn(): array => $catalog,
+			static fn( string $module ): array => array( self::BG => 'divi/background' )
+		);
+
+		$this->assertIsArray( $validator->validate_preset_ref( 'divi/heading', array( 'groups' => array( self::BG => 'g-bg-1' ) ) ) );
+	}
+
 	public function test_un_preset_que_no_es_objeto_se_rechaza(): void {
 		$result = $this->validator()->validate_preset_ref( 'divi/text', 'p-text-1' );
 

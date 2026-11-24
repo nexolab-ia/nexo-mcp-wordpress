@@ -341,6 +341,15 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Bloqueo de presets para las escrituras de página que aplican un preset: el mismo del borrado de presets.
+	 *
+	 * @return callable fn( callable ): mixed.
+	 */
+	private function divi_presets_lock(): callable {
+		return fn( callable $work ) => $this->divi_design()->locked( $work );
+	}
+
+	/**
 	 * Validador de los árboles y parches de Divi 5; los presets que un nodo aplica se leen del almacén de presets (sólo si hay `preset`).
 	 */
 	private function divi_validator(): DiviTreeValidator {
@@ -757,7 +766,10 @@ final class BuilderGateway {
 			$this->backup,
 			new WorkingCopy( $this->settings ),
 			$this->divi_validator(),
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			$this->divi_presets_lock()
 		);
 
 		return $editor->edit(
@@ -781,7 +793,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function create_divi_page( array $input ) {
-		return ( new Divi5PageCreator( $this->divi_validator() ) )->create( $input );
+		return ( new Divi5PageCreator( $this->divi_validator(), null, null, null, null, null, $this->divi_presets_lock() ) )->create( $input );
 	}
 
 	/**
@@ -806,7 +818,11 @@ final class BuilderGateway {
 			$this->backup,
 			new WorkingCopy( $this->settings ),
 			$this->divi_validator(),
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_presets_lock()
 		);
 
 		return $editor->edit(

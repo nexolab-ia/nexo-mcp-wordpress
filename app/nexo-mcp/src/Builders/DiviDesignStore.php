@@ -94,8 +94,13 @@ final class DiviDesignStore {
 
 	/**
 	 * Clave de bloqueo (no es un contenido: sólo da nombre a la cerradura).
+	 *
+	 * La misma cerradura protege el borrado de presets (uso + borrado) y las escrituras de página que aplican un
+	 * preset (existencia + guardado): ver {@see self::locked()}. Orden de bloqueos: primero el de la página o la
+	 * copia de trabajo, después éste. El borrado sólo toma éste (el uso se busca con SQL, sin bloqueos de página),
+	 * así que no hay ciclo.
 	 */
-	private const LOCK_ID = 0;
+	public const LOCK_ID = 0;
 
 	/**
 	 * Fn(): bool.
@@ -216,6 +221,17 @@ final class DiviDesignStore {
 			( new AuditLogger( new AuditRepository() ) )->log( $tool, 'write', $status, $params, $result );
 		};
 		$this->lock          = $lock ?? static fn( callable $work ) => PostLock::run( self::LOCK_ID, $work );
+	}
+
+	/**
+	 * Ejecuta `$work` con el bloqueo de presets (el mismo del borrado y de las demás escrituras de presets).
+	 *
+	 * @param callable $work fn(): mixed.
+	 *
+	 * @return mixed|\WP_Error Lo que devuelve `$work`, o el error de ocupado del bloqueo (sin ejecutar `$work`).
+	 */
+	public function locked( callable $work ) {
+		return ( $this->lock )( $work );
 	}
 
 	/**

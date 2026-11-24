@@ -340,7 +340,7 @@ final class DiviTreeValidator {
 					continue;
 				}
 
-				if ( ! $this->preset_exists( $catalog, 'group', $available[ $group_id ], $id, $group_id ) ) {
+				if ( ! $this->preset_exists( $catalog, 'group', $available[ $group_id ], $id, $group_id, $type ) ) {
 					return $this->unknown( $where, $id );
 				}
 
@@ -402,15 +402,50 @@ final class DiviTreeValidator {
 	 * @param string       $name     Módulo (en `module`) o nombre de grupo (en `group`).
 	 * @param string       $id       Id del preset.
 	 * @param string|null  $group_id Id del grupo de opciones que debe tener el preset de grupo.
+	 * @param string       $module   Módulo editado: el preset de grupo debe ser de ese módulo (si trae `moduleName`).
 	 */
-	private function preset_exists( array $catalog, string $kind, string $name, string $id, ?string $group_id ): bool {
+	private function preset_exists( array $catalog, string $kind, string $name, string $id, ?string $group_id, string $module = '' ): bool {
 		$item = $catalog[ $kind ][ $name ]['items'][ $id ] ?? null;
 
 		if ( ! is_array( $item ) ) {
 			return false;
 		}
 
-		return null === $group_id || ! isset( $item['groupId'] ) || $item['groupId'] === $group_id;
+		if ( null === $group_id ) {
+			return true;
+		}
+
+		// Un preset de grupo se hizo para un módulo (`moduleName`, también en el payload de sync de Divi): sólo vale en ése.
+		if ( isset( $item['moduleName'] ) && $item['moduleName'] !== $module ) {
+			return false;
+		}
+
+		return ! isset( $item['groupId'] ) || $item['groupId'] === $group_id;
+	}
+
+	/**
+	 * Indica si algún nodo del árbol (a cualquier profundidad) trae `preset`.
+	 *
+	 * Quien escribe lo usa para tomar el bloqueo de presets sólo cuando hace falta.
+	 *
+	 * @param mixed $nodes Árbol recibido (sin validar).
+	 */
+	public static function tree_has_preset( $nodes ): bool {
+		if ( ! is_array( $nodes ) ) {
+			return false;
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			if ( array_key_exists( 'preset', $node ) || ( isset( $node['children'] ) && self::tree_has_preset( $node['children'] ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

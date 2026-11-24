@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Support\PostLock;
 use NexoDev\NexoMCP\Support\Settings;
 use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
@@ -24,6 +25,10 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
  *
  * Sólo cambia la lista de hijos del padre ({@see Divi5Tree::splice()}): los nodos fuera del
  * subárbol reemplazado conservan sus bytes. Borrar la última sección de la raíz se rechaza.
+ *
+ * Si algún nodo nuevo trae `preset`, la validación y el guardado corren bajo el bloqueo de presets
+ * ({@see DiviDesignStore::LOCK_ID}, el del borrado), tomado después del de la página; ocupado → su error, sin escribir.
+ * Sin `preset` no se toma.
  */
 final class Divi5SectionEditor {
 
@@ -52,6 +57,13 @@ final class Divi5SectionEditor {
 	private $version;
 
 	/**
+	 * Bloqueo de presets: fn( callable ): mixed.
+	 *
+	 * @var callable
+	 */
+	private $presets_lock;
+
+	/**
 	 * Construye el editor.
 	 *
 	 * @param Settings          $settings     Configuración.
@@ -63,6 +75,7 @@ final class Divi5SectionEditor {
 	 * @param callable|null     $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
 	 * @param callable|null     $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
 	 * @param callable|null     $version      fn(): string. Por omisión, la versión de Divi instalada.
+	 * @param callable|null     $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 */
 	public function __construct(
 		Settings $settings,
@@ -73,11 +86,13 @@ final class Divi5SectionEditor {
 		callable $lock_check,
 		?callable $divi5_active = null,
 		?callable $saver = null,
-		?callable $version = null
+		?callable $version = null,
+		?callable $presets_lock = null
 	) {
-		$this->writer    = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
-		$this->validator = $validator;
-		$this->version   = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
+		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->validator    = $validator;
+		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
+		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 	}
 
 	/**
@@ -99,7 +114,11 @@ final class Divi5SectionEditor {
 					return new \WP_Error( 'nexo_mcp_builder_not_found', __( 'El contenido no existe.', 'nexo-mcp' ) );
 				}
 
-				return $this->edit_locked( $fresh, $input );
+				if ( ! DiviTreeValidator::tree_has_preset( $input['sections'] ?? null ) ) {
+					return $this->edit_locked( $fresh, $input );
+				}
+
+				return ( $this->presets_lock )( fn() => $this->edit_locked( $fresh, $input ) );
 			}
 		);
 	}

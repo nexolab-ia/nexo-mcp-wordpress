@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Support\PostLock;
 use NexoDev\NexoMCP\Support\Settings;
 use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
@@ -22,7 +23,10 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
  * entonces se crea o reutiliza la copia, se respalda y se guarda. Nunca publica.
  *
  * `preset` (`{module?, groups?}`) pone o quita `modulePreset`/`groupPreset` del bloque con
- * {@see DiviTreeValidator::validate_preset_ref()}; los ids deben existir en el catálogo de presets.
+ * {@see DiviTreeValidator::validate_preset_ref()}; los ids deben existir en el catálogo de presets. Con `preset`, el
+ * destino, la validación y el guardado corren además bajo el bloqueo de presets ({@see DiviDesignStore::LOCK_ID}, el del
+ * borrado de presets), tomado después del de la página: un borrado no puede colarse entre «el preset existe» y «la
+ * página se guardó»; si está ocupado se responde su error y no se escribe. Sin `preset` no se toma.
  *
  * El parche validado sólo trae rutas `<ruta>.desktop.value`; se fusiona en profundidad
  * con los atributos del bloque, de modo que tablet, teléfono, hover y todo lo no tocado
@@ -47,6 +51,13 @@ final class Divi5ModuleEditor {
 	private DiviTreeValidator $validator;
 
 	/**
+	 * Bloqueo de presets: fn( callable ): mixed.
+	 *
+	 * @var callable
+	 */
+	private $presets_lock;
+
+	/**
 	 * Construye el editor.
 	 *
 	 * @param Settings          $settings     Configuración.
@@ -57,6 +68,7 @@ final class Divi5ModuleEditor {
 	 * @param callable          $lock_check   fn( \WP_Post ): true|\WP_Error.
 	 * @param callable|null     $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
 	 * @param callable|null     $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
+	 * @param callable|null     $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 */
 	public function __construct(
 		Settings $settings,
@@ -66,10 +78,12 @@ final class Divi5ModuleEditor {
 		DiviTreeValidator $validator,
 		callable $lock_check,
 		?callable $divi5_active = null,
-		?callable $saver = null
+		?callable $saver = null,
+		?callable $presets_lock = null
 	) {
-		$this->writer    = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
-		$this->validator = $validator;
+		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->validator    = $validator;
+		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 	}
 
 	/**
@@ -91,7 +105,11 @@ final class Divi5ModuleEditor {
 					return new \WP_Error( 'nexo_mcp_builder_not_found', __( 'El contenido no existe.', 'nexo-mcp' ) );
 				}
 
-				return $this->edit_locked( $fresh, $input );
+				if ( null === ( $input['preset'] ?? null ) ) {
+					return $this->edit_locked( $fresh, $input );
+				}
+
+				return ( $this->presets_lock )( fn() => $this->edit_locked( $fresh, $input ) );
 			}
 		);
 	}

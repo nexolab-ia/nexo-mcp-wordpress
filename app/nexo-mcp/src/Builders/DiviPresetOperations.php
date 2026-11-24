@@ -27,9 +27,10 @@ final class DiviPresetOperations {
 	private const SCAN_BATCH = 200;
 
 	/**
-	 * Ids de entradas que se devuelven al buscar el uso (el resto sólo se cuenta).
+	 * Ids de entradas que se devuelven al buscar el uso (el resto sólo se cuenta). Única fuente del tope: la descripción
+	 * de la herramienta y las pruebas lo toman de aquí.
 	 */
-	private const MAX_POST_IDS = 100;
+	public const MAX_POST_IDS = 100;
 
 	/**
 	 * Código interno de «nada que cambiar» (no sale de esta clase).
@@ -487,6 +488,13 @@ final class DiviPresetOperations {
 	 * Devuelve los primeros {@see self::MAX_POST_IDS} ids y el total: se recorren todos los lotes para contar, así que un
 	 * uso grande no se confunde con uno chico.
 	 *
+	 * Busca el id con `wp_json_encode` (sin escapar `/` ni Unicode) porque así queda el id dentro del JSON de los
+	 * atributos de un bloque. WordPress, al guardar el bloque (`serialize_block_attributes()`), además reemplaza en ese
+	 * JSON `--` por `\u002d\u002d`, `<` por `\u003c`, `>` por `\u003e`, `&` por `\u0026` y `"` por `\u0022`: un id con
+	 * esos caracteres no aparece tal cual en `post_content`, así que esta búsqueda no lo encuentra. Por eso
+	 * {@see self::is_unscannable_id()} los aparta antes (sin `force` el borrado se rechaza); mantener ambas listas
+	 * de caracteres al día juntas.
+	 *
 	 * @param string $kind `module` o `group`.
 	 * @param string $id   Id del preset.
 	 *
@@ -548,6 +556,11 @@ final class DiviPresetOperations {
 	/**
 	 * Indica si el id tiene caracteres que WordPress escapa en el JSON de un bloque (`--`, `<`, `>`, `&`, comillas, barra
 	 * invertida) o que no son ASCII imprimible: la búsqueda de uso no los puede encontrar con seguridad.
+	 *
+	 * La regex y {@see self::scan_preset_usage()} son las dos mitades de lo mismo: WordPress escapa los atributos de un
+	 * bloque en `serialize_block_attributes()` (`--` → `\u002d\u002d`, `<` → `\u003c`, `>` → `\u003e`, `&` → `\u0026`,
+	 * `"` → `\u0022`; la barra invertida y lo no ASCII también cambian de forma en el JSON), y el escaneo sólo conoce la
+	 * forma de `wp_json_encode`, sin esos escapes. Cualquier carácter que se agregue a una lista va en la otra.
 	 *
 	 * @param string $id Id del preset.
 	 */
