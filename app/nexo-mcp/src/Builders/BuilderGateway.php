@@ -834,6 +834,67 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Asigna (o quita) un token de contenido dinámico de Divi 5 en un campo de un módulo, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::edit_divi_module()} (ruta, huella, copia, bloqueo, respaldo) con un permiso más:
+	 * `$allowed` (`PermissionPolicy::can_write_divi_dynamic()` sobre el original) se vuelve a comprobar aquí y el
+	 * validador con contexto dinámico (`with_dynamic`) se obtiene SÓLO después; sin `$allowed` se deniega. Quitar el
+	 * token (`source` null) deja el campo vacío y no necesita el contexto, pero pide el mismo permiso.
+	 *
+	 * @param array<string, mixed> $input   Parámetros de la herramienta: `id`, `path`, `fingerprint`, `field`, `source`, `draft`.
+	 * @param callable|null        $allowed fn( int ): bool. Permiso de escribir dinámico sobre esa página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_dynamic( array $input, ?callable $allowed = null ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( null === $allowed || ! $allowed( (int) $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		if ( ! array_key_exists( 'source', $input ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_dynamic_invalid',
+				__( 'source: es obligatorio: un objeto {name, settings?} o null para quitar el token.', 'nexo-mcp' ),
+				array( 'path' => 'source' )
+			);
+		}
+
+		$validator = $this->divi_validator();
+
+		if ( null !== $input['source'] ) {
+			$validator = $validator->with_dynamic( $this->divi_dynamic ?? new DiviDynamicCatalog(), WorkingCopy::original_id_for( (int) $post->ID ) );
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$validator,
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'dynamic'     => array(
+					'field'  => isset( $input['field'] ) && is_string( $input['field'] ) ? $input['field'] : '',
+					'source' => $input['source'],
+				),
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
 	 * Crea una página de Divi 5 en borrador a partir de secciones con módulos reales.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.

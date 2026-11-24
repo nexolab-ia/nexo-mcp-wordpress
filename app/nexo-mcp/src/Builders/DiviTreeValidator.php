@@ -137,6 +137,13 @@ final class DiviTreeValidator {
 	private bool $token_slot = false;
 
 	/**
+	 * Tokens canónicos que este validador emitió en la hoja en curso (ruta del valor → token), para el reescaneo final.
+	 *
+	 * @var array<string, string>
+	 */
+	private array $emitted = array();
+
+	/**
 	 * Construye el validador.
 	 *
 	 * @param callable|null $shortcode_exists fn( string $name ): bool. Por omisión, `shortcode_exists()`.
@@ -164,6 +171,7 @@ final class DiviTreeValidator {
 		$copy->dynamic      = $catalog;
 		$copy->dynamic_post = $post_id;
 		$copy->token_slot   = false;
+		$copy->emitted      = array();
 
 		return $copy;
 	}
@@ -793,6 +801,7 @@ final class DiviTreeValidator {
 		if ( null !== $this->dynamic && 'module.meta.adminLabel' !== $dotted ) {
 			// Con el contexto dinámico los tokens se resuelven cadena por cadena en check_value (aceptar uno o rechazarlo).
 			$this->token_slot = true;
+			$this->emitted    = array();
 
 			try {
 				$value = $this->check_value( $desktop['value'], $spec, $where );
@@ -800,7 +809,14 @@ final class DiviTreeValidator {
 				$this->token_slot = false;
 			}
 
-			return is_wp_error( $value ) ? $value : array( 'desktop' => array( 'value' => $value ) );
+			if ( is_wp_error( $value ) ) {
+				return $value;
+			}
+
+			// Defensa en profundidad: sobre el valor final (en cualquier forma, también compuesta) sólo valen los tokens que este validador emitió en esa ruta.
+			$stray = self::stray_token_path( $value, $where, $this->emitted );
+
+			return null !== $stray ? $this->dynamic_error( $stray ) : array( 'desktop' => array( 'value' => $value ) );
 		}
 
 		// Antes de sanear: lo que manda el cliente. Después: lo que se guardaría (quitar etiquetas o normalizar una URL puede armar un token).
@@ -880,7 +896,13 @@ final class DiviTreeValidator {
 
 		$token = $this->dynamic->validate_token( $value, $category, $this->dynamic_post );
 
-		return $token instanceof \WP_Error ? $this->error( (string) $token->get_error_code(), $path, $token->get_error_message() ) : $token;
+		if ( $token instanceof \WP_Error ) {
+			return $this->error( (string) $token->get_error_code(), $path, $token->get_error_message() );
+		}
+
+		$this->emitted[ $path ] = $token;
+
+		return $token;
 	}
 
 	/**
@@ -1183,6 +1205,55 @@ final class DiviTreeValidator {
 		}
 
 		return is_string( $value ) && self::string_has_token( $value ) ? $prefix : null;
+	}
+
+	/**
+	 * Ruta de la primera cadena con un token que no está en la lista de las permitidas (ruta → cadena exacta), o null.
+	 *
+	 * Reescaneo del valor final: acepta un token sólo si es EXACTAMENTE la cadena permitida en esa misma ruta, sin
+	 * importar la forma del valor (cadena, objeto o lista anidada). Cualquier otra forma, codificada o no, en cualquier
+	 * otra ruta, se reporta.
+	 *
+	 * @param mixed                 $value   Valor final.
+	 * @param string                $prefix  Ruta del valor (las claves se agregan con «.»).
+	 * @param array<string, string> $allowed Tokens permitidos por ruta.
+	 */
+	public static function stray_token_path( $value, string $prefix, array $allowed ): ?string {
+		if ( is_array( $value ) ) {
+			foreach ( $value as $key => $item ) {
+				$found = self::stray_token_path( $item, '' === $prefix ? (string) $key : $prefix . '.' . $key, $allowed );
+
+				if ( null !== $found ) {
+					return $found;
+				}
+			}
+
+			return null;
+		}
+
+		return is_string( $value ) && self::string_has_token( $value ) && ( $allowed[ $prefix ] ?? null ) !== $value ? $prefix : null;
+	}
+
+	/**
+	 * Cadenas con token de un valor, por ruta (para guardar las que ya había antes de una edición).
+	 *
+	 * @param mixed  $value  Valor.
+	 * @param string $prefix Ruta del valor.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function token_strings( $value, string $prefix ): array {
+		if ( is_array( $value ) ) {
+			$out = array();
+
+			foreach ( $value as $key => $item ) {
+				$out += self::token_strings( $item, '' === $prefix ? (string) $key : $prefix . '.' . $key );
+			}
+
+			return $out;
+		}
+
+		return is_string( $value ) && self::string_has_token( $value ) ? array( $prefix => $value ) : array();
 	}
 
 	/**

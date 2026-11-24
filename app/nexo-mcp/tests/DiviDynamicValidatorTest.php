@@ -340,10 +340,69 @@ final class DiviDynamicValidatorTest extends TestCase {
 		$tree    = $this->tree( 'divi/heading', array( 'title' => array( 'innerContent' => self::v( 'Hola ' . self::TITLE ) ) ) );
 
 		$this->assertInstanceOf( \WP_Error::class, $allowed->validate_tree( $tree ) );
+
+		// Un texto con HTML se sanea como siempre (no queda en modo token) y los campos que no admiten token siguen cerrados.
+		$clean = $allowed->validate_tree( $this->tree( 'divi/heading', array( 'title' => array( 'innerContent' => self::v( 'Hola <b onclick="x()">mundo</b><script>alert(1)</script>' ) ) ) ) );
+		$this->assertIsArray( $clean );
+		$this->assertSame( 'Hola mundo', $this->leaf( $clean, 'title.innerContent.desktop.value' ) );
+
+		$patch = $allowed->validate_patch( 'divi/text', array( 'content' => array( 'content' => array( 'innerContent' => self::v( '<p>Hola <b>mundo</b> <u>x</u></p><iframe src="x"></iframe>' ) ) ) ) );
+		$this->assertIsArray( $patch );
+		$this->assertSame( '<p>Hola <b>mundo</b> x</p>', $patch['content']['content']['innerContent']['desktop']['value'] );
+
 		$this->assertFails(
 			'nexo_mcp_divi_dynamic_denied',
 			self::BASE . 'module.meta.adminLabel.desktop.value',
 			$allowed->validate_tree( $this->tree( 'divi/heading', array( 'module' => array( 'meta' => array( 'adminLabel' => self::v( self::TITLE ) ) ) ) ) )
 		);
+	}
+
+	public function test_a_token_in_the_items_of_an_icon_list_is_accepted_per_item_and_a_text_around_it_is_denied(): void {
+		$list = static fn( array $item_attrs ): array => array(
+			array(
+				'type'     => 'divi/section',
+				'children' => array(
+					array(
+						'type'     => 'divi/row',
+						'children' => array(
+							array(
+								'type'     => 'divi/column',
+								'children' => array(
+									array(
+										'type'     => 'divi/icon-list',
+										'children' => array(
+											array( 'type' => 'divi/icon-list-item', 'attrs' => array( 'content' => array( 'innerContent' => self::v( 'Uno' ) ) ) ),
+											array( 'type' => 'divi/icon-list-item', 'attrs' => $item_attrs ),
+										),
+									),
+								),
+							),
+						),
+					),
+				),
+			),
+		);
+		$path = 'nodes[0].children[0].children[0].children[0].children[1].attrs.content.innerContent.desktop.value';
+
+		$ok = $this->allowing()->validate_tree( $list( array( 'content' => array( 'innerContent' => self::v( self::TITLE ) ) ) ) );
+		$this->assertIsArray( $ok );
+		$this->assertSame( self::OUT, $ok[0]['children'][0]['children'][0]['children'][0]['children'][1]['attrs']['content']['innerContent']['desktop']['value'] );
+		$this->assertSame( 'Uno', $ok[0]['children'][0]['children'][0]['children'][0]['children'][0]['attrs']['content']['innerContent']['desktop']['value'] );
+
+		$this->assertFails( 'nexo_mcp_divi_dynamic_denied', $path, $this->allowing()->validate_tree( $list( array( 'content' => array( 'innerContent' => self::v( 'Hola ' . self::TITLE ) ) ) ) ) );
+		$this->assertFails( 'nexo_mcp_divi_dynamic_denied', $path, $this->allowing()->validate_tree( $list( array( 'content' => array( 'innerContent' => self::v( self::URL ) ) ) ) ) );
+		$this->assertFails( 'nexo_mcp_divi_dynamic_denied', $path, $this->base()->validate_tree( $list( array( 'content' => array( 'innerContent' => self::v( self::TITLE ) ) ) ) ) );
+	}
+
+	public function test_the_stray_token_scan_accepts_only_the_listed_strings_at_their_paths_in_any_shape(): void {
+		$canonical = array( 'a.desktop.value' => self::OUT );
+
+		$this->assertNull( DiviTreeValidator::stray_token_path( array( 'a' => array( 'desktop' => array( 'value' => self::OUT ) ), 'b' => 'texto' ), '', $canonical ) );
+		$this->assertSame( 'a.desktop.value', DiviTreeValidator::stray_token_path( array( 'a' => array( 'desktop' => array( 'value' => self::TITLE ) ) ), '', $canonical ), 'otra forma del mismo token no es la emitida' );
+		$this->assertSame( 'c.desktop.value', DiviTreeValidator::stray_token_path( array( 'c' => array( 'desktop' => array( 'value' => self::OUT ) ) ), '', $canonical ), 'la cadena emitida en otra ruta' );
+		$this->assertSame( 'x.items.1.title', DiviTreeValidator::stray_token_path( array( 'x' => array( 'items' => array( array( 'title' => 'ok' ), array( 'title' => self::OUT ) ) ) ), '', array() ), 'dentro de una lista anidada' );
+		$this->assertSame( 'p.x.items.0', DiviTreeValidator::stray_token_path( array( 'x' => array( 'items' => array( '&#36;variable({})$' ) ) ), 'p', array() ), 'codificado' );
+		$this->assertNull( DiviTreeValidator::stray_token_path( 'sin token', 'p', array() ) );
+		$this->assertSame( array( 'a.b' => self::OUT, 'c.0' => self::URL ), DiviTreeValidator::token_strings( array( 'a' => array( 'b' => self::OUT ), 'c' => array( self::URL ), 'd' => 'no' ), '' ) );
 	}
 }

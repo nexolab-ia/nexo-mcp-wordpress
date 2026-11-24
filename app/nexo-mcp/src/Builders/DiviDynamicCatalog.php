@@ -152,7 +152,7 @@ final class DiviDynamicCatalog {
 			'settings' => self::BEFORE_AFTER + array(
 				'name_format'      => array(
 					'type'    => 'enum',
-					'options' => array( 'display_name', 'first_last_name', 'last_first_name', 'first_name', 'last_name', 'nickname', 'username' ),
+					'options' => array( 'display_name', 'first_last_name', 'last_first_name', 'first_name', 'last_name', 'nickname' ),
 				),
 				'link'             => array( 'type' => 'onoff' ),
 				'link_destination' => array(
@@ -261,6 +261,20 @@ final class DiviDynamicCatalog {
 	private $taxonomies_of;
 
 	/**
+	 * Opciones que Divi registró por página en este catálogo (o el error si falló): se consulta una vez por página.
+	 *
+	 * @var array<int, array<string, mixed>|\WP_Error>
+	 */
+	private array $registry_cache = array();
+
+	/**
+	 * Campos de ACF por página (`all` para todos los grupos) en este catálogo (o el error si falló).
+	 *
+	 * @var array<string, array<int, array{name: string, label: string, type: string, group: string}>|\WP_Error>
+	 */
+	private array $acf_cache = array();
+
+	/**
 	 * Construye el catálogo.
 	 *
 	 * @param callable|null $divi_active   fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
@@ -306,8 +320,16 @@ final class DiviDynamicCatalog {
 		$out = array();
 
 		foreach ( self::SOURCES as $name => $source ) {
-			if ( null !== $post_id && null !== $this->not_applicable( $name, $post_id ) ) {
-				continue;
+			if ( null !== $post_id ) {
+				$reason = $this->not_applicable( $name, $post_id );
+
+				if ( $reason instanceof \WP_Error ) {
+					return $reason;
+				}
+
+				if ( null !== $reason ) {
+					continue;
+				}
 			}
 
 			$out[] = array(
@@ -321,7 +343,13 @@ final class DiviDynamicCatalog {
 			);
 		}
 
-		foreach ( $this->acf( $post_id ) as $field ) {
+		$fields = $this->acf( $post_id );
+
+		if ( $fields instanceof \WP_Error ) {
+			return $fields;
+		}
+
+		foreach ( $fields as $field ) {
 			$out[] = array(
 				'name'     => self::ACF_PREFIX . $field['name'],
 				'label'    => sprintf( /* translators: 1: etiqueta del campo, 2: grupo de ACF. */ __( 'Campo de ACF «%1$s» (%2$s)', 'nexo-mcp' ), $field['label'], $field['group'] ),
@@ -363,6 +391,10 @@ final class DiviDynamicCatalog {
 		list( $name, $settings ) = $parsed;
 		$source                  = $this->source_of( $name, $post_id );
 
+		if ( $source instanceof \WP_Error ) {
+			return $source;
+		}
+
 		if ( null === $source ) {
 			return $this->denied(
 				sprintf(
@@ -386,6 +418,10 @@ final class DiviDynamicCatalog {
 		}
 
 		$reason = $this->not_applicable( $name, $post_id );
+
+		if ( $reason instanceof \WP_Error ) {
+			return $reason;
+		}
 
 		if ( null !== $reason ) {
 			return $this->denied( $reason );
@@ -464,6 +500,56 @@ final class DiviDynamicCatalog {
 	}
 
 	/**
+	 * Resuelve un campo («title.innerContent», «button.innerContent.linkUrl») de un módulo: su ruta de atributos, la clave
+	 * dentro del objeto de valor (`''` si el valor es la cadena) y su categoría; null si no es un destino de {@see self::targets()}.
+	 *
+	 * @param string $module Nombre de bloque.
+	 * @param string $field  Campo tal como lo publica `targets()`.
+	 *
+	 * @return array{path: string, key: string, category: string}|null
+	 */
+	public static function field( string $module, string $field ): ?array {
+		foreach ( DiviModuleCatalog::content_paths( $module ) as $path => $spec ) {
+			if ( 'module.meta.adminLabel' === $path ) {
+				continue;
+			}
+
+			$fields = is_array( $spec ) && isset( $spec['object'] ) ? $spec['object'] : array( '' => $spec );
+
+			foreach ( $fields as $key => $field_spec ) {
+				$category = self::category_of_spec( $field_spec );
+
+				if ( null !== $category && ( '' === $key ? $path : $path . '.' . $key ) === $field ) {
+					return array(
+						'path'     => (string) $path,
+						'key'      => (string) $key,
+						'category' => $category,
+					);
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Campos de un módulo que admiten un token (todas las categorías), agrupados por categoría.
+	 *
+	 * @param string $module Nombre de bloque.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function fields_of( string $module ): array {
+		$out = array();
+
+		foreach ( self::targets()[ $module ] ?? array() as $paths ) {
+			$out = array_merge( $out, $paths );
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Extrae el nombre y los ajustes de un valor que es exactamente un token `content`, o null.
 	 *
 	 * @param string $value Valor.
@@ -510,15 +596,21 @@ final class DiviDynamicCatalog {
 	 * @param string $name    Nombre de la opción.
 	 * @param int    $post_id Página.
 	 *
-	 * @return array{category: string, settings: array<string, array<string, mixed>>}|null
+	 * @return array{category: string, settings: array<string, array<string, mixed>>}|\WP_Error|null
 	 */
-	private function source_of( string $name, int $post_id ): ?array {
+	private function source_of( string $name, int $post_id ) {
 		if ( isset( self::SOURCES[ $name ] ) ) {
 			return self::SOURCES[ $name ];
 		}
 
 		if ( str_starts_with( $name, self::ACF_PREFIX ) ) {
-			foreach ( $this->acf( $post_id ) as $field ) {
+			$fields = $this->acf( $post_id );
+
+			if ( $fields instanceof \WP_Error ) {
+				return $fields;
+			}
+
+			foreach ( $fields as $field ) {
 				if ( self::ACF_PREFIX . $field['name'] === $name ) {
 					return array(
 						'category' => 'text',
@@ -536,8 +628,10 @@ final class DiviDynamicCatalog {
 	 *
 	 * @param string $name    Opción de la lista.
 	 * @param int    $post_id Página.
+	 *
+	 * @return string|\WP_Error|null El motivo, el error de «no disponible» si Divi no pudo responder, o null si aplica.
 	 */
-	private function not_applicable( string $name, int $post_id ): ?string {
+	private function not_applicable( string $name, int $post_id ) {
 		if ( ! isset( self::SOURCES[ $name ] ) ) {
 			return null;
 		}
@@ -561,8 +655,11 @@ final class DiviDynamicCatalog {
 			);
 		}
 
-		$registered = ( $this->registry )( $post_id );
-		$registered = is_array( $registered ) ? $registered : array();
+		$registered = $this->registered( $post_id );
+
+		if ( $registered instanceof \WP_Error ) {
+			return $registered;
+		}
 
 		if ( ! isset( $registered[ $name ] ) || ! is_array( $registered[ $name ] ) ) {
 			return sprintf(
@@ -793,13 +890,39 @@ final class DiviDynamicCatalog {
 	 *
 	 * @param int|null $post_id Página, o null para todos los grupos.
 	 *
-	 * @return array<int, array{name: string, label: string, type: string, group: string}>
+	 * @return array<int, array{name: string, label: string, type: string, group: string}>|\WP_Error
 	 */
-	private function acf( ?int $post_id ): array {
-		$fields = ( $this->acf_fields )( $post_id );
-		$out    = array();
+	private function acf( ?int $post_id ) {
+		$key = null === $post_id ? 'all' : (string) $post_id;
 
-		foreach ( is_array( $fields ) ? $fields : array() as $field ) {
+		if ( ! array_key_exists( $key, $this->acf_cache ) ) {
+			$this->acf_cache[ $key ] = $this->load_acf( $post_id );
+		}
+
+		return $this->acf_cache[ $key ];
+	}
+
+	/**
+	 * Pide los campos de ACF al resolvedor; si falla o no devuelve una lista, el catálogo no puede responder.
+	 *
+	 * @param int|null $post_id Página, o null.
+	 *
+	 * @return array<int, array{name: string, label: string, type: string, group: string}>|\WP_Error
+	 */
+	private function load_acf( ?int $post_id ) {
+		try {
+			$fields = ( $this->acf_fields )( $post_id );
+		} catch ( \Throwable $e ) {
+			return $this->resolver_failed( 'ACF' );
+		}
+
+		if ( ! is_array( $fields ) ) {
+			return $this->resolver_failed( 'ACF' );
+		}
+
+		$out = array();
+
+		foreach ( $fields as $field ) {
 			if ( ! is_array( $field ) || ! isset( $field['name'], $field['type'] ) || ! is_string( $field['name'] ) || ! is_string( $field['type'] ) ) {
 				continue;
 			}
@@ -817,6 +940,43 @@ final class DiviDynamicCatalog {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Opciones que Divi registra para una página, consultadas una vez; si Divi falla, el catálogo no puede responder.
+	 *
+	 * @param int $post_id Página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function registered( int $post_id ) {
+		if ( ! array_key_exists( $post_id, $this->registry_cache ) ) {
+			try {
+				$options = ( $this->registry )( $post_id );
+			} catch ( \Throwable $e ) {
+				$options = null;
+			}
+
+			$this->registry_cache[ $post_id ] = is_array( $options ) ? $options : $this->resolver_failed( 'Divi' );
+		}
+
+		return $this->registry_cache[ $post_id ];
+	}
+
+	/**
+	 * Error de un resolvedor (Divi o ACF) que no pudo responder: no es lo mismo que «no registra la opción».
+	 *
+	 * @param string $who Quién falló.
+	 */
+	private function resolver_failed( string $who ): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_divi_dynamic_unavailable',
+			sprintf(
+				/* translators: %s: Divi o ACF. */
+				__( 'no se pudo consultar las fuentes dinámicas de %s en este momento; no se escribe nada. Inténtalo de nuevo.', 'nexo-mcp' ),
+				$who
+			)
+		);
 	}
 
 	/**
@@ -881,29 +1041,36 @@ final class DiviDynamicCatalog {
 	/**
 	 * Opciones que registra Divi 5 para una página (fuente de producción).
 	 *
+	 * Si Divi no carga su clase de opciones, falla o no devuelve una lista, lanza: el catálogo lo toma como «no
+	 * disponible» (`nexo_mcp_divi_dynamic_unavailable`) en vez de confundirlo con «Divi no registra la opción».
+	 *
 	 * @param int $post_id Página.
 	 *
 	 * @return array<string, array<string, mixed>>
+	 *
+	 * @throws \RuntimeException Si Divi no puede responder.
 	 */
 	public static function divi_registered_options( int $post_id ): array {
 		// Nombre de clase en una variable: Divi no se carga ni se analiza aquí.
 		$class = '\ET\Builder\Packages\Module\Layout\Components\DynamicContent\DynamicContentOptions';
 
 		if ( ! class_exists( $class ) ) {
-			return array();
+			throw new \RuntimeException( 'Divi no carga DynamicContentOptions.' );
 		}
 
-		try {
-			$options = $class::get_options( $post_id, 'display' );
-		} catch ( \Throwable $e ) {
-			return array();
+		$options = $class::get_options( $post_id, 'display' );
+
+		if ( ! is_array( $options ) ) {
+			throw new \RuntimeException( 'DynamicContentOptions::get_options no devolvió una lista.' );
 		}
 
-		return is_array( $options ) ? $options : array();
+		return $options;
 	}
 
 	/**
 	 * Campos de los grupos de ACF activos (que aplican a la página, si se da), sin leer meta: sólo la API de ACF.
+	 *
+	 * Sin ACF no hay campos (lista vacía); si ACF falla, la excepción sube y el catálogo responde «no disponible».
 	 *
 	 * @param int|null $post_id Página, o null para todos los grupos activos.
 	 *
@@ -914,31 +1081,26 @@ final class DiviDynamicCatalog {
 			return array();
 		}
 
-		$out = array();
+		$out    = array();
+		$groups = null === $post_id ? acf_get_field_groups() : acf_get_field_groups( array( 'post_id' => $post_id ) );
 
-		try {
-			$groups = null === $post_id ? acf_get_field_groups() : acf_get_field_groups( array( 'post_id' => $post_id ) );
+		foreach ( $groups as $group ) {
+			if ( ! is_array( $group ) || empty( $group['active'] ) ) {
+				continue;
+			}
 
-			foreach ( $groups as $group ) {
-				if ( ! is_array( $group ) || empty( $group['active'] ) ) {
-					continue;
-				}
+			$fields = acf_get_fields( $group );
 
-				$fields = acf_get_fields( $group );
-
-				foreach ( $fields as $field ) {
-					if ( isset( $field['name'], $field['type'] ) ) {
-						$out[] = array(
-							'name'  => (string) $field['name'],
-							'label' => (string) ( $field['label'] ?? '' ),
-							'type'  => (string) $field['type'],
-							'group' => (string) ( $group['title'] ?? '' ),
-						);
-					}
+			foreach ( $fields as $field ) {
+				if ( isset( $field['name'], $field['type'] ) ) {
+					$out[] = array(
+						'name'  => (string) $field['name'],
+						'label' => (string) ( $field['label'] ?? '' ),
+						'type'  => (string) $field['type'],
+						'group' => (string) ( $group['title'] ?? '' ),
+					);
 				}
 			}
-		} catch ( \Throwable $e ) {
-			return array();
 		}
 
 		return $out;

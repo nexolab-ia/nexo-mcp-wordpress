@@ -267,7 +267,7 @@ final class DiviDynamicCatalogTest extends TestCase {
 		$catalog->listing( null );
 		$catalog->validate_token( '$variable({"type":"content","value":{"name":"custom_meta_x","settings":{}}})$', 'text', self::PAGE );
 
-		$this->assertSame( array( self::PAGE, null, self::PAGE ), $seen );
+		$this->assertSame( array( self::PAGE, null ), $seen, 'el resolvedor se consulta una vez por página (memoizado en el catálogo)' );
 	}
 
 	public function test_a_valid_token_is_returned_in_canonical_form_with_enable_html_off_for_text_sources(): void {
@@ -480,5 +480,111 @@ final class DiviDynamicCatalogTest extends TestCase {
 		$this->assertSame( array( 'thumbnail.innerContent.src' ), $targets['divi/video']['image'], 'el video usa media_url: sólo su miniatura es una imagen' );
 		$this->assertArrayNotHasKey( 'text', $targets['divi/video'] ?? array() );
 		$this->assertArrayNotHasKey( 'divi/divider', $targets );
+	}
+
+	public function test_the_author_name_never_offers_the_login_because_users_are_out_of_the_allowlist(): void {
+		$catalog = $this->catalog();
+		$author  = null;
+
+		foreach ( (array) $catalog->listing( self::PAGE ) as $source ) {
+			if ( 'post_author' === $source['name'] ) {
+				$author = $source;
+			}
+		}
+
+		$this->assertIsArray( $author );
+		$this->assertSame( array( 'display_name', 'first_last_name', 'last_first_name', 'first_name', 'last_name', 'nickname' ), $author['settings']['name_format']['options'] );
+		$this->assertError( 'nexo_mcp_divi_dynamic_invalid', $catalog->validate_token( $this->token( 'post_author', '{"name_format":"username"}' ), 'text', self::PAGE ), 'settings.post_author.name_format' );
+		$this->assertIsString( $catalog->validate_token( $this->token( 'post_author', '{"name_format":"nickname"}' ), 'text', self::PAGE ) );
+	}
+
+	/**
+	 * @return array<string, array{callable}>
+	 */
+	public static function failing_resolvers(): array {
+		return array(
+			'registry throws'       => array( static fn( int $id ): array => throw new \RuntimeException( 'boom' ) ),
+			'registry not an array' => array( static fn( int $id ) => null ),
+		);
+	}
+
+	/**
+	 * @dataProvider failing_resolvers
+	 */
+	public function test_a_failing_divi_registry_is_unavailable_and_not_a_false_not_registered(callable $registry ): void {
+		$catalog = new DiviDynamicCatalog( static fn(): bool => true, $registry, fn(): array => array(), static fn(): string => 'page', static fn(): array => array() );
+
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->validate_token( $this->token( 'post_title' ), 'text', self::PAGE ) );
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->listing( self::PAGE ) );
+		$this->assertIsArray( $catalog->listing( null ), 'sin página no se consulta el registro de Divi' );
+	}
+
+	public function test_a_failing_acf_resolver_is_unavailable_for_the_listing_and_for_acf_tokens(): void {
+		$catalog = new DiviDynamicCatalog(
+			static fn(): bool => true,
+			static fn(): array => array( 'post_title' => array( 'type' => 'text' ) ),
+			static fn( ?int $id ): array => throw new \RuntimeException( 'acf' ),
+			static fn(): string => 'page',
+			static fn(): array => array()
+		);
+
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->listing( self::PAGE ) );
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->validate_token( $this->token( 'custom_meta_nexo_prueba_texto' ), 'text', self::PAGE ) );
+		$this->assertIsString( $catalog->validate_token( $this->token( 'post_title' ), 'text', self::PAGE ), 'lo que no es de ACF no depende de ACF' );
+	}
+
+	public function test_the_production_resolver_fails_closed_when_divi_does_not_register_its_options_class(): void {
+		// Divi activo según el catálogo pero sin la clase de opciones (cambió de versión o no cargó): no es «Divi no la registra».
+		$catalog = new DiviDynamicCatalog( static fn(): bool => true, null, fn(): array => array(), static fn(): string => 'page', static fn(): array => array() );
+
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->validate_token( $this->token( 'post_title' ), 'text', self::PAGE ) );
+		$this->assertError( 'nexo_mcp_divi_dynamic_unavailable', $catalog->listing( self::PAGE ) );
+	}
+
+	public function test_the_registry_and_acf_are_asked_once_per_post_in_one_catalog(): void {
+		$registry = 0;
+		$acf      = array();
+		$catalog  = new DiviDynamicCatalog(
+			static fn(): bool => true,
+			static function ( int $id ) use ( &$registry ): array {
+				++$registry;
+
+				return array( 'post_title' => array( 'type' => 'text' ), 'post_link_url' => array( 'type' => 'url' ) );
+			},
+			static function ( ?int $id ) use ( &$acf ): array {
+				$acf[] = $id;
+
+				return array( array( 'name' => 'nexo_prueba_texto', 'label' => 'T', 'type' => 'text', 'group' => 'G' ) );
+			},
+			static fn(): string => 'page',
+			static fn(): array => array()
+		);
+
+		$catalog->listing( self::PAGE );
+		$catalog->listing( self::PAGE );
+		$catalog->validate_token( $this->token( 'post_title' ), 'text', self::PAGE );
+		$catalog->validate_token( $this->token( 'post_link_url' ), 'url', self::PAGE );
+		$catalog->validate_token( $this->token( 'custom_meta_nexo_prueba_texto' ), 'text', self::PAGE );
+
+		$this->assertSame( 1, $registry, 'get_options una vez por página' );
+		$this->assertSame( array( self::PAGE ), $acf, 'ACF una vez por página' );
+
+		$catalog->validate_token( $this->token( 'post_title' ), 'text', self::POST );
+		$catalog->listing( null );
+
+		$this->assertSame( 2, $registry );
+		$this->assertSame( array( self::PAGE, null ), $acf );
+	}
+
+	public function test_a_field_resolves_to_its_path_key_and_category_and_unknown_fields_are_null(): void {
+		$this->assertSame( array( 'path' => 'title.innerContent', 'key' => '', 'category' => 'text' ), DiviDynamicCatalog::field( 'divi/heading', 'title.innerContent' ) );
+		$this->assertSame( array( 'path' => 'button.innerContent', 'key' => 'linkUrl', 'category' => 'url' ), DiviDynamicCatalog::field( 'divi/button', 'button.innerContent.linkUrl' ) );
+		$this->assertSame( array( 'path' => 'image.innerContent', 'key' => 'src', 'category' => 'image' ), DiviDynamicCatalog::field( 'divi/image', 'image.innerContent.src' ) );
+		$this->assertNull( DiviDynamicCatalog::field( 'divi/heading', 'module.meta.adminLabel' ) );
+		$this->assertNull( DiviDynamicCatalog::field( 'divi/heading', 'button.innerContent.text' ) );
+		$this->assertNull( DiviDynamicCatalog::field( 'divi/button', 'button.innerContent.linkTarget' ) );
+		$this->assertNull( DiviDynamicCatalog::field( 'divi/section', 'title.innerContent' ) );
+		$this->assertContains( 'button.innerContent.linkUrl', DiviDynamicCatalog::fields_of( 'divi/button' ) );
+		$this->assertSame( array(), DiviDynamicCatalog::fields_of( 'divi/section' ) );
 	}
 }

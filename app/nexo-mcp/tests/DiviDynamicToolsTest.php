@@ -161,6 +161,6 @@ final class DiviDynamicToolsTest extends NexoTestCase {
 			$this->assertArrayHasKey( $tool, $all, $tool );
 		}
 
-		$this->assertArrayNotHasKey( 'nexo-mcp/set-divi-dynamic', $all, 'T5 no está hecho' );
+		$this->assertArrayHasKey( 'nexo-mcp/set-divi-dynamic', $all );
 	}
 }
