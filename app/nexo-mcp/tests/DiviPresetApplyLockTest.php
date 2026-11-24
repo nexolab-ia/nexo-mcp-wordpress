@@ -321,4 +321,16 @@ final class DiviPresetApplyLockTest extends NexoTestCase {
 		$this->assertIsArray( $this->edit_module( array( 'content' => array( 'content' => array( 'innerContent' => array( 'desktop' => array( 'value' => '<p>Nuevo</p>' ) ) ) ), 'preset' => null ) ) );
 		$this->assertSame( 0, $this->acquired );
 	}
+
+	public function test_un_nodo_con_preset_null_en_seccion_o_pagina_no_toma_el_bloqueo(): void {
+		$this->busy = true;
+
+		// En un nodo nuevo `preset: null` no aplica nada y es entrada inválida: se rechaza por validación, no por ocupado.
+		foreach ( array( $this->edit_section( $this->sections( array( 'preset' => null ) ) ), $this->create_page( $this->sections( array( 'preset' => null ) ) ) ) as $result ) {
+			$this->assertInstanceOf( \WP_Error::class, $result );
+			$this->assertSame( 'nexo_mcp_divi_tree_invalid', $result->get_error_code() );
+		}
+		$this->assertSame( 0, $this->acquired );
+		$this->assertSame( array(), $this->at_save );
+	}
 }

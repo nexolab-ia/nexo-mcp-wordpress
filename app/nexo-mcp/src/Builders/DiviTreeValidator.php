@@ -424,9 +424,9 @@ final class DiviTreeValidator {
 	}
 
 	/**
-	 * Indica si algún nodo del árbol (a cualquier profundidad) trae `preset`.
+	 * Indica si algún nodo del árbol (a cualquier profundidad) trae un `preset` no nulo.
 	 *
-	 * Quien escribe lo usa para tomar el bloqueo de presets sólo cuando hace falta.
+	 * Quien escribe lo usa para tomar el bloqueo de presets sólo cuando hace falta: `preset: null` no aplica ninguno.
 	 *
 	 * @param mixed $nodes Árbol recibido (sin validar).
 	 */
@@ -440,7 +440,7 @@ final class DiviTreeValidator {
 				continue;
 			}
 
-			if ( array_key_exists( 'preset', $node ) || ( isset( $node['children'] ) && self::tree_has_preset( $node['children'] ) ) ) {
+			if ( isset( $node['preset'] ) || ( isset( $node['children'] ) && self::tree_has_preset( $node['children'] ) ) ) {
 				return true;
 			}
 		}
