@@ -87,6 +87,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-variable',
 		'nexo-mcp/archive-divi-variable',
 		'nexo-mcp/set-divi-typography',
+		'nexo-mcp/get-divi-presets',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -318,8 +319,8 @@ final class ExtendedAbilityRegistrar {
 		);
 		$this->ability(
 			'undo-divi-design-change',
-			'Deshacer el último cambio del diseño global de Divi',
-			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Requiere el scope mcp:divi_design que el administrador enciende aparte (y mcp:destructive con force).',
+			'Deshacer el último cambio del diseño global o de los presets de Divi',
+			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, colores y tipografía del Customizer, o el catálogo completo de presets de módulos —área presets—) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Diseño global y presets comparten una sola pila: cada área exige su propio scope (mcp:divi_design para colores, variables y tipografía; mcp:divi_presets para presets), y si el cambio de arriba es de un área para la que el token no tiene permiso responde nexo_mcp_divi_design_area_forbidden y no restaura nada. Requiere el scope mcp:divi_design o mcp:divi_presets según el área, que el administrador enciende aparte (y mcp:destructive con force).',
 			'write',
 			array(
 				'type'                 => 'object',
@@ -332,8 +333,8 @@ final class ExtendedAbilityRegistrar {
 				),
 				'additionalProperties' => false,
 			),
-			fn( array $input ) => $this->builders->undo_divi_design_change( true === ( $input['force'] ?? false ) ),
-			fn( array $input = array() ) => $this->divi_design_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
+			fn( array $input ) => $this->builders->undo_divi_design_change( true === ( $input['force'] ?? false ), fn( string $area ): bool => $this->divi_area_write( $area ) ),
+			fn( array $input = array() ) => $this->divi_area_write( $this->builders->divi_last_change_area() ) && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
 		);
 		$this->ability(
 			'set-divi-global-color',
@@ -501,6 +502,24 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->set_divi_typography( $input ),
 			fn() => $this->divi_design_write()
+		);
+		$this->ability(
+			'get-divi-presets',
+			'Obtener los presets de módulos de Divi 5',
+			'Lee los presets de Divi 5: los de módulo (uno por módulo, con su id, nombre, fechas y cuál es el predeterminado del módulo) y los de grupo de opciones (fondo, borde, fuente, espaciado…, con su grupo, el módulo para el que se hicieron y el predeterminado de cada grupo), más los grupos de opciones disponibles para cada módulo del catálogo (available_groups: id de grupo y nombre). Un preset pesa en todos los módulos que lo usan y el predeterminado en todos los que no tienen otro: lo que diga un attr propio del módulo gana siempre. Con module (por ejemplo divi/text; sólo módulos del catálogo de create-divi-page, si no responde nexo_mcp_divi_preset_module_unknown) devuelve además los attrs de cada preset de ese módulo y los de grupo hechos para él; sin module devuelve todo sin attrs. Los módulos fuera del catálogo se listan con in_catalog: false y no se gestionan. Se deshace el último cambio con nexo-mcp-undo-divi-design-change (área presets). Devuelve {modules, groups, available_groups, history_count}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Leer sólo requiere el permiso de lectura de constructores; cambiar presets requiere el scope mcp:divi_presets que el administrador enciende aparte.',
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'module' => array(
+						'type'        => 'string',
+						'description' => 'Nombre de bloque de un módulo del catálogo (divi/text, divi/heading, divi/button…). Sin él se devuelven todos los presets sin attrs.',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->get_divi_presets( $input ),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
 			'create-global-class',
@@ -2154,6 +2173,22 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function divi_design_write(): bool {
 		return $this->module_write( 'divi_design_tools_enabled', Capabilities::DIVI_DESIGN, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de escritura de los presets de módulos de Divi (cambian todo el sitio en vivo).
+	 */
+	private function divi_presets_write(): bool {
+		return $this->module_write( 'divi_presets_tools_enabled', Capabilities::DIVI_PRESETS, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de escritura del área del historial de Divi: `presets` el de presets y el resto el del diseño global.
+	 *
+	 * @param string|null $area Área del último cambio; null (sin historial) cuenta como diseño global.
+	 */
+	private function divi_area_write( ?string $area ): bool {
+		return 'presets' === $area ? $this->divi_presets_write() : $this->divi_design_write();
 	}
 
 	/**

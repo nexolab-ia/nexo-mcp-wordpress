@@ -50,6 +50,7 @@ final class ScopeMap {
 		'mcp:destructive'         => Capabilities::DESTRUCTIVE,
 		'mcp:design_system'       => Capabilities::DESIGN_SYSTEM,
 		'mcp:divi_design'         => Capabilities::DIVI_DESIGN,
+		'mcp:divi_presets'        => Capabilities::DIVI_PRESETS,
 		// Variantes de sólo consulta: apuntan a la misma capacidad que su módulo.
 		'mcp:seo:read'            => Capabilities::SEO,
 		'mcp:maintenance:read'    => Capabilities::MAINTENANCE,
@@ -110,6 +111,7 @@ final class ScopeMap {
 		'mcp:builders:dynamic'    => 'builders_dynamic_enabled',
 		'mcp:builders:components' => 'builders_components_enabled',
 		'mcp:divi_design'         => 'divi_design_tools_enabled',
+		'mcp:divi_presets'        => 'divi_presets_tools_enabled',
 	);
 
 	/**
@@ -134,6 +136,7 @@ final class ScopeMap {
 		'mcp:destructive'         => 'Eliminar contenido de forma permanente',
 		'mcp:design_system'       => 'Cambiar clases, variables, colores y tipografía globales de Elementor (afecta a todo el sitio)',
 		'mcp:divi_design'         => 'Cambiar la paleta, las variables, las fuentes y la tipografía globales de Divi (afecta a todo el sitio)',
+		'mcp:divi_presets'        => 'Crear, cambiar y borrar los presets de módulos de Divi, y fijar el predeterminado (afecta a todo el sitio)',
 		'mcp:seo:read'            => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
 		'mcp:maintenance:read'    => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
 	);

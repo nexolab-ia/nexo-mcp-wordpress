@@ -53,6 +53,8 @@ final class Settings {
 			'builders_components_enabled' => false,
 			// Cambia paleta, variables y tipografía globales de Divi 5 de todo el sitio en vivo: apagado hasta que el dueño lo enciende.
 			'divi_design_tools_enabled'   => false,
+			// Cambia los presets de módulos de Divi 5 (afectan a todo el sitio en vivo): apagado hasta que el dueño lo enciende.
+			'divi_presets_tools_enabled'  => false,
 			'publishing_enabled'          => true,
 			'destructive_enabled'         => false,
 			'read_only'                   => true,

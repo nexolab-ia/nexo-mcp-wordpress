@@ -83,6 +83,14 @@ final class Capabilities {
 	public const DIVI_DESIGN = 'nexo_mcp_divi_design';
 
 	/**
+	 * Cambiar los presets de módulos de Divi 5 (módulo y grupos de opciones).
+	 *
+	 * Va aparte de DIVI_DESIGN: un preset cambia el aspecto de todos los módulos que lo usan o que
+	 * lo tienen como predeterminado. Además la enciende aparte el interruptor `divi_presets_tools_enabled`.
+	 */
+	public const DIVI_PRESETS = 'nexo_mcp_divi_presets';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {

@@ -104,6 +104,13 @@ final class BuilderGateway {
 	private ?DiviDesignOperations $divi_design_ops;
 
 	/**
+	 * Presets de módulos de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviPresetStore|null
+	 */
+	private ?DiviPresetStore $divi_presets;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -120,6 +127,7 @@ final class BuilderGateway {
 	 * @param ComponentStore|null           $components       Almacén de componentes (las pruebas inyectan el de Elementor).
 	 * @param DiviDesignStore|null          $divi_design      Almacén del diseño global de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
+	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -132,7 +140,8 @@ final class BuilderGateway {
 		?DynamicTagCatalog $dynamic_tags = null,
 		?ComponentStore $components = null,
 		?DiviDesignStore $divi_design = null,
-		?DiviDesignOperations $divi_design_ops = null
+		?DiviDesignOperations $divi_design_ops = null,
+		?DiviPresetStore $divi_presets = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -145,6 +154,7 @@ final class BuilderGateway {
 		$this->components       = $components;
 		$this->divi_design      = $divi_design;
 		$this->divi_design_ops  = $divi_design_ops;
+		$this->divi_presets     = $divi_presets;
 	}
 
 	/**
@@ -233,12 +243,48 @@ final class BuilderGateway {
 	/**
 	 * Deshace el último cambio del diseño global de Divi 5.
 	 *
-	 * @param bool $force Restaurar aunque el área haya cambiado después.
+	 * El historial es uno solo para el diseño global y los presets de Divi; el almacén de presets se crea antes para que
+	 * registre su área y el deshacer sepa restaurarla.
+	 *
+	 * @param bool          $force   Restaurar aunque el área haya cambiado después.
+	 * @param callable|null $allowed fn( string $area ): bool. Permiso de escritura del área del último cambio.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo_divi_design_change( bool $force = false ) {
-		return $this->divi_design()->undo( $force );
+	public function undo_divi_design_change( bool $force = false, ?callable $allowed = null ) {
+		$this->divi_presets();
+
+		return $this->divi_design()->undo( $force, $allowed );
+	}
+
+	/**
+	 * Área del último cambio del historial de Divi (`presets`, `colors`…), o null si no hay historial.
+	 */
+	public function divi_last_change_area(): ?string {
+		$history = $this->divi_design()->history();
+		$last    = end( $history );
+
+		return false === $last ? null : $last['area'];
+	}
+
+	/**
+	 * Lee los presets de módulos de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `module` opcional.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_divi_presets( array $input ) {
+		return $this->divi_presets()->read( isset( $input['module'] ) && is_string( $input['module'] ) ? $input['module'] : null );
+	}
+
+	/**
+	 * Almacén de presets de Divi (comparte con el diseño global el historial, el bloqueo y el deshacer).
+	 */
+	public function divi_presets(): DiviPresetStore {
+		$this->divi_presets ??= new DiviPresetStore( $this->divi_design() );
+
+		return $this->divi_presets;
 	}
 
 	/**
