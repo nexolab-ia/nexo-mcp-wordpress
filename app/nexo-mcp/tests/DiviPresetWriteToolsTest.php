@@ -132,7 +132,7 @@ final class DiviPresetWriteToolsTest extends NexoTestCase {
 		$store                     = $this->presets( $design );
 		$ops                       = new DiviPresetOperations(
 			$store,
-			fn( string $kind, string $id ): array => $this->usage[ $kind . ':' . $id ] ?? array(),
+			fn( string $kind, string $id ): array => array( 'post_ids' => $this->usage[ $kind . ':' . $id ] ?? array(), 'total' => count( $this->usage[ $kind . ':' . $id ] ?? array() ) ),
 			static fn(): string => 'uuid-1',
 			static fn(): int => 1800000000,
 			static fn(): string => '5.19.1',

@@ -524,6 +524,12 @@ final class Divi5Tree {
 				);
 			}
 
+			$preset = self::preset_refs( $attrs );
+
+			if ( array() !== $preset ) {
+				$node['preset'] = $preset;
+			}
+
 			$inner = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
 
 			if ( array() !== $inner ) {
@@ -535,6 +541,54 @@ final class Divi5Tree {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Referencias a presets de un bloque: `{module?: [ids], groups?: {<groupId>: [ids]}}` (vacío si no hay ninguna).
+	 *
+	 * `modulePreset` puede ser una cadena o una lista; `groupPreset` guarda `presetId` por id de grupo.
+	 *
+	 * @param array<string, mixed> $attrs Atributos del bloque.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function preset_refs( array $attrs ): array {
+		$out    = array();
+		$module = self::ids( $attrs['modulePreset'] ?? null );
+
+		if ( array() !== $module ) {
+			$out['module'] = $module;
+		}
+
+		$groups = isset( $attrs['groupPreset'] ) && is_array( $attrs['groupPreset'] ) ? $attrs['groupPreset'] : array();
+		$found  = array();
+
+		foreach ( $groups as $group_id => $entry ) {
+			$ids = is_array( $entry ) ? self::ids( $entry['presetId'] ?? null ) : array();
+
+			if ( array() !== $ids ) {
+				$found[ (string) $group_id ] = $ids;
+			}
+		}
+
+		if ( array() !== $found ) {
+			$out['groups'] = $found;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Lista de ids de preset de una cadena o una lista (sin vacíos).
+	 *
+	 * @param mixed $value Valor guardado.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function ids( $value ): array {
+		$list = is_array( $value ) ? $value : array( $value );
+
+		return array_values( array_filter( $list, static fn( $id ): bool => is_string( $id ) && '' !== $id ) );
 	}
 
 	/**

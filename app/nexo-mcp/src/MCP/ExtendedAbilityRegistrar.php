@@ -614,7 +614,7 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'delete-divi-preset',
 			'Borrar un preset de módulo o de grupo de Divi 5',
-			'Borra un preset de Divi 5 (kind: module o group). CAMBIA TODO EL SITIO EN VIVO: los módulos que lo usan vuelven al estilo del predeterminado. Antes llamar a nexo-mcp-get-divi-presets. Busca el uso (el id exacto en modulePreset o groupPreset de las entradas de Divi 5 no borradas; un preset de grupo enlazado desde un preset de módulo también cuenta): si está en uso y no se manda force responde nexo_mcp_divi_preset_in_use con data.post_ids (y data.preset_ids) y no borra nada; con force: true se borra igual y además exige el permiso destructivo. Si era el predeterminado, también lo desmarca (default_cleared). Se deshace con nexo-mcp-undo-divi-design-change (restaura el catálogo, con el mismo id). Id inexistente: nexo_mcp_divi_preset_not_found; módulo fuera del catálogo: nexo_mcp_divi_preset_module_unknown; datos inválidos: nexo_mcp_divi_preset_invalid. Devuelve {deleted, kind, name, default_cleared, posts_affected, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_presets que el administrador enciende aparte (y mcp:destructive con force).',
+			'Borra un preset de Divi 5 (kind: module o group). CAMBIA TODO EL SITIO EN VIVO: los módulos que lo usan vuelven al estilo del predeterminado. Antes llamar a nexo-mcp-get-divi-presets. Busca el uso (el id exacto en modulePreset o groupPreset de las entradas de Divi 5 no borradas; un preset de grupo enlazado desde un preset de módulo también cuenta): si está en uso y no se manda force responde nexo_mcp_divi_preset_in_use con data.post_ids (hasta 100; si hay más, data.post_ids_truncated: true y data.post_total) y data.preset_ids, y no borra nada. Un id con --, <, >, &, comillas, barra invertida o caracteres no ASCII (WordPress los escapa en el contenido, así que el uso no se puede comprobar) responde nexo_mcp_divi_preset_usage_unknown sin force; con force: true se borra igual (usage_unverified: true) y además exige el permiso destructivo. Al borrar con force, si era un preset de grupo enlazado desde presets de módulo, quita el enlace de sus groupPresets en el mismo cambio (links_removed). Si era el predeterminado, también lo desmarca (default_cleared). Se deshace con nexo-mcp-undo-divi-design-change (restaura el catálogo, con el mismo id). Id inexistente: nexo_mcp_divi_preset_not_found; módulo fuera del catálogo: nexo_mcp_divi_preset_module_unknown; datos inválidos: nexo_mcp_divi_preset_invalid. Devuelve {deleted, kind, name, default_cleared, posts_affected (y posts_affected_truncated/posts_affected_total si hay más de 100), links_removed?, usage_unverified?, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_presets que el administrador enciende aparte (y mcp:destructive con force).',
 			'write',
 			array(
 				'type'                 => 'object',
@@ -1497,9 +1497,11 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes ni URLs javascript:.',
 				'',
+				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
+				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid.',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
 			)
 		);
 	}
@@ -1540,6 +1542,23 @@ final class ExtendedAbilityRegistrar {
 					'additionalProperties' => true,
 					'description'          => 'Atributos de diseño de escritorio (color, espaciado, tipografía), con cada valor en <ruta>.desktop.value.',
 				),
+				'preset'      => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'module' => array(
+							'type'        => array( 'string', 'null' ),
+							'minLength'   => 1,
+							'description' => 'Id del preset de módulo (de nexo-mcp-get-divi-presets) o null para quitarlo.',
+						),
+						'groups' => array(
+							'type'                 => 'object',
+							'additionalProperties' => array( 'type' => array( 'string', 'null' ) ),
+							'description'          => 'Presets de grupo de opciones: {<id de grupo, p. ej. module.decoration.background>: id del preset o null para quitarlo}.',
+						),
+					),
+					'additionalProperties' => false,
+					'description'          => 'Aplica o quita presets en el módulo (escribe modulePreset/groupPreset). Se puede pasar sola o con content/design.',
+				),
 				'draft'       => array(
 					'type'        => 'boolean',
 					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
@@ -1554,7 +1573,7 @@ final class ExtendedAbilityRegistrar {
 	 * Descripción del árbol de módulos de Divi 5 que comparten create-divi-page y edit-divi-section.
 	 */
 	private function divi_tree_help(): string {
-		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes ni URLs javascript:. Máximo 200 módulos y 3 MB en la página resultante.';
+		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes ni URLs javascript:. Un nodo puede llevar además preset {module?: id | null, groups?: {<id de grupo>: id | null}} para aplicarle presets de Divi 5 (ids de nexo-mcp-get-divi-presets; se escriben como modulePreset/groupPreset; modulePreset/groupPreset dentro de attrs se rechazan; un id que no existe para ese módulo o grupo da nexo_mcp_divi_preset_unknown con data.path y no se escribe nada). Máximo 200 módulos y 3 MB en la página resultante.';
 	}
 
 	/**

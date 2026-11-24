@@ -27,6 +27,11 @@ final class DiviPresetOperations {
 	private const SCAN_BATCH = 200;
 
 	/**
+	 * Ids de entradas que se devuelven al buscar el uso (el resto sólo se cuenta).
+	 */
+	private const MAX_POST_IDS = 100;
+
+	/**
 	 * Código interno de «nada que cambiar» (no sale de esta clase).
 	 */
 	private const UNCHANGED = 'nexo_mcp_divi_preset_unchanged';
@@ -39,7 +44,7 @@ final class DiviPresetOperations {
 	private DiviPresetStore $store;
 
 	/**
-	 * Fn( string $kind, string $id ): array<int, int>. Ids de las entradas de Divi 5 no borradas que usan el preset.
+	 * Fn( string $kind, string $id ): array{post_ids: array<int, int>, total: int}. Entradas de Divi 5 no borradas que usan el preset (los primeros ids y el total).
 	 *
 	 * @var callable
 	 */
@@ -77,7 +82,7 @@ final class DiviPresetOperations {
 	 * Construye las operaciones; sin argumentos opcionales usa WordPress y Divi de verdad.
 	 *
 	 * @param DiviPresetStore        $store      Almacén.
-	 * @param callable|null          $find_usage fn( string $kind, string $id ): array<int, int>.
+	 * @param callable|null          $find_usage fn( string $kind, string $id ): array{post_ids: array<int, int>, total: int}.
 	 * @param callable|null          $uuid       fn(): string.
 	 * @param callable|null          $now        fn(): int.
 	 * @param callable|null          $version    fn(): string.
@@ -357,14 +362,17 @@ final class DiviPresetOperations {
 			return $this->invalid( 'id', __( 'es obligatorio: el id del preset que se borra.', 'nexo-mcp' ) );
 		}
 
-		$force   = true === ( $input['force'] ?? false );
-		$posts   = array();
-		$cleared = false;
+		$force      = true === ( $input['force'] ?? false );
+		$posts      = array();
+		$total      = 0;
+		$cleared    = false;
+		$unverified = false;
+		$removed    = array();
 
 		// La búsqueda de uso corre dentro del bloqueo del almacén, junto con el borrado: comprobar y actuar
 		// es atómico y nadie puede empezar a usar el preset entre una cosa y la otra.
 		$result = $this->store->update(
-			function ( array $current ) use ( $kind, $name, $id, $force, &$posts, &$cleared ) {
+			function ( array $current ) use ( $kind, $name, $id, $force, &$posts, &$total, &$cleared, &$unverified, &$removed ) {
 				$collection = isset( $current[ $kind ][ $name ] ) && is_array( $current[ $kind ][ $name ] ) ? $current[ $kind ][ $name ] : null;
 				$item       = null !== $collection && isset( $collection['items'][ $id ] ) && is_array( $collection['items'][ $id ] ) ? $collection['items'][ $id ] : null;
 
@@ -378,17 +386,48 @@ final class DiviPresetOperations {
 					return $context;
 				}
 
-				$posts   = array_values( array_map( 'intval', (array) ( $this->find_usage )( $kind, $id ) ) );
+				// WordPress escapa `--`, `<`, `>`, `&` y `"` (y Divi acepta ids libres) en el JSON del bloque: la búsqueda del
+				// id tal cual no los encontraría y daría un «sin uso» falso. Elección: no se adivina la forma escapada; el
+				// borrado sin `force` se rechaza y con `force` se avisa de que el uso no se verificó.
+				if ( self::is_unscannable_id( $id ) ) {
+					if ( ! $force ) {
+						return new \WP_Error(
+							'nexo_mcp_divi_preset_usage_unknown',
+							sprintf(
+								/* translators: %s: id del preset. */
+								__( 'El id «%s» tiene caracteres que WordPress escapa en el contenido de las páginas (como --, <, >, & o comillas): no se puede comprobar si el preset está en uso. No se borró nada. Repite con force: true (pide además el permiso destructivo) si estás seguro.', 'nexo-mcp' ),
+								$id
+							),
+							array( 'id' => $id )
+						);
+					}
+
+					$unverified = true;
+					$usage      = array(
+						'post_ids' => array(),
+						'total'    => 0,
+					);
+				} else {
+					$usage = $this->usage( $kind, $id );
+				}
+
+				$posts   = $usage['post_ids'];
+				$total   = $usage['total'];
 				$linking = 'group' === $kind ? $this->presets_linking_group( $current, $id ) : array();
 
 				if ( ( array() !== $posts || array() !== $linking ) && ! $force ) {
 					$data = array( 'post_ids' => $posts );
 
+					if ( $total > count( $posts ) ) {
+						$data['post_ids_truncated'] = true;
+						$data['post_total']         = $total;
+					}
+
 					if ( array() !== $linking ) {
 						$data['preset_ids'] = $linking;
 					}
 
-					return new \WP_Error( 'nexo_mcp_divi_preset_in_use', $this->in_use_message( $id, $posts, $linking ), $data );
+					return new \WP_Error( 'nexo_mcp_divi_preset_in_use', $this->in_use_message( $id, $posts, $linking, $total ), $data );
 				}
 
 				unset( $collection['items'][ $id ] );
@@ -404,6 +443,11 @@ final class DiviPresetOperations {
 					$current[ $kind ][ $name ] = $collection;
 				}
 
+				// Un preset de grupo enlazado desde un preset de módulo: el enlace se quita en el mismo cambio.
+				if ( 'group' === $kind && array() !== $linking ) {
+					$current = $this->unlink_group( $current, $id, $removed );
+				}
+
 				return $current;
 			},
 			'delete-divi-preset'
@@ -413,40 +457,55 @@ final class DiviPresetOperations {
 			return $result;
 		}
 
-		return array_merge(
-			array(
-				'deleted'         => $id,
-				'kind'            => $kind,
-				'name'            => $name,
-				'default_cleared' => $cleared,
-				'posts_affected'  => $posts,
-			),
-			$result
+		$out = array(
+			'deleted'         => $id,
+			'kind'            => $kind,
+			'name'            => $name,
+			'default_cleared' => $cleared,
+			'posts_affected'  => $posts,
 		);
+
+		if ( $total > count( $posts ) ) {
+			$out['posts_affected_truncated'] = true;
+			$out['posts_affected_total']     = $total;
+		}
+
+		if ( $unverified ) {
+			$out['usage_unverified'] = true;
+		}
+
+		if ( array() !== $removed ) {
+			$out['links_removed'] = $removed;
+		}
+
+		return array_merge( $out, $result );
 	}
 
 	/**
 	 * Entradas de Divi 5 no borradas que usan un preset (su id exacto en `modulePreset` o en el `presetId` de `groupPreset`).
 	 *
+	 * Devuelve los primeros {@see self::MAX_POST_IDS} ids y el total: se recorren todos los lotes para contar, así que un
+	 * uso grande no se confunde con uno chico.
+	 *
 	 * @param string $kind `module` o `group`.
 	 * @param string $id   Id del preset.
 	 *
-	 * @return array<int, int>
+	 * @return array{post_ids: array<int, int>, total: int}
 	 */
 	public static function scan_preset_usage( string $kind, string $id ): array {
 		global $wpdb;
 
 		$posts  = array();
+		$total  = 0;
 		$after  = 0;
-		$full   = false;
-		$found  = 0;
+		$more   = true;
 		$quoted = preg_quote( substr( (string) wp_json_encode( $id, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 1, -1 ), '/' );
 		$key    = 'group' === $kind ? 'presetId' : 'modulePreset';
 		$exact  = '/"' . $key . '"\s*:\s*(?:\[[^\]]*"' . $quoted . '"[^\]]*\]|"' . $quoted . '")/';
 
 		// Sin tope de filas: se recorre por lotes (clave `ID > último`) y cada lote se filtra con la expresión exacta,
 		// así un id parecido (`abc` frente a `abc-1`) no puede agotar un límite y esconder un uso real.
-		do {
+		while ( $more ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Búsqueda puntual de uso, sin caché a propósito.
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
@@ -469,14 +528,115 @@ final class DiviPresetOperations {
 				$after = max( $after, (int) $row['ID'] );
 
 				if ( isset( $row['post_content'] ) && 1 === preg_match( $exact, (string) $row['post_content'] ) ) {
-					$posts[] = (int) $row['ID'];
+					++$total;
+
+					if ( count( $posts ) < self::MAX_POST_IDS ) {
+						$posts[] = (int) $row['ID'];
+					}
 				}
 			}
-			$full  = count( $rows ) >= self::SCAN_BATCH;
-			$found = count( $posts );
-		} while ( $full && $found < 100 );
 
-		return array_slice( $posts, 0, 100 );
+			$more = count( $rows ) >= self::SCAN_BATCH;
+		}
+
+		return array(
+			'post_ids' => $posts,
+			'total'    => $total,
+		);
+	}
+
+	/**
+	 * Indica si el id tiene caracteres que WordPress escapa en el JSON de un bloque (`--`, `<`, `>`, `&`, comillas, barra
+	 * invertida) o que no son ASCII imprimible: la búsqueda de uso no los puede encontrar con seguridad.
+	 *
+	 * @param string $id Id del preset.
+	 */
+	private static function is_unscannable_id( string $id ): bool {
+		return 1 === preg_match( '/--|[<>&"\\\\]|[^\x20-\x7e]/', $id );
+	}
+
+	/**
+	 * Uso de un preset con la forma `{post_ids, total}` (el total nunca es menor que los ids).
+	 *
+	 * @param string $kind `module` o `group`.
+	 * @param string $id   Id del preset.
+	 *
+	 * @return array{post_ids: array<int, int>, total: int}
+	 */
+	private function usage( string $kind, string $id ): array {
+		$found = ( $this->find_usage )( $kind, $id );
+		$ids   = isset( $found['post_ids'] ) && is_array( $found['post_ids'] ) ? array_values( array_map( 'intval', $found['post_ids'] ) ) : array();
+
+		return array(
+			'post_ids' => $ids,
+			'total'    => max( count( $ids ), isset( $found['total'] ) && is_numeric( $found['total'] ) ? (int) $found['total'] : 0 ),
+		);
+	}
+
+	/**
+	 * Quita el id de un preset de grupo de los `groupPresets` de todos los presets de módulo.
+	 *
+	 * Un grupo cuya lista de ids queda vacía se quita; si `groupPresets` queda vacío se quita también. El resto del
+	 * preset de módulo no cambia.
+	 *
+	 * @param array<string, mixed> $current Catálogo completo.
+	 * @param string               $id      Id del preset de grupo borrado.
+	 * @param array<int, string>   $removed Ids de los presets de módulo que se cambiaron (salida).
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function unlink_group( array $current, string $id, array &$removed ): array {
+		$modules = isset( $current['module'] ) && is_array( $current['module'] ) ? $current['module'] : array();
+
+		foreach ( $modules as $module => $collection ) {
+			if ( ! is_array( $collection ) || ! isset( $collection['items'] ) || ! is_array( $collection['items'] ) ) {
+				continue;
+			}
+
+			foreach ( $collection['items'] as $key => $item ) {
+				if ( ! is_array( $item ) || ! isset( $item['groupPresets'] ) || ! is_array( $item['groupPresets'] ) ) {
+					continue;
+				}
+
+				$links   = $item['groupPresets'];
+				$changed = false;
+
+				foreach ( $links as $group_id => $entry ) {
+					$ids = is_array( $entry ) ? ( $entry['presetId'] ?? null ) : $entry;
+					$ids = is_array( $ids ) ? $ids : array( $ids );
+
+					if ( ! in_array( $id, $ids, true ) ) {
+						continue;
+					}
+
+					$changed = true;
+					$left    = array_values( array_filter( $ids, static fn( $other ): bool => $other !== $id ) );
+
+					if ( array() === $left ) {
+						unset( $links[ $group_id ] );
+					} elseif ( is_array( $entry ) ) {
+						$links[ $group_id ]['presetId'] = $left;
+					} else {
+						$links[ $group_id ] = $left;
+					}
+				}
+
+				if ( ! $changed ) {
+					continue;
+				}
+
+				if ( array() === $links ) {
+					unset( $item['groupPresets'] );
+				} else {
+					$item['groupPresets'] = $links;
+				}
+
+				$current['module'][ $module ]['items'][ $key ] = $item;
+				$removed[]                                     = isset( $item['id'] ) && is_string( $item['id'] ) ? $item['id'] : (string) $key;
+			}
+		}
+
+		return $current;
 	}
 
 	/**
@@ -669,13 +829,19 @@ final class DiviPresetOperations {
 	 * @param string             $id      Id del preset.
 	 * @param array<int, int>    $posts   Entradas que lo usan.
 	 * @param array<int, string> $linking Presets de módulo que lo enlazan.
+	 * @param int                $total   Total de entradas que lo usan (puede ser mayor que las listadas).
 	 */
-	private function in_use_message( string $id, array $posts, array $linking ): string {
+	private function in_use_message( string $id, array $posts, array $linking, int $total = 0 ): string {
 		$where = array();
 
 		if ( array() !== $posts ) {
-			/* translators: %s: ids de las entradas. */
-			$where[] = sprintf( __( 'en estas entradas de Divi 5 (ids): %s', 'nexo-mcp' ), implode( ', ', $posts ) );
+			if ( $total > count( $posts ) ) {
+				/* translators: 1: cuántas se listan, 2: total de entradas, 3: ids de las entradas. */
+				$where[] = sprintf( __( 'en %2$d entradas de Divi 5 (se listan las primeras %1$d, ids: %3$s)', 'nexo-mcp' ), count( $posts ), $total, implode( ', ', $posts ) );
+			} else {
+				/* translators: %s: ids de las entradas. */
+				$where[] = sprintf( __( 'en estas entradas de Divi 5 (ids): %s', 'nexo-mcp' ), implode( ', ', $posts ) );
+			}
 		}
 
 		if ( array() !== $linking ) {

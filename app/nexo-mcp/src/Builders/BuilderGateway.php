@@ -341,6 +341,18 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Validador de los árboles y parches de Divi 5; los presets que un nodo aplica se leen del almacén de presets (sólo si hay `preset`).
+	 */
+	private function divi_validator(): DiviTreeValidator {
+		return new DiviTreeValidator(
+			null,
+			null,
+			fn(): array => $this->divi_presets()->current(),
+			fn( string $module ): array => $this->divi_presets()->module_groups( $module )
+		);
+	}
+
+	/**
 	 * Crea o actualiza un color global de Divi 5.
 	 *
 	 * @param array<string, mixed> $input `{id?, label, color}`.
@@ -744,7 +756,7 @@ final class BuilderGateway {
 			new Divi5Adapter(),
 			$this->backup,
 			new WorkingCopy( $this->settings ),
-			new DiviTreeValidator(),
+			$this->divi_validator(),
 			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
 		);
 
@@ -755,6 +767,7 @@ final class BuilderGateway {
 				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
 				'content'     => $input['content'] ?? null,
 				'design'      => $input['design'] ?? null,
+				'preset'      => $input['preset'] ?? null,
 				'draft'       => $input['draft'] ?? false,
 			)
 		);
@@ -768,7 +781,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function create_divi_page( array $input ) {
-		return ( new Divi5PageCreator() )->create( $input );
+		return ( new Divi5PageCreator( $this->divi_validator() ) )->create( $input );
 	}
 
 	/**
@@ -792,7 +805,7 @@ final class BuilderGateway {
 			new Divi5Adapter(),
 			$this->backup,
 			new WorkingCopy( $this->settings ),
-			new DiviTreeValidator(),
+			$this->divi_validator(),
 			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
 		);
 

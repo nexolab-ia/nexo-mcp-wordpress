@@ -21,6 +21,9 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
  * escribe), se valida el parche con {@see DiviTreeValidator::validate_patch()} y sólo
  * entonces se crea o reutiliza la copia, se respalda y se guarda. Nunca publica.
  *
+ * `preset` (`{module?, groups?}`) pone o quita `modulePreset`/`groupPreset` del bloque con
+ * {@see DiviTreeValidator::validate_preset_ref()}; los ids deben existir en el catálogo de presets.
+ *
  * El parche validado sólo trae rutas `<ruta>.desktop.value`; se fusiona en profundidad
  * con los atributos del bloque, de modo que tablet, teléfono, hover y todo lo no tocado
  * queda igual. El contenido que ya pasó el validador se guarda con los filtros kses
@@ -73,7 +76,7 @@ final class Divi5ModuleEditor {
 	 * Edita el módulo.
 	 *
 	 * @param \WP_Post             $post  Contenido indicado (el original o su copia).
-	 * @param array<string, mixed> $input Parámetros: `path`, `fingerprint`, `content`, `design`, `draft`.
+	 * @param array<string, mixed> $input Parámetros: `path`, `fingerprint`, `content`, `design`, `preset`, `draft`.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
@@ -183,16 +186,32 @@ final class Divi5ModuleEditor {
 			}
 		}
 
-		$clean = $this->validator->validate_patch( $type, $patch );
+		$preset = $input['preset'] ?? null;
+		$clean  = array();
 
-		if ( is_wp_error( $clean ) ) {
-			return $clean;
+		// Sin `preset` el parche vacío se rechaza como siempre; con `preset` el parche puede ir vacío.
+		if ( array() !== $patch || null === $preset ) {
+			$clean = $this->validator->validate_patch( $type, $patch );
+
+			if ( is_wp_error( $clean ) ) {
+				return $clean;
+			}
+		}
+
+		$ref = null === $preset ? null : $this->validator->validate_preset_ref( $type, $preset );
+
+		if ( is_wp_error( $ref ) ) {
+			return $ref;
 		}
 
 		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
 
 		foreach ( $clean as $part ) {
 			$attrs = self::merge( $attrs, $part );
+		}
+
+		if ( null !== $ref ) {
+			$attrs = DiviTreeValidator::apply_preset_ref( $attrs, $ref );
 		}
 
 		$block['attrs'] = $attrs;

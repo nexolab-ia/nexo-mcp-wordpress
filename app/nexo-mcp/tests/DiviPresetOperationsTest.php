@@ -32,6 +32,9 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 	/** @var array<string, array<int, int>> Uso simulado: "kind:id" => ids de entradas. */
 	private array $usage = array();
 
+	/** @var array<string, int> Total simulado de entradas que usan el preset, si es mayor que los ids devueltos. */
+	private array $totals = array();
+
 	/** @var array<int, string> Ids que va dando el generador de uuid. */
 	private array $uuids = array( 'uuid-1', 'uuid-2', 'uuid-3' );
 
@@ -43,6 +46,7 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 		$this->log               = array();
 		$this->audit             = array();
 		$this->usage             = array();
+		$this->totals            = array();
 		$this->uuids             = array( 'uuid-1', 'uuid-2', 'uuid-3' );
 		$this->flushes           = 0;
 		$this->presets           = $this->sample();
@@ -179,7 +183,9 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 			function ( string $kind, string $id ): array {
 				$this->log[] = 'scan:' . $kind . ':' . $id;
 
-				return $this->usage[ $kind . ':' . $id ] ?? array();
+				$ids = $this->usage[ $kind . ':' . $id ] ?? array();
+
+				return array( 'post_ids' => $ids, 'total' => $this->totals[ $kind . ':' . $id ] ?? count( $ids ) );
 			},
 			function (): string {
 				return (string) array_shift( $this->uuids );
@@ -632,7 +638,7 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 
 	/**
 	 * @param array<int, array<string, string>> $posts Entradas simuladas.
-	 * @return array<int, int>
+	 * @return array{post_ids: array<int, int>, total: int}
 	 */
 	private function scan( string $kind, string $id, array $posts ): array {
 		$saved           = $GLOBALS['wpdb'];
@@ -700,7 +706,9 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 		$posts[2006] = $page( 'publish', '{"groupPreset":{"module.decoration.background":{"presetId":["abc"],"groupName":"divi/background"}}}' );
 		$posts[2007] = array( 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => 'sin divi {"modulePreset":["abc"]}' );
 
-		$this->assertSame( array( 2000, 2001, 2002 ), $this->scan( 'module', 'abc', $posts ) );
+		$found = $this->scan( 'module', 'abc', $posts );
+		$this->assertSame( array( 2000, 2001, 2002 ), $found['post_ids'] );
+		$this->assertSame( 3, $found['total'] );
 	}
 
 	public function test_el_escaneo_de_grupo_busca_el_id_en_presetid_de_grouppreset(): void {
@@ -712,6 +720,165 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 			4 => $page( '{"modulePreset":["g1"]}' ),
 		);
 
-		$this->assertSame( array( 1, 3 ), $this->scan( 'group', 'g1', $posts ) );
+		$this->assertSame( array( 1, 3 ), $this->scan( 'group', 'g1', $posts )['post_ids'] );
+	}
+
+	// --- Avisos de L6 ---------------------------------------------------------------------------
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function escaped_ids(): array {
+		return array(
+			'doble guion'    => array( 'a--b' ),
+			'menor que'      => array( 'a<b' ),
+			'mayor que'      => array( 'a>b' ),
+			'ampersand'      => array( 'a&b' ),
+			'comillas'       => array( 'a"b' ),
+			'barra invertida' => array( 'a\\b' ),
+			'no ASCII'       => array( 'añb' ),
+		);
+	}
+
+	private function with_odd_id( string $id ): void {
+		$this->presets['module']['divi/text']['items'][ $id ] = array( 'type' => 'module', 'id' => $id, 'name' => 'Raro', 'moduleName' => 'divi/text', 'created' => 1, 'updated' => 1, 'attrs' => $this->bg( '#123456' ) );
+	}
+
+	/**
+	 * @dataProvider escaped_ids
+	 */
+	public function test_un_id_que_wordpress_escapa_en_el_json_no_se_borra_sin_force_porque_el_uso_no_se_puede_comprobar( string $id ): void {
+		$this->with_odd_id( $id );
+		$before = $this->snapshot();
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => $id ) );
+
+		$this->assert_rejected( $result, 'nexo_mcp_divi_preset_usage_unknown', $before );
+		$this->assertSame( array( 'id' => $id ), $result->get_error_data() );
+		$this->assertStringContainsString( 'force', $result->get_error_message() );
+		$this->assertNotContains( 'scan:module:' . $id, $this->log, 'no se escanea un id que no se puede encontrar' );
+		$this->assertArrayHasKey( $id, $this->presets['module']['divi/text']['items'] );
+	}
+
+	public function test_un_id_escapado_se_borra_con_force_y_avisa_que_el_uso_no_se_verifico(): void {
+		$this->with_odd_id( 'a--b' );
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'a--b', 'force' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertTrue( $result['usage_unverified'] );
+		$this->assertSame( array(), $result['posts_affected'] );
+		$this->assertArrayNotHasKey( 'a--b', $this->presets['module']['divi/text']['items'] );
+	}
+
+	public function test_un_id_normal_sigue_escaneandose_y_no_trae_usage_unverified(): void {
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2' ) );
+
+		$this->assertIsArray( $result );
+		$this->assertArrayNotHasKey( 'usage_unverified', $result );
+		$this->assertContains( 'scan:module:p-text-2', $this->log );
+	}
+
+	public function test_borrar_con_force_un_preset_de_grupo_quita_el_enlace_de_los_presets_de_modulo_en_el_mismo_cambio(): void {
+		$before = $this->presets;
+		$result = $this->ops()->delete_preset( array( 'kind' => 'group', 'name' => 'divi/background', 'id' => 'g-bg-1', 'force' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( array( 'p-text-1' ), $result['links_removed'] );
+		$item = $this->presets['module']['divi/text']['items']['p-text-1'];
+		$this->assertArrayNotHasKey( 'groupPresets', $item, 'sin enlaces no queda groupPresets vacío' );
+
+		$expected = $before['module']['divi/text']['items']['p-text-1'];
+		unset( $expected['groupPresets'] );
+		$this->assertSame( $expected, $item, 'el resto del preset de módulo se conserva' );
+		$this->assertSame( $before['module']['divi/text']['items']['p-text-2'], $this->presets['module']['divi/text']['items']['p-text-2'] );
+
+		$history = $this->history();
+		$this->assertCount( 1, $history, 'un solo cambio: se deshace de una vez' );
+		$this->assertSame( $before, $history[0]['previous'] );
+		$this->assertSame( $this->presets, $history[0]['written'] );
+	}
+
+	public function test_al_quitar_el_enlace_se_conservan_los_otros_grupos_y_los_otros_ids_de_la_lista(): void {
+		$this->presets['module']['divi/text']['items']['p-text-1']['groupPresets'] = array(
+			'module.decoration.background' => array( 'presetId' => array( 'otro', 'g-bg-1' ), 'groupName' => 'divi/background' ),
+			'content.decoration.bodyFont'  => array( 'presetId' => array( 'g-bg-1x' ), 'groupName' => 'divi/font-body' ),
+		);
+
+		$this->assertIsArray( $this->ops()->delete_preset( array( 'kind' => 'group', 'name' => 'divi/background', 'id' => 'g-bg-1', 'force' => true ) ) );
+
+		$this->assertSame(
+			array(
+				'module.decoration.background' => array( 'presetId' => array( 'otro' ), 'groupName' => 'divi/background' ),
+				'content.decoration.bodyFont'  => array( 'presetId' => array( 'g-bg-1x' ), 'groupName' => 'divi/font-body' ),
+			),
+			$this->presets['module']['divi/text']['items']['p-text-1']['groupPresets']
+		);
+	}
+
+	public function test_borrar_un_preset_de_grupo_sin_enlaces_no_toca_los_de_modulo(): void {
+		$before = $this->presets;
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'group', 'name' => 'divi/background', 'id' => 'g-bg-btn1' ) );
+
+		$this->assertIsArray( $result );
+		$this->assertArrayNotHasKey( 'links_removed', $result );
+		$this->assertSame( $before['module'], $this->presets['module'] );
+	}
+
+	public function test_un_borrado_de_modulo_con_force_no_toca_groupPresets(): void {
+		$before = $this->presets;
+
+		$this->assertIsArray( $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2', 'force' => true ) ) );
+		$this->assertSame( $before['module']['divi/text']['items']['p-text-1'], $this->presets['module']['divi/text']['items']['p-text-1'] );
+	}
+
+	public function test_un_uso_truncado_avisa_con_post_ids_truncated_y_el_total_en_el_error(): void {
+		$ids                            = range( 1, 100 );
+		$this->usage['module:p-text-2'] = $ids;
+		$this->totals['module:p-text-2'] = 250;
+		$before                         = $this->snapshot();
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2' ) );
+
+		$this->assert_rejected( $result, 'nexo_mcp_divi_preset_in_use', $before );
+		$this->assertSame( array( 'post_ids' => $ids, 'post_ids_truncated' => true, 'post_total' => 250 ), $result->get_error_data() );
+		$this->assertStringContainsString( '250', $result->get_error_message() );
+	}
+
+	public function test_un_uso_truncado_con_force_devuelve_el_total_y_la_marca(): void {
+		$this->usage['module:p-text-2']  = range( 1, 100 );
+		$this->totals['module:p-text-2'] = 250;
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2', 'force' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertCount( 100, $result['posts_affected'] );
+		$this->assertTrue( $result['posts_affected_truncated'] );
+		$this->assertSame( 250, $result['posts_affected_total'] );
+	}
+
+	public function test_un_uso_completo_no_trae_marcas_de_truncado(): void {
+		$this->usage['module:p-text-2'] = array( 4, 5 );
+
+		$result = $this->ops()->delete_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-2', 'force' => true ) );
+
+		$this->assertIsArray( $result );
+		$this->assertArrayNotHasKey( 'posts_affected_truncated', $result );
+		$this->assertArrayNotHasKey( 'posts_affected_total', $result );
+	}
+
+	public function test_el_escaneo_real_devuelve_cien_ids_y_el_total_completo(): void {
+		$posts = array();
+
+		for ( $i = 1; $i <= 450; $i++ ) {
+			$posts[ $i ] = array( 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '<!-- wp:divi/text {"modulePreset":["big"]} /-->' );
+		}
+
+		$found = $this->scan( 'module', 'big', $posts );
+
+		$this->assertCount( 100, $found['post_ids'] );
+		$this->assertSame( range( 1, 100 ), $found['post_ids'] );
+		$this->assertSame( 450, $found['total'], 'cuenta todos los lotes, no se detiene en el tope de ids' );
 	}
 }

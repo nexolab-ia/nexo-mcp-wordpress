@@ -71,7 +71,7 @@ final class Divi5EditToolTest extends NexoTestCase {
 		$this->assertFalse( $tool['meta']['annotations']['destructive'] );
 		$this->assertSame( array( 'id', 'path', 'fingerprint' ), $tool['input_schema']['required'] );
 		$this->assertFalse( $tool['input_schema']['additionalProperties'] );
-		$this->assertSame( array( 'id', 'path', 'fingerprint', 'content', 'design', 'draft' ), array_keys( $tool['input_schema']['properties'] ) );
+		$this->assertSame( array( 'id', 'path', 'fingerprint', 'content', 'design', 'preset', 'draft' ), array_keys( $tool['input_schema']['properties'] ) );
 		foreach ( array( 'nexo_mcp_divi_node_changed', 'nexo_mcp_divi5_required', 'nunca publica' ) as $needle ) {
 			$this->assertStringContainsStringIgnoringCase( $needle, $tool['description'] );
 		}
