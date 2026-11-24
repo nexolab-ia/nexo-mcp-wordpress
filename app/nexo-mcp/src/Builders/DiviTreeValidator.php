@@ -189,6 +189,57 @@ final class DiviTreeValidator {
 	}
 
 	/**
+	 * Valida los `attrs` de un preset de módulo o de grupo y devuelve su copia saneada.
+	 *
+	 * Un preset sólo lleva diseño de escritorio: las rutas de diseño del catálogo del módulo (con el mismo
+	 * `desktop.value` y las mismas reglas de valor que un nodo del árbol) y, si es un preset de grupo, sólo las
+	 * que cuelgan del grupo. Cualquier otra clave (manejadores de eventos, `attributes` personalizados,
+	 * contenido, tablet, hover…) se rechaza, tenga o no el usuario `unfiltered_html`.
+	 *
+	 * @param string      $module   Nombre de bloque del módulo para el que es el preset.
+	 * @param mixed       $attrs    Atributos recibidos.
+	 * @param string|null $group_id Id del grupo de opciones (`module.decoration.background`), o null en un preset de módulo.
+	 * @param string      $display  Nombre del campo en los mensajes y en `data.path`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function validate_preset_attrs( string $module, $attrs, ?string $group_id = null, string $display = 'attrs' ) {
+		if ( ! DiviModuleCatalog::has( $module ) ) {
+			return $this->error( 'nexo_mcp_divi_module_denied', 'module', $this->denied_reason( $module ) );
+		}
+
+		if ( ! is_array( $attrs ) || array() === $attrs || array_is_list( $attrs ) ) {
+			return $this->error( 'nexo_mcp_divi_tree_invalid', $display, __( 'debe ser un objeto de atributos con al menos un valor.', 'nexo-mcp' ) );
+		}
+
+		$specs = DiviModuleCatalog::design_paths( $module );
+
+		if ( null !== $group_id ) {
+			$specs = array_filter(
+				$specs,
+				static fn( string $path ): bool => $path === $group_id || str_starts_with( $path, $group_id . '.' ),
+				ARRAY_FILTER_USE_KEY
+			);
+		}
+
+		if ( array() === $specs ) {
+			return $this->error( 'nexo_mcp_divi_attr_denied', $display, __( 'el catálogo no admite atributos de diseño para este módulo o grupo.', 'nexo-mcp' ) );
+		}
+
+		$clean = $this->walk_attrs( $attrs, $specs, '', $display );
+
+		if ( is_wp_error( $clean ) ) {
+			return $clean;
+		}
+
+		if ( array() === $clean ) {
+			return $this->error( 'nexo_mcp_divi_tree_invalid', $display, __( 'no tiene ningún valor de diseño.', 'nexo-mcp' ) );
+		}
+
+		return $clean;
+	}
+
+	/**
 	 * Recorre una lista de nodos hermanos.
 	 *
 	 * @param array<int, mixed> $nodes       Nodos.

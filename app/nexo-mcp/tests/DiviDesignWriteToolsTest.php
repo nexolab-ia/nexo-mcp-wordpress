@@ -169,7 +169,7 @@ final class DiviDesignWriteToolsTest extends NexoTestCase {
 		$all    = $this->abilities();
 		$schema = $all['nexo-mcp/undo-divi-design-change']['input_schema'];
 
-		$this->assertSame( array( 'force' ), array_keys( $schema['properties'] ) );
+		$this->assertSame( array( 'force', 'area' ), array_keys( $schema['properties'] ) );
 		$this->assertSame( 'boolean', $schema['properties']['force']['type'] );
 		$this->assertFalse( $schema['additionalProperties'] );
 		$this->assertArrayNotHasKey( 'required', $schema );

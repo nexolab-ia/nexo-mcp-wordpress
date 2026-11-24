@@ -58,6 +58,12 @@ final class WP_Test_State {
 
 	public static int $user_id = 1;
 
+	/** @var array<string, WP_Role_Double> Roles de WordPress simulados. */
+	public static array $roles = array();
+
+	/** @var list<array{setting: string, code: string, message: string, type: string}> Avisos de `add_settings_error()`. */
+	public static array $settings_errors = array();
+
 	/** @var array<string, int> Contador de `nexo_mcp_rate_limits` por bucket_key. */
 	public static array $rate_hits = array();
 	/** Filtros agregados con add_filter: lista de [hook, callback, prioridad, argumentos]. */
@@ -137,6 +143,8 @@ final class WP_Test_State {
 		self::$hooks     = array();
 		self::$filters   = array();
 		self::$user_id   = 1;
+		self::$roles           = array();
+		self::$settings_errors = array();
 		self::$option_autoload = array();
 		self::$fail_update_option = '';
 	}
@@ -747,3 +755,70 @@ if ( ! function_exists( 'wp_kses' ) ) {
 		);
 	}
 }
+
+
+// ----------------------------------------------------------------------- Roles
+/**
+ * Rol de WordPress en memoria: sólo guarda sus capacidades.
+ */
+final class WP_Role_Double {
+
+	/** @var array<string, bool> */
+	public array $capabilities = array();
+
+	public string $name = '';
+
+	/**
+	 * @param array<string, bool> $capabilities Capacidades.
+	 */
+	public function __construct( string $name, array $capabilities = array() ) {
+		$this->name         = $name;
+		$this->capabilities = $capabilities;
+	}
+
+	public function add_cap( string $capability, bool $grant = true ): void {
+		$this->capabilities[ $capability ] = $grant;
+	}
+
+	public function has_cap( string $capability ): bool {
+		return ! empty( $this->capabilities[ $capability ] );
+	}
+}
+
+function get_role( $role ) { return WP_Test_State::$roles[ $role ] ?? null; }
+function add_role( $role, $display_name, $capabilities = array() ) {
+	WP_Test_State::$roles[ $role ] = new WP_Role_Double( (string) $display_name, $capabilities );
+
+	return WP_Test_State::$roles[ $role ];
+}
+
+// ------------------------------------------------------- Ajustes y panel (vistas)
+function add_settings_error( $setting, $code, $message, $type = 'error' ): void {
+	WP_Test_State::$settings_errors[] = array( 'setting' => (string) $setting, 'code' => (string) $code, 'message' => (string) $message, 'type' => (string) $type );
+}
+function esc_html_e( $text, $domain = null ): void { echo esc_html( $text ); }
+function esc_attr_e( $text, $domain = null ): void { echo esc_attr( $text ); }
+function esc_textarea( $text ) { return (string) $text; }
+function checked( $checked, $current = true, $display = true ) {
+	$out = (string) $checked === (string) $current ? " checked='checked'" : '';
+	if ( $display ) {
+		echo $out;
+	}
+	return $out;
+}
+function disabled( $disabled, $current = true, $display = true ) {
+	$out = (string) $disabled === (string) $current ? " disabled='disabled'" : '';
+	if ( $display ) {
+		echo $out;
+	}
+	return $out;
+}
+function add_query_arg( ...$args ) { return (string) ( is_array( $args[0] ) ? ( $args[1] ?? '' ) : ( $args[2] ?? '' ) ); }
+function get_bloginfo( $show = '' ) { return 'Sitio de prueba'; }
+function get_userdata( $user_id ) { return false; }
+function plugins_url( $path = '', $plugin = '' ) { return 'https://example.test/wp-content/plugins/nexo-mcp/' . ltrim( (string) $path, '/' ); }
+function sanitize_html_class( $class ) { return (string) preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $class ); }
+function settings_errors( ...$args ): void {}
+function settings_fields( $group ): void {}
+function submit_button( ...$args ): void {}
+function wp_nonce_field( ...$args ): void {}

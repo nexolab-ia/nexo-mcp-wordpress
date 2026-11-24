@@ -111,6 +111,13 @@ final class BuilderGateway {
 	private ?DiviPresetStore $divi_presets;
 
 	/**
+	 * Escrituras de los presets de Divi 5; se crean al usarlas.
+	 *
+	 * @var DiviPresetOperations|null
+	 */
+	private ?DiviPresetOperations $divi_preset_ops;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -128,6 +135,7 @@ final class BuilderGateway {
 	 * @param DiviDesignStore|null          $divi_design      Almacén del diseño global de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
 	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
+	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -141,7 +149,8 @@ final class BuilderGateway {
 		?ComponentStore $components = null,
 		?DiviDesignStore $divi_design = null,
 		?DiviDesignOperations $divi_design_ops = null,
-		?DiviPresetStore $divi_presets = null
+		?DiviPresetStore $divi_presets = null,
+		?DiviPresetOperations $divi_preset_ops = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -155,6 +164,7 @@ final class BuilderGateway {
 		$this->divi_design      = $divi_design;
 		$this->divi_design_ops  = $divi_design_ops;
 		$this->divi_presets     = $divi_presets;
+		$this->divi_preset_ops  = $divi_preset_ops;
 	}
 
 	/**
@@ -247,14 +257,15 @@ final class BuilderGateway {
 	 * registre su área y el deshacer sepa restaurarla.
 	 *
 	 * @param bool          $force   Restaurar aunque el área haya cambiado después.
-	 * @param callable|null $allowed fn( string $area ): bool. Permiso de escritura del área del último cambio.
+	 * @param callable|null $allowed fn( string $area ): bool. Permiso de escritura del área que se deshace.
+	 * @param string|null   $area    Deshacer el último cambio de esta área aunque haya otros encima; null = el último de la pila.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo_divi_design_change( bool $force = false, ?callable $allowed = null ) {
+	public function undo_divi_design_change( bool $force = false, ?callable $allowed = null, ?string $area = null ) {
 		$this->divi_presets();
 
-		return $this->divi_design()->undo( $force, $allowed );
+		return $this->divi_design()->undo( $force, $allowed, $area );
 	}
 
 	/**
@@ -276,6 +287,48 @@ final class BuilderGateway {
 	 */
 	public function get_divi_presets( array $input ) {
 		return $this->divi_presets()->read( isset( $input['module'] ) && is_string( $input['module'] ) ? $input['module'] : null );
+	}
+
+	/**
+	 * Crea o actualiza un preset de módulo o de grupo de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id?`, `label`, `attrs?`, `module?`, `group_id?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_preset( array $input ) {
+		return $this->divi_preset_ops()->set_preset( $input );
+	}
+
+	/**
+	 * Fija o quita el preset predeterminado de un módulo o de un grupo de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id` (o null).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_default_preset( array $input ) {
+		return $this->divi_preset_ops()->set_default_preset( $input );
+	}
+
+	/**
+	 * Borra un preset de Divi 5 (en uso, sólo con force).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id`, `force?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_preset( array $input ) {
+		return $this->divi_preset_ops()->delete_preset( $input );
+	}
+
+	/**
+	 * Escrituras de los presets de Divi (comparten el almacén de lectura y deshacer).
+	 */
+	public function divi_preset_ops(): DiviPresetOperations {
+		$this->divi_preset_ops ??= new DiviPresetOperations( $this->divi_presets() );
+
+		return $this->divi_preset_ops;
 	}
 
 	/**

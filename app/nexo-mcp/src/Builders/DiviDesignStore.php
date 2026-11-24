@@ -38,6 +38,13 @@ final class DiviDesignStore {
 	public const HISTORY_LIMIT = 20;
 
 	/**
+	 * Tamaño máximo del historial serializado (2 MiB): cada entrada guarda el área completa dos veces
+	 * (antes y después) y los presets pueden ser un catálogo grande; al pasarlo se descartan las entradas más
+	 * viejas en vez de fallar la escritura. La entrada nueva siempre se conserva, aunque ella sola lo pase.
+	 */
+	public const HISTORY_MAX_BYTES = 2097152;
+
+	/**
 	 * Tipos de variable que se leen.
 	 *
 	 * @var array<int, string>
@@ -517,17 +524,59 @@ final class DiviDesignStore {
 	 * Deshace el último cambio del diseño global.
 	 *
 	 * @param bool          $force   Restaurar aunque el área haya cambiado después de lo que escribió el conector.
-	 * @param callable|null $allowed fn( string $area ): bool. Si se da y niega el área del último cambio, no se restaura nada
+	 * @param callable|null $allowed fn( string $area ): bool. Si se da y niega el área del cambio que se deshace, no se restaura nada
 	 *                               (cada área tiene su propio permiso: diseño global o presets).
+	 * @param string|null   $area    Deshacer el último cambio de esta área (`colors`, `variables`, `theme_options`, `presets`) aunque
+	 *                               haya cambios de otras áreas encima; null = el último cambio de la pila, sea de la área que sea.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo( bool $force = false, ?callable $allowed = null ) {
+	public function undo( bool $force = false, ?callable $allowed = null, ?string $area = null ) {
 		if ( ! $this->available() ) {
 			return Divi5ContentWriter::required_error();
 		}
 
-		return ( $this->lock )( fn() => $this->undo_locked( $force, $allowed ) );
+		if ( null !== $area && ! $this->is_known_area( $area ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_design_area_invalid',
+				sprintf(
+					/* translators: %s: áreas admitidas. */
+					__( 'Área desconocida. Se puede deshacer por área: %s.', 'nexo-mcp' ),
+					implode( ', ', $this->known_areas() )
+				)
+			);
+		}
+
+		return ( $this->lock )( fn() => $this->undo_locked( $force, $allowed, $area ) );
+	}
+
+	/**
+	 * Áreas por las que se puede deshacer: las del diseño global y las que otros almacenes registran.
+	 *
+	 * @return array<int, string>
+	 */
+	public function known_areas(): array {
+		return array_values( array_unique( array_merge( array( 'colors', 'variables', 'theme_options' ), array_keys( $this->areas ) ) ) );
+	}
+
+	/**
+	 * Indica si `$area` es una de las áreas conocidas (`variables` cubre cualquier tipo; también se acepta `variables:<tipo>`).
+	 *
+	 * @param string $area Área.
+	 */
+	private function is_known_area( string $area ): bool {
+		return in_array( $area, $this->known_areas(), true )
+			|| ( str_starts_with( $area, 'variables:' ) && in_array( substr( $area, 10 ), self::WRITE_TYPES, true ) );
+	}
+
+	/**
+	 * Indica si la entrada del historial es del área pedida (`variables` cubre todos los tipos de variable).
+	 *
+	 * @param string $entry_area Área de la entrada.
+	 * @param string $area       Área pedida.
+	 */
+	private function area_matches( string $entry_area, string $area ): bool {
+		return $entry_area === $area || ( 'variables' === $area && str_starts_with( $entry_area, 'variables:' ) );
 	}
 
 	/**
@@ -616,6 +665,18 @@ final class DiviDesignStore {
 			'date'     => gmdate( 'Y-m-d H:i:s' ),
 		);
 		$history     = array_slice( $history, -self::HISTORY_LIMIT );
+		$dropped     = 0;
+
+		// Tope de bytes: se descartan las más viejas (nunca la nueva) en vez de fallar la escritura.
+		$kept  = count( $history );
+		$bytes = strlen( maybe_serialize( $history ) );
+
+		while ( $kept > 1 && $bytes > self::HISTORY_MAX_BYTES ) {
+			array_shift( $history );
+			--$kept;
+			++$dropped;
+			$bytes = strlen( maybe_serialize( $history ) );
+		}
 
 		// `update_option()` devuelve false también cuando nada cambia: lo que cuenta es lo guardado.
 		update_option( self::HISTORY_OPTION, $history, false );
@@ -651,6 +712,11 @@ final class DiviDesignStore {
 			'area'           => $area,
 			'undo_available' => true,
 		);
+
+		if ( $dropped > 0 ) {
+			// Aviso para quien llama: esos cambios ya no se pueden deshacer.
+			$result['history_dropped'] = $dropped;
+		}
 
 		$this->log( $tool, 'success', array( 'area' => $area ), $result );
 
@@ -787,19 +853,39 @@ final class DiviDesignStore {
 	 *
 	 * @param bool          $force   Restaurar aunque el área haya cambiado después.
 	 * @param callable|null $allowed fn( string $area ): bool; null = sin comprobar.
+	 * @param string|null   $area    Área pedida; null = el último cambio de la pila.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function undo_locked( bool $force, ?callable $allowed = null ) {
+	private function undo_locked( bool $force, ?callable $allowed = null, ?string $area = null ) {
 		// Se relee dentro del bloqueo: otro proceso pudo escribir o deshacer mientras se esperaba.
 		$history = $this->history();
-		$entry   = end( $history );
-		$tool    = 'undo-divi-design-change';
+		$index   = array_key_last( $history );
+
+		if ( null !== $area ) {
+			$index = null;
+
+			foreach ( array_reverse( array_keys( $history ), false ) as $candidate ) {
+				if ( $this->area_matches( $history[ $candidate ]['area'], $area ) ) {
+					$index = $candidate;
+					break;
+				}
+			}
+		}
+
+		$entry = null === $index ? false : $history[ $index ];
+		$tool  = 'undo-divi-design-change';
 
 		if ( false === $entry ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_design_nothing_to_undo',
-				__( 'No hay ningún cambio del diseño global de Divi para deshacer.', 'nexo-mcp' )
+				null === $area
+					? __( 'No hay ningún cambio del diseño global de Divi para deshacer.', 'nexo-mcp' )
+					: sprintf(
+						/* translators: %s: área. */
+						__( 'No hay ningún cambio del área «%s» del diseño global de Divi para deshacer.', 'nexo-mcp' ),
+						$area
+					)
 			);
 		}
 
@@ -854,7 +940,9 @@ final class DiviDesignStore {
 			);
 		}
 
-		array_pop( $history );
+		// Se saca la entrada deshecha (no necesariamente la de arriba si se pidió un área).
+		unset( $history[ $index ] );
+		$history = array_values( $history );
 		update_option( self::HISTORY_OPTION, $history, false );
 		$this->flush();
 

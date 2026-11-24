@@ -121,6 +121,17 @@ final class DiviPresetStore {
 	}
 
 	/**
+	 * Grupos de opciones de un módulo según Divi (id de grupo => nombre de grupo); un fallo es una lista vacía.
+	 *
+	 * @param string $module Nombre de bloque.
+	 *
+	 * @return array<string, string>
+	 */
+	public function module_groups( string $module ): array {
+		return $this->groups_of( $module );
+	}
+
+	/**
 	 * Catálogo actual completo (sin bloqueo; para validar antes de escribir). Sin la opción, un arreglo vacío.
 	 *
 	 * @return array<string, mixed>

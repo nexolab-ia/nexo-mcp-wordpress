@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Tests;
 
+use NexoDev\NexoMCP\Admin\SettingsController;
 use NexoDev\NexoMCP\Authorization\Capabilities;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
+use NexoDev\NexoMCP\Installation\Installer;
 use NexoDev\NexoMCP\OAuth\ScopeMap;
 use NexoDev\NexoMCP\Support\Settings;
 
@@ -106,21 +108,91 @@ final class DiviPresetPermissionTest extends NexoTestCase {
 		);
 	}
 
-	public function test_los_ajustes_guardan_el_interruptor_y_el_toggle_es_sensible_con_confirmacion(): void {
-		// Sin el arnés de add_settings_error se comprueba el código: la casilla se guarda como booleano.
-		$controller = (string) file_get_contents( dirname( __DIR__ ) . '/src/Admin/SettingsController.php' );
-		$this->assertStringContainsString( '$sanitized[\'' . self::SWITCH . '\']', $controller );
-		$this->assertStringContainsString( '! empty( $input[\'' . self::SWITCH . '\'] )', $controller );
+	public function test_los_ajustes_guardan_el_interruptor_como_booleano_y_los_demas_no_lo_arrastran(): void {
+		$controller = new SettingsController();
 
-		$view = (string) file_get_contents( dirname( __DIR__ ) . '/src/Admin/views/dashboard.php' );
-		$this->assertMatchesRegularExpression( "/'" . self::SWITCH . "'\\s*=> array\\(\\s*'risk'\\s*=> 'on'/", $view );
-		$this->assertStringContainsString( 'nexo_mcp_settings[' . self::SWITCH . ']', $view );
-		$this->assertStringContainsString( "\$print_sensitive( '" . self::SWITCH . "' )", $view );
+		foreach ( array( '1', 1, true, 'on' ) as $value ) {
+			$saved = $controller->sanitize( array( self::SWITCH => $value ) );
+			$this->assertTrue( $saved[ self::SWITCH ], var_export( $value, true ) );
+		}
+
+		foreach ( array( '', '0', 0, false, null ) as $value ) {
+			$saved = $controller->sanitize( array( self::SWITCH => $value ) );
+			$this->assertFalse( $saved[ self::SWITCH ], var_export( $value, true ) );
+		}
+
+		$missing = $controller->sanitize( array( 'divi_design_tools_enabled' => '1' ) );
+		$this->assertFalse( $missing[ self::SWITCH ], 'sin la casilla queda apagado' );
+		$this->assertTrue( $missing['divi_design_tools_enabled'] );
+
+		$presets_only = $controller->sanitize( array( self::SWITCH => '1' ) );
+		$this->assertFalse( $presets_only['divi_design_tools_enabled'], 'encender presets no enciende el diseño global' );
 	}
 
-	public function test_el_instalador_da_la_capacidad_al_administrador(): void {
-		$source = (string) file_get_contents( dirname( __DIR__ ) . '/src/Installation/Installer.php' );
-		$this->assertStringContainsString( '$administrator->add_cap( Capabilities::DIVI_PRESETS );', $source );
+	public function test_los_ajustes_sin_permiso_de_administrador_no_encienden_el_interruptor(): void {
+		\WP_Test_State::$caps['manage_options'] = false;
+
+		$saved = ( new SettingsController() )->sanitize( array( self::SWITCH => '1' ) );
+
+		$this->assertFalse( $saved[ self::SWITCH ] );
+		$this->assertSame( Settings::defaults(), $saved );
+	}
+
+	public function test_el_panel_pinta_la_casilla_con_su_estado_y_la_confirmacion_de_opcion_sensible(): void {
+		$off = $this->render_dashboard( false );
+		$on  = $this->render_dashboard( true );
+
+		foreach ( array( $off, $on ) as $html ) {
+			$this->assertStringContainsString( 'name="nexo_mcp_settings[' . self::SWITCH . ']"', $html );
+			$this->assertStringContainsString( 'data-nexo-risk="on"', $this->input_tag( $html ) );
+			$this->assertStringContainsString( 'data-nexo-confirm-word="presets"', $this->input_tag( $html ) );
+			$this->assertStringContainsString( 'data-nexo-confirm-title=', $this->input_tag( $html ) );
+		}
+
+		$this->assertStringNotContainsString( 'checked', $this->input_tag( $off ) );
+		$this->assertStringContainsString( "checked='checked'", $this->input_tag( $on ) );
+	}
+
+	public function test_el_instalador_da_la_capacidad_al_administrador_y_no_al_operador(): void {
+		\WP_Test_State::$roles['administrator'] = new \WP_Role_Double( 'Administrator' );
+
+		$install_role = new \ReflectionMethod( Installer::class, 'install_role' );
+		$install_role->invoke( new Installer() );
+
+		$admin = \WP_Test_State::$roles['administrator'];
+		$this->assertTrue( $admin->has_cap( Capabilities::DIVI_PRESETS ) );
+		$this->assertTrue( $admin->has_cap( Capabilities::DIVI_DESIGN ), 'la de D3 sigue concedida' );
+		$this->assertFalse( \WP_Test_State::$roles['nexo_mcp_operator']->has_cap( Capabilities::DIVI_PRESETS ), 'el operador no la recibe' );
+	}
+
+	private function input_tag( string $html ): string {
+		$start = (int) strpos( $html, 'name="nexo_mcp_settings[' . self::SWITCH . ']"' );
+		$from  = (int) strrpos( substr( $html, 0, $start ), '<input' );
+		$to    = (int) strpos( $html, '>', $start );
+
+		return substr( $html, $from, $to - $from + 1 );
+	}
+
+	private function render_dashboard( bool $enabled ): string {
+		$settings          = array_merge( Settings::defaults(), array( self::SWITCH => $enabled ) );
+		$endpoint          = 'https://example.test/wp-json/nexo-mcp/v1/mcp';
+		$is_https          = true;
+		$is_local_http     = false;
+		$is_server_ready   = true;
+		$is_woocommerce    = false;
+		$adapter_version   = '1';
+		$audit_entries     = array();
+		$registration      = array();
+		$oauth_connections = array();
+		$oauth_site_url    = 'https://example.test';
+		$report_notice     = null;
+		$update_available  = false;
+		$api_configured    = false;
+
+		ob_start();
+		require dirname( __DIR__ ) . '/src/Admin/views/dashboard.php';
+
+		return (string) ob_get_clean();
 	}
 
 	public function test_el_interruptor_va_al_final_de_la_lista_de_interruptores(): void {

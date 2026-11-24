@@ -95,7 +95,7 @@ final class DiviDesignToolsTest extends NexoTestCase {
 		}
 
 		$this->assertEquals( new \stdClass(), $all[ self::GET ]['input_schema']['properties'] );
-		$this->assertSame( array( 'force' ), array_keys( $all[ self::UNDO ]['input_schema']['properties'] ) );
+		$this->assertSame( array( 'force', 'area' ), array_keys( $all[ self::UNDO ]['input_schema']['properties'] ) );
 
 		$this->assertTrue( $all[ self::GET ]['meta']['annotations']['readonly'] );
 		$this->assertFalse( $all[ self::UNDO ]['meta']['annotations']['readonly'] );

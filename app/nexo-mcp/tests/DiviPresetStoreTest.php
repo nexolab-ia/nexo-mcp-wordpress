@@ -554,4 +554,65 @@ final class DiviPresetStoreTest extends NexoTestCase {
 
 		$this->assertCount( DiviDesignStore::HISTORY_LIMIT, $this->history() );
 	}
+
+	/**
+	 * Cambio que agrega `$bytes` de basura a un item: un catálogo grande.
+	 */
+	private function grow( int $bytes, string $tag ): callable {
+		return function ( array $current ) use ( $bytes, $tag ): array {
+			$current['module']['divi/text']['items']['p-text-1']['attrs']['pad'] = $tag . str_repeat( 'x', $bytes );
+
+			return $current;
+		};
+	}
+
+	public function test_con_un_catalogo_grande_el_historial_descarta_las_entradas_mas_viejas_en_vez_de_fallar_la_escritura(): void {
+		$design = $this->design();
+		$store  = $this->store( $design );
+		$cap    = DiviDesignStore::HISTORY_MAX_BYTES;
+		$size   = (int) ( $cap / 4 );
+		$last   = null;
+
+		// Cada entrada guarda el catálogo dos veces (antes y después): unas pocas pasan el tope.
+		for ( $i = 1; $i <= 6; $i++ ) {
+			$last = $store->update( $this->grow( $size, 'v' . $i . ':' ), 'set-divi-preset' );
+			$this->assertIsArray( $last, 'la escritura ' . $i . ' no falla por el tamaño del historial' );
+			$this->assertTrue( $last['undo_available'] );
+		}
+
+		$history = $this->history();
+		$this->assertGreaterThanOrEqual( 1, count( $history ) );
+		$this->assertLessThan( 6, count( $history ), 'se descartaron las más viejas' );
+		$this->assertLessThanOrEqual( $cap, strlen( serialize( $history ) ) );
+		$this->assertArrayHasKey( 'history_dropped', $last );
+		$this->assertGreaterThan( 0, $last['history_dropped'] );
+		$this->assertStringStartsWith( 'v6:', end( $history )['written']['module']['divi/text']['items']['p-text-1']['attrs']['pad'], 'la más nueva se conserva' );
+		$this->assertStringStartsWith( 'v6:', $this->presets['module']['divi/text']['items']['p-text-1']['attrs']['pad'] );
+
+		// Lo que queda se deshace de a una, en orden inverso.
+		$undone = $design->undo();
+		$this->assertSame( 'presets', $undone['area'] );
+		$this->assertStringStartsWith( 'v5:', $this->presets['module']['divi/text']['items']['p-text-1']['attrs']['pad'] );
+	}
+
+	public function test_una_sola_entrada_mas_grande_que_el_tope_se_conserva_y_la_escritura_sale_bien(): void {
+		$design = $this->design();
+		$store  = $this->store( $design );
+
+		$this->assertIsArray( $store->update( $this->change_color( '#010101' ), 'set-divi-preset' ) );
+		$result = $store->update( $this->grow( DiviDesignStore::HISTORY_MAX_BYTES + 10, 'big:' ), 'set-divi-preset' );
+
+		$this->assertIsArray( $result );
+		$this->assertCount( 1, $this->history() );
+		$this->assertStringStartsWith( 'big:', $this->history()[0]['written']['module']['divi/text']['items']['p-text-1']['attrs']['pad'] );
+		$this->assertSame( 1, $result['history_dropped'] );
+	}
+
+	public function test_sin_pasar_el_tope_no_se_descarta_nada_ni_aparece_history_dropped(): void {
+		$store  = $this->store();
+		$result = $store->update( $this->change_color( '#020202' ), 'set-divi-preset' );
+
+		$this->assertSame( array( 'area' => 'presets', 'undo_available' => true ), $result );
+		$this->assertCount( 1, $this->history() );
+	}
 }
