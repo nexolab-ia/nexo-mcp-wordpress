@@ -344,6 +344,59 @@ Reglas que siempre se cumplen:
     Deshacer una variable creada después la deja archivada.
   - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D3; sin Divi 5
     se saltea).
+- **Presets de módulos de Divi 5 (permiso propio)**: un preset de módulo o de grupo de
+  opciones (fondo, borde, fuente…) estila a todos los módulos que lo usan (y el
+  predeterminado, a los que no tienen otro) en vivo, así que tiene su scope OAuth
+  `mcp:divi_presets` (capacidad `nexo_mcp_divi_presets`, administrador; el instalador la
+  da al subir a 1.9.0) y su interruptor `divi_presets_tools_enabled`, **apagado por
+  defecto** (toggle sensible con confirmación). Cuatro herramientas: leer usa el permiso
+  de constructores y las tres de escritura el nuevo. Sin Divi 5 activo:
+  `nexo_mcp_divi5_required`. Alcance: módulos del catálogo de D2; fuera quedan las pilas
+  de presets, importar/exportar y los módulos fuera del catálogo.
+  - `get-divi-presets {module?}`: presets de módulo y de grupo, predeterminados y los
+    grupos de opciones de cada módulo (`available_groups`); con `module` trae los `attrs`.
+  - `set-divi-preset` (crea sin `id`, cambia o renombra con `id`; al crear uno de grupo
+    también `module` y `group_id`), `set-divi-default-preset` (`id: null` lo quita) y
+    `delete-divi-preset`. Los `attrs` son sólo diseño de escritorio del catálogo con las
+    reglas de valor de `create-divi-page`; se rechazan manejadores de eventos,
+    `attributes` personalizados, `javascript:` y shortcodes aunque el usuario tenga
+    `unfiltered_html` (`nexo_mcp_divi_preset_invalid` con `data.path`). Se escribe con
+    `GlobalPreset::save_data` de Divi (que vacía el CSS), bajo bloqueo.
+  - **En vivo con respaldo y deshacer**: comparten con D3 el historial
+    `nexo_mcp_divi_design_history` (20 cambios, tope de 2 MiB: al pasarlo se descartan los
+    más viejos y la respuesta trae `history_dropped`). `undo-divi-design-change` acepta
+    `area` (`colors`, `variables`, `theme_options`, `presets`): deshace el último cambio
+    de esa área aunque otra esté encima y pide el permiso de esa área; sin `area` deshace
+    el más reciente. Si la opción cambió después responde `nexo_mcp_divi_design_changed_since`;
+    `force: true` la restaura igual y exige además el permiso destructivo.
+  - **Aplicar a un módulo es una escritura de página**: parámetro
+    `preset: {module?: id|null, groups?: {<id de grupo>: id|null}}` en `edit-divi-module` y
+    en los nodos de `create-divi-page`/`edit-divi-section`. Escribe `modulePreset` y
+    `groupPreset` (con el nombre de grupo que da Divi) en el bloque; `null` los quita. Usa
+    el permiso de constructores y la copia de trabajo; no pide el scope de presets. El id
+    debe existir para ese módulo o grupo (`nexo_mcp_divi_preset_unknown` con `data.path`; un
+    preset de grupo hecho para otro módulo, por su `moduleName`, tampoco vale). Validar que
+    existe y guardar la página corren bajo el bloqueo de presets, el mismo del borrado
+    (después del de la página): un borrado no puede dejar una página apuntando a un preset
+    borrado, y si está ocupado se responde `nexo_mcp_busy` sin escribir. Sin `preset` no se
+    toma;
+    `modulePreset`/`groupPreset` crudos dentro de `attrs` siguen rechazados.
+    `get-page-structure` expone `preset` en cada módulo. Los attrs propios del módulo
+    ganan al preset.
+  - **Preset en uso**: `delete-divi-preset` busca el id exacto en `modulePreset` o en
+    `groupPreset` de las entradas de Divi 5 no borradas (por lotes, dentro del bloqueo);
+    en uso responde `nexo_mcp_divi_preset_in_use` con los ids (hasta 100; si hay más,
+    `post_ids_truncated: true` y `post_total`) y un preset de grupo enlazado desde un
+    preset de módulo también cuenta. Un id con `--`, `<`, `>`, `&`, comillas, barra
+    invertida o caracteres no ASCII se rechaza sin `force`
+    (`nexo_mcp_divi_preset_usage_unknown`): WordPress los escapa (`\u002d`…) en el JSON
+    del bloque y la búsqueda no puede comprobar el uso; se eligió rechazar en vez de
+    adivinar la forma escapada. `force: true` exige el permiso destructivo, borra igual
+    (con esos ids el resultado trae `usage_unverified: true`), desmarca el predeterminado
+    si lo era y, en un preset de grupo, quita su enlace de los `groupPresets` de los presets
+    de módulo en el mismo cambio (`links_removed`).
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D4; sin Divi 5
+    se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -544,7 +597,9 @@ durante la sección y devuelve el tema anterior (también si la corrida se corta
 borra las páginas, copias y directorios `et-cache` que creó. La del diseño global de
 Divi 5 (D3) también lo necesita (SKIP sin Divi 5): enciende `divi_design_tools_enabled`
 (y la capacidad, si falta) sólo durante la sección y devuelve crudos `et_divi`,
-`et_divi_global_variables`, el historial y los ajustes, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+`et_divi_global_variables`, el historial y los ajustes, también si la corrida se corta. La de presets
+de Divi 5 (D4) igual (SKIP sin Divi 5): enciende `divi_presets_tools_enabled` (y la capacidad, si falta) y
+devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el

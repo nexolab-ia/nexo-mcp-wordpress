@@ -141,7 +141,7 @@ final class Divi5Adapter implements BuilderAdapter {
 		foreach ( $tree as $node ) {
 			$attributes = array( 'fingerprint' => (string) $node['fingerprint'] );
 
-			foreach ( array( 'label', 'link', 'image' ) as $key ) {
+			foreach ( array( 'label', 'link', 'image', 'preset' ) as $key ) {
 				if ( isset( $node[ $key ] ) ) {
 					$attributes[ $key ] = $node[ $key ];
 				}

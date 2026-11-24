@@ -16,7 +16,8 @@ namespace NexoDev\NexoMCP\Builders;
  * `[ { "type": "divi/section", "attrs": { … }, "children": [ … ] } ]`, con `type` del
  * {@see DiviModuleCatalog}, `attrs` opcional (los atributos de bloque de Divi tal como se
  * guardan: `{"title":{"innerContent":{"desktop":{"value":"Hola"}}}}`) e hijos opcionales.
- * No lleva `builderVersion`, `modulePreset` ni ids: los pone quien escribe. El parche de un
+ * No lleva `builderVersion`, `modulePreset` ni ids: los pone quien escribe (`modulePreset` y `groupPreset`
+ * dentro de `attrs` siempre se rechazan; para aplicar un preset el nodo lleva `preset`, ver {@see self::validate_preset_ref()}). El parche de un
  * módulo es `{ "content"?: attrs, "design"?: attrs }`: `content` sólo admite rutas de contenido
  * y `design` sólo rutas de diseño del catálogo.
  *
@@ -39,7 +40,7 @@ final class DiviTreeValidator {
 	 *
 	 * @var array<int, string>
 	 */
-	private const NODE_KEYS = array( 'type', 'attrs', 'children' );
+	private const NODE_KEYS = array( 'type', 'attrs', 'children', 'preset' );
 
 	/**
 	 * Etiquetas y atributos del texto rico.
@@ -86,6 +87,20 @@ final class DiviTreeValidator {
 	private $attachment_url;
 
 	/**
+	 * Catálogo de presets: fn(): array (la opción `et_divi_builder_global_presets_d5` completa).
+	 *
+	 * @var callable
+	 */
+	private $presets;
+
+	/**
+	 * Grupos de opciones de un módulo: fn( string $module ): array<string, string> (id de grupo => nombre de grupo).
+	 *
+	 * @var callable
+	 */
+	private $module_groups;
+
+	/**
 	 * Nodos vistos en la validación en curso.
 	 *
 	 * @var int
@@ -97,10 +112,14 @@ final class DiviTreeValidator {
 	 *
 	 * @param callable|null $shortcode_exists fn( string $name ): bool. Por omisión, `shortcode_exists()`.
 	 * @param callable|null $attachment_url   fn( int $id ): string|false, URL del adjunto. Por omisión, `wp_get_attachment_url()`.
+	 * @param callable|null $presets          fn(): array, catálogo de presets (sólo se llama si un nodo lleva `preset`). Por omisión, la opción de Divi sin migrar.
+	 * @param callable|null $module_groups    fn( string $module ): array<string, string>, grupos de opciones del módulo. Por omisión, Divi.
 	 */
-	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null ) {
+	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null, ?callable $presets = null, ?callable $module_groups = null ) {
 		$this->shortcode_exists = $shortcode_exists ?? static fn( string $name ): bool => shortcode_exists( $name );
 		$this->attachment_url   = $attachment_url ?? static fn( int $id ) => wp_get_attachment_url( $id );
+		$this->presets          = $presets ?? static fn(): array => (array) DiviPresetStore::divi_get_data();
+		$this->module_groups    = $module_groups ?? array( DiviPresetStore::class, 'divi_module_groups' );
 	}
 
 	/**
@@ -186,6 +205,265 @@ final class DiviTreeValidator {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Valida los `attrs` de un preset de módulo o de grupo y devuelve su copia saneada.
+	 *
+	 * Un preset sólo lleva diseño de escritorio: las rutas de diseño del catálogo del módulo (con el mismo
+	 * `desktop.value` y las mismas reglas de valor que un nodo del árbol) y, si es un preset de grupo, sólo las
+	 * que cuelgan del grupo. Cualquier otra clave (manejadores de eventos, `attributes` personalizados,
+	 * contenido, tablet, hover…) se rechaza, tenga o no el usuario `unfiltered_html`.
+	 *
+	 * @param string      $module   Nombre de bloque del módulo para el que es el preset.
+	 * @param mixed       $attrs    Atributos recibidos.
+	 * @param string|null $group_id Id del grupo de opciones (`module.decoration.background`), o null en un preset de módulo.
+	 * @param string      $display  Nombre del campo en los mensajes y en `data.path`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function validate_preset_attrs( string $module, $attrs, ?string $group_id = null, string $display = 'attrs' ) {
+		if ( ! DiviModuleCatalog::has( $module ) ) {
+			return $this->error( 'nexo_mcp_divi_module_denied', 'module', $this->denied_reason( $module ) );
+		}
+
+		if ( ! is_array( $attrs ) || array() === $attrs || array_is_list( $attrs ) ) {
+			return $this->error( 'nexo_mcp_divi_tree_invalid', $display, __( 'debe ser un objeto de atributos con al menos un valor.', 'nexo-mcp' ) );
+		}
+
+		$specs = DiviModuleCatalog::design_paths( $module );
+
+		if ( null !== $group_id ) {
+			$specs = array_filter(
+				$specs,
+				static fn( string $path ): bool => $path === $group_id || str_starts_with( $path, $group_id . '.' ),
+				ARRAY_FILTER_USE_KEY
+			);
+		}
+
+		if ( array() === $specs ) {
+			return $this->error( 'nexo_mcp_divi_attr_denied', $display, __( 'el catálogo no admite atributos de diseño para este módulo o grupo.', 'nexo-mcp' ) );
+		}
+
+		$clean = $this->walk_attrs( $attrs, $specs, '', $display );
+
+		if ( is_wp_error( $clean ) ) {
+			return $clean;
+		}
+
+		if ( array() === $clean ) {
+			return $this->error( 'nexo_mcp_divi_tree_invalid', $display, __( 'no tiene ningún valor de diseño.', 'nexo-mcp' ) );
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Valida la referencia `preset` de un módulo (`{module?: id|null, groups?: {<groupId>: id|null}}`).
+	 *
+	 * Cada id debe existir en el catálogo de presets: el de módulo en `module.<tipo>.items`, el de grupo en
+	 * `group.<nombre del grupo>.items` con el mismo `groupId`; el `groupId` debe ser un grupo de opciones que
+	 * Divi da a ese módulo y el nombre de grupo se toma de Divi, no del cliente. `null` quita la referencia.
+	 *
+	 * @param string $type    Nombre de bloque del módulo.
+	 * @param mixed  $preset  Referencia recibida.
+	 * @param string $display Nombre del campo en los mensajes y en `data.path`.
+	 *
+	 * @return array{module?: array<int, string>|null, groups?: array<string, array{presetId: array<int, string>, groupName: string}|null>}|\WP_Error
+	 */
+	public function validate_preset_ref( string $type, $preset, string $display = 'preset' ) {
+		if ( ! DiviModuleCatalog::has( $type ) ) {
+			return $this->error( 'nexo_mcp_divi_module_denied', 'type', $this->denied_reason( $type ) );
+		}
+
+		if ( ! is_array( $preset ) || array() === $preset || array_is_list( $preset ) ) {
+			return $this->error( 'nexo_mcp_divi_tree_invalid', $display, __( 'debe ser un objeto con «module» y/o «groups».', 'nexo-mcp' ) );
+		}
+
+		foreach ( array_keys( $preset ) as $key ) {
+			if ( 'module' !== $key && 'groups' !== $key ) {
+				return $this->error( 'nexo_mcp_divi_attr_denied', $display . '.' . $key, __( 'sólo se admiten «module» y «groups».', 'nexo-mcp' ) );
+			}
+		}
+
+		$catalog = ( $this->presets )();
+		$catalog = is_array( $catalog ) ? $catalog : array();
+		$out     = array();
+
+		if ( array_key_exists( 'module', $preset ) ) {
+			$id = $preset['module'];
+
+			if ( null !== $id && ( ! is_string( $id ) || '' === $id ) ) {
+				return $this->error( 'nexo_mcp_divi_tree_invalid', $display . '.module', __( 'debe ser el id de un preset de módulo o null para quitarlo.', 'nexo-mcp' ) );
+			}
+
+			if ( null !== $id && ! $this->preset_exists( $catalog, 'module', $type, $id, null ) ) {
+				return $this->unknown( $display . '.module', $id );
+			}
+
+			$out['module'] = null === $id ? null : array( $id );
+		}
+
+		if ( array_key_exists( 'groups', $preset ) ) {
+			$groups = $preset['groups'];
+
+			if ( ! is_array( $groups ) || array() === $groups || array_is_list( $groups ) ) {
+				return $this->error( 'nexo_mcp_divi_tree_invalid', $display . '.groups', __( 'debe ser un objeto {<id de grupo>: id del preset o null}.', 'nexo-mcp' ) );
+			}
+
+			$available = ( $this->module_groups )( $type );
+			$available = is_array( $available ) ? $available : array();
+
+			foreach ( $groups as $group_id => $id ) {
+				$group_id = (string) $group_id;
+				$where    = $display . '.groups.' . $group_id;
+
+				if ( null !== $id && ( ! is_string( $id ) || '' === $id ) ) {
+					return $this->error( 'nexo_mcp_divi_tree_invalid', $where, __( 'debe ser el id de un preset de grupo o null para quitarlo.', 'nexo-mcp' ) );
+				}
+
+				if ( ! isset( $available[ $group_id ] ) || ! is_string( $available[ $group_id ] ) ) {
+					return $this->error(
+						'nexo_mcp_divi_preset_unknown',
+						$where,
+						sprintf(
+							/* translators: 1: id de grupo, 2: tipo de módulo. */
+							__( '«%1$s» no es un grupo de opciones de «%2$s» (ver available_groups en nexo-mcp-get-divi-presets).', 'nexo-mcp' ),
+							$group_id,
+							$type
+						)
+					);
+				}
+
+				if ( null === $id ) {
+					$out['groups'][ $group_id ] = null;
+					continue;
+				}
+
+				if ( ! $this->preset_exists( $catalog, 'group', $available[ $group_id ], $id, $group_id, $type ) ) {
+					return $this->unknown( $where, $id );
+				}
+
+				$out['groups'][ $group_id ] = array(
+					'presetId'  => array( $id ),
+					'groupName' => $available[ $group_id ],
+				);
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Aplica una referencia validada a los atributos de un bloque: `modulePreset` y `groupPreset` en el formato de Divi.
+	 *
+	 * Un valor `null` quita la clave (o el grupo); un `groupPreset` que se queda sin grupos se quita. Lo demás no cambia.
+	 *
+	 * @param array<string, mixed>                                                                                                         $attrs Atributos del bloque.
+	 * @param array{module?: array<int, string>|null, groups?: array<string, array{presetId: array<int, string>, groupName: string}|null>} $ref   Resultado de {@see self::validate_preset_ref()}.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function apply_preset_ref( array $attrs, array $ref ): array {
+		if ( array_key_exists( 'module', $ref ) ) {
+			if ( null === $ref['module'] ) {
+				unset( $attrs['modulePreset'] );
+			} else {
+				$attrs['modulePreset'] = $ref['module'];
+			}
+		}
+
+		if ( isset( $ref['groups'] ) ) {
+			$current = isset( $attrs['groupPreset'] ) && is_array( $attrs['groupPreset'] ) ? $attrs['groupPreset'] : array();
+
+			foreach ( $ref['groups'] as $group_id => $entry ) {
+				if ( null === $entry ) {
+					unset( $current[ $group_id ] );
+				} else {
+					$current[ $group_id ] = $entry;
+				}
+			}
+
+			if ( array() === $current ) {
+				unset( $attrs['groupPreset'] );
+			} else {
+				$attrs['groupPreset'] = $current;
+			}
+		}
+
+		return $attrs;
+	}
+
+	/**
+	 * Indica si un preset existe en el catálogo.
+	 *
+	 * @param array<mixed> $catalog  Catálogo completo.
+	 * @param string       $kind     `module` o `group`.
+	 * @param string       $name     Módulo (en `module`) o nombre de grupo (en `group`).
+	 * @param string       $id       Id del preset.
+	 * @param string|null  $group_id Id del grupo de opciones que debe tener el preset de grupo.
+	 * @param string       $module   Módulo editado: el preset de grupo debe ser de ese módulo (si trae `moduleName`).
+	 */
+	private function preset_exists( array $catalog, string $kind, string $name, string $id, ?string $group_id, string $module = '' ): bool {
+		$item = $catalog[ $kind ][ $name ]['items'][ $id ] ?? null;
+
+		if ( ! is_array( $item ) ) {
+			return false;
+		}
+
+		if ( null === $group_id ) {
+			return true;
+		}
+
+		// Un preset de grupo se hizo para un módulo (`moduleName`, también en el payload de sync de Divi): sólo vale en ése.
+		if ( isset( $item['moduleName'] ) && $item['moduleName'] !== $module ) {
+			return false;
+		}
+
+		return ! isset( $item['groupId'] ) || $item['groupId'] === $group_id;
+	}
+
+	/**
+	 * Indica si algún nodo del árbol (a cualquier profundidad) trae un `preset` no nulo.
+	 *
+	 * Quien escribe lo usa para tomar el bloqueo de presets sólo cuando hace falta: `preset: null` no aplica ninguno.
+	 *
+	 * @param mixed $nodes Árbol recibido (sin validar).
+	 */
+	public static function tree_has_preset( $nodes ): bool {
+		if ( ! is_array( $nodes ) ) {
+			return false;
+		}
+
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			if ( isset( $node['preset'] ) || ( isset( $node['children'] ) && self::tree_has_preset( $node['children'] ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Error de preset que no existe.
+	 *
+	 * @param string $path Ruta del campo.
+	 * @param string $id   Id recibido.
+	 */
+	private function unknown( string $path, string $id ): \WP_Error {
+		return $this->error(
+			'nexo_mcp_divi_preset_unknown',
+			$path,
+			sprintf(
+				/* translators: %s: id del preset. */
+				__( 'el preset «%s» no existe para este módulo o grupo (ver nexo-mcp-get-divi-presets).', 'nexo-mcp' ),
+				$id
+			)
+		);
 	}
 
 	/**
@@ -296,6 +574,21 @@ final class DiviTreeValidator {
 			}
 
 			$out['attrs'] = $clean;
+		}
+
+		if ( array_key_exists( 'preset', $node ) ) {
+			$ref = $this->validate_preset_ref( $type, $node['preset'], $path . '.preset' );
+
+			if ( is_wp_error( $ref ) ) {
+				return $ref;
+			}
+
+			$with = self::apply_preset_ref( array(), $ref );
+
+			if ( array() !== $with ) {
+				// Los presets van primero, justo después de `builderVersion` (que añade quien escribe).
+				$out['attrs'] = array_merge( $with, isset( $out['attrs'] ) ? $out['attrs'] : array() );
+			}
 		}
 
 		if ( array_key_exists( 'children', $node ) ) {

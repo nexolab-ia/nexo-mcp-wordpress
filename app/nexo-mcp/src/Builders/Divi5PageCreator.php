@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Support\PostLock;
 use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
 /**
@@ -20,6 +21,9 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
  * filtros kses quitados sólo durante el insert ({@see Divi5ContentWriter::without_kses()}).
  * Después se marcan las metas de Divi 5, se vacía la caché CSS y se comprueba que lo guardado
  * es lo serializado. Si algo falla tras crear el borrador, se borra: un error no deja páginas a medias.
+ *
+ * Si algún nodo trae `preset`, validar y crear corren bajo el bloqueo de presets ({@see DiviDesignStore::LOCK_ID}, el del
+ * borrado): ocupado → su error, sin crear nada. Sin `preset` no se toma. No hay bloqueo de página (la página es nueva).
  */
 final class Divi5PageCreator {
 
@@ -66,6 +70,13 @@ final class Divi5PageCreator {
 	private $deleter;
 
 	/**
+	 * Bloqueo de presets: fn( callable ): mixed.
+	 *
+	 * @var callable
+	 */
+	private $presets_lock;
+
+	/**
 	 * Construye el creador.
 	 *
 	 * @param DiviTreeValidator|null $validator    Validador (por omisión, el de producción).
@@ -74,6 +85,7 @@ final class Divi5PageCreator {
 	 * @param callable|null          $inserter     fn( array ): int|\WP_Error. Por omisión, `wp_insert_post()` (sólo pruebas).
 	 * @param Divi5Adapter|null      $adapter      Adaptador de Divi 5.
 	 * @param callable|null          $deleter      fn( int ): mixed. Por omisión, `wp_delete_post( $id, true )` (sólo pruebas).
+	 * @param callable|null          $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 */
 	public function __construct(
 		?DiviTreeValidator $validator = null,
@@ -81,7 +93,8 @@ final class Divi5PageCreator {
 		?callable $version = null,
 		?callable $inserter = null,
 		?Divi5Adapter $adapter = null,
-		?callable $deleter = null
+		?callable $deleter = null,
+		?callable $presets_lock = null
 	) {
 		$this->validator    = $validator ?? new DiviTreeValidator();
 		$this->divi5_active = $divi5_active ?? array( Divi5ContentWriter::class, 'divi5_installed' );
@@ -89,6 +102,7 @@ final class Divi5PageCreator {
 		$this->inserter     = $inserter ?? static fn( array $data ) => wp_insert_post( $data, true );
 		$this->adapter      = $adapter ?? new Divi5Adapter();
 		$this->deleter      = $deleter ?? static fn( int $id ) => wp_delete_post( $id, true );
+		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 	}
 
 	/**
@@ -112,6 +126,22 @@ final class Divi5PageCreator {
 			);
 		}
 
+		if ( DiviTreeValidator::tree_has_preset( $input['sections'] ?? null ) ) {
+			return ( $this->presets_lock )( fn() => $this->create_unlocked( $title, $input ) );
+		}
+
+		return $this->create_unlocked( $title, $input );
+	}
+
+	/**
+	 * Valida y crea (con el bloqueo de presets en mano si hace falta).
+	 *
+	 * @param string               $title Título limpio.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function create_unlocked( string $title, array $input ) {
 		$clean = $this->validator->validate_tree( $input['sections'] ?? null, 'divi/placeholder' );
 
 		if ( is_wp_error( $clean ) ) {

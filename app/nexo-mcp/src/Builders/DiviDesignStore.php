@@ -38,6 +38,13 @@ final class DiviDesignStore {
 	public const HISTORY_LIMIT = 20;
 
 	/**
+	 * Tamaño máximo del historial serializado (2 MiB): cada entrada guarda el área completa dos veces
+	 * (antes y después) y los presets pueden ser un catálogo grande; al pasarlo se descartan las entradas más
+	 * viejas en vez de fallar la escritura. La entrada nueva siempre se conserva, aunque ella sola lo pase.
+	 */
+	public const HISTORY_MAX_BYTES = 2097152;
+
+	/**
 	 * Tipos de variable que se leen.
 	 *
 	 * @var array<int, string>
@@ -87,8 +94,13 @@ final class DiviDesignStore {
 
 	/**
 	 * Clave de bloqueo (no es un contenido: sólo da nombre a la cerradura).
+	 *
+	 * La misma cerradura protege el borrado de presets (uso + borrado) y las escrituras de página que aplican un
+	 * preset (existencia + guardado): ver {@see self::locked()}. Orden de bloqueos: primero el de la página o la
+	 * copia de trabajo, después éste. El borrado sólo toma éste (el uso se busca con SQL, sin bloqueos de página),
+	 * así que no hay ciclo.
 	 */
-	private const LOCK_ID = 0;
+	public const LOCK_ID = 0;
 
 	/**
 	 * Fn(): bool.
@@ -161,6 +173,13 @@ final class DiviDesignStore {
 	private $lock;
 
 	/**
+	 * Áreas que otros almacenes registran sobre este historial: área => fn(): mixed (estado actual) y fn( mixed ): void (restaurar).
+	 *
+	 * @var array<string, array{state: callable, restore: callable}>
+	 */
+	private array $areas = array();
+
+	/**
 	 * Construye el almacén; sin argumentos usa Divi 5 de verdad.
 	 *
 	 * @param callable|null $divi5_active  fn(): bool.
@@ -205,10 +224,51 @@ final class DiviDesignStore {
 	}
 
 	/**
+	 * Ejecuta `$work` con el bloqueo de presets (el mismo del borrado y de las demás escrituras de presets).
+	 *
+	 * @param callable $work fn(): mixed.
+	 *
+	 * @return mixed|\WP_Error Lo que devuelve `$work`, o el error de ocupado del bloqueo (sin ejecutar `$work`).
+	 */
+	public function locked( callable $work ) {
+		return ( $this->lock )( $work );
+	}
+
+	/**
 	 * Indica si Divi 5 está activo.
 	 */
 	public function available(): bool {
 		return (bool) ( $this->divi5_active )();
+	}
+
+	/**
+	 * Registra un área propia de otro almacén (los presets) sobre el mismo historial y la misma pila de deshacer.
+	 *
+	 * Sin registrar, una entrada de esa área en el historial no se puede comparar ni restaurar: deshacer responde
+	 * `nexo_mcp_divi_design_undo_failed` y el respaldo se conserva.
+	 *
+	 * @param string   $area    Nombre del área en el historial.
+	 * @param callable $state   fn(): mixed. Estado actual del área, en la misma forma en que se escribe.
+	 * @param callable $restore fn( mixed $previous ): void. Devuelve el área a su valor anterior; lanza si no puede.
+	 */
+	public function register_area( string $area, callable $state, callable $restore ): void {
+		$this->areas[ $area ] = array(
+			'state'   => $state,
+			'restore' => $restore,
+		);
+	}
+
+	/**
+	 * Escribe un área registrada con el protocolo común: bloqueo, respaldo en el historial, escritura, flush y Actividad.
+	 *
+	 * @param string   $tool Herramienta que escribe.
+	 * @param string   $area Área registrada.
+	 * @param callable $plan fn(): \WP_Error|array{previous: mixed, written: mixed, apply: callable}. Corre bajo el bloqueo.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function write_area( string $tool, string $area, callable $plan ) {
+		return $this->write( $tool, $area, $plan );
 	}
 
 	/**
@@ -479,16 +539,60 @@ final class DiviDesignStore {
 	/**
 	 * Deshace el último cambio del diseño global.
 	 *
-	 * @param bool $force Restaurar aunque el área haya cambiado después de lo que escribió el conector.
+	 * @param bool          $force   Restaurar aunque el área haya cambiado después de lo que escribió el conector.
+	 * @param callable|null $allowed fn( string $area ): bool. Si se da y niega el área del cambio que se deshace, no se restaura nada
+	 *                               (cada área tiene su propio permiso: diseño global o presets).
+	 * @param string|null   $area    Deshacer el último cambio de esta área (`colors`, `variables`, `theme_options`, `presets`) aunque
+	 *                               haya cambios de otras áreas encima; null = el último cambio de la pila, sea de la área que sea.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo( bool $force = false ) {
+	public function undo( bool $force = false, ?callable $allowed = null, ?string $area = null ) {
 		if ( ! $this->available() ) {
 			return Divi5ContentWriter::required_error();
 		}
 
-		return ( $this->lock )( fn() => $this->undo_locked( $force ) );
+		if ( null !== $area && ! $this->is_known_area( $area ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_design_area_invalid',
+				sprintf(
+					/* translators: %s: áreas admitidas. */
+					__( 'Área desconocida. Se puede deshacer por área: %s.', 'nexo-mcp' ),
+					implode( ', ', $this->known_areas() )
+				)
+			);
+		}
+
+		return ( $this->lock )( fn() => $this->undo_locked( $force, $allowed, $area ) );
+	}
+
+	/**
+	 * Áreas por las que se puede deshacer: las del diseño global y las que otros almacenes registran.
+	 *
+	 * @return array<int, string>
+	 */
+	public function known_areas(): array {
+		return array_values( array_unique( array_merge( array( 'colors', 'variables', 'theme_options' ), array_keys( $this->areas ) ) ) );
+	}
+
+	/**
+	 * Indica si `$area` es una de las áreas conocidas (`variables` cubre cualquier tipo; también se acepta `variables:<tipo>`).
+	 *
+	 * @param string $area Área.
+	 */
+	private function is_known_area( string $area ): bool {
+		return in_array( $area, $this->known_areas(), true )
+			|| ( str_starts_with( $area, 'variables:' ) && in_array( substr( $area, 10 ), self::WRITE_TYPES, true ) );
+	}
+
+	/**
+	 * Indica si la entrada del historial es del área pedida (`variables` cubre todos los tipos de variable).
+	 *
+	 * @param string $entry_area Área de la entrada.
+	 * @param string $area       Área pedida.
+	 */
+	private function area_matches( string $entry_area, string $area ): bool {
+		return $entry_area === $area || ( 'variables' === $area && str_starts_with( $entry_area, 'variables:' ) );
 	}
 
 	/**
@@ -577,6 +681,18 @@ final class DiviDesignStore {
 			'date'     => gmdate( 'Y-m-d H:i:s' ),
 		);
 		$history     = array_slice( $history, -self::HISTORY_LIMIT );
+		$dropped     = 0;
+
+		// Tope de bytes: se descartan las más viejas (nunca la nueva) en vez de fallar la escritura.
+		$kept  = count( $history );
+		$bytes = strlen( maybe_serialize( $history ) );
+
+		while ( $kept > 1 && $bytes > self::HISTORY_MAX_BYTES ) {
+			array_shift( $history );
+			--$kept;
+			++$dropped;
+			$bytes = strlen( maybe_serialize( $history ) );
+		}
 
 		// `update_option()` devuelve false también cuando nada cambia: lo que cuenta es lo guardado.
 		update_option( self::HISTORY_OPTION, $history, false );
@@ -612,6 +728,11 @@ final class DiviDesignStore {
 			'area'           => $area,
 			'undo_available' => true,
 		);
+
+		if ( $dropped > 0 ) {
+			// Aviso para quien llama: esos cambios ya no se pueden deshacer.
+			$result['history_dropped'] = $dropped;
+		}
 
 		$this->log( $tool, 'success', array( 'area' => $area ), $result );
 
@@ -650,8 +771,18 @@ final class DiviDesignStore {
 	 * @param mixed  $written Lo escrito (para saber qué claves de las opciones mirar).
 	 *
 	 * @return mixed
+	 *
+	 * @throws \RuntimeException Si el área es `presets` y no hay un almacén de presets registrado.
 	 */
 	private function area_state( string $area, $written ) {
+		if ( isset( $this->areas[ $area ] ) ) {
+			return ( $this->areas[ $area ]['state'] )();
+		}
+
+		if ( 'presets' === $area ) {
+			throw new \RuntimeException( esc_html__( 'Los presets de Divi no están registrados en este almacén.', 'nexo-mcp' ) );
+		}
+
 		if ( 'colors' === $area ) {
 			return $this->without_customizer_ids( $this->colors() );
 		}
@@ -736,20 +867,52 @@ final class DiviDesignStore {
 	/**
 	 * Cuerpo de `undo()` bajo el bloqueo.
 	 *
-	 * @param bool $force Restaurar aunque el área haya cambiado después.
+	 * @param bool          $force   Restaurar aunque el área haya cambiado después.
+	 * @param callable|null $allowed fn( string $area ): bool; null = sin comprobar.
+	 * @param string|null   $area    Área pedida; null = el último cambio de la pila.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function undo_locked( bool $force ) {
+	private function undo_locked( bool $force, ?callable $allowed = null, ?string $area = null ) {
 		// Se relee dentro del bloqueo: otro proceso pudo escribir o deshacer mientras se esperaba.
 		$history = $this->history();
-		$entry   = end( $history );
-		$tool    = 'undo-divi-design-change';
+		$index   = array_key_last( $history );
+
+		if ( null !== $area ) {
+			$index = null;
+
+			foreach ( array_reverse( array_keys( $history ), false ) as $candidate ) {
+				if ( $this->area_matches( $history[ $candidate ]['area'], $area ) ) {
+					$index = $candidate;
+					break;
+				}
+			}
+		}
+
+		$entry = null === $index ? false : $history[ $index ];
+		$tool  = 'undo-divi-design-change';
 
 		if ( false === $entry ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_design_nothing_to_undo',
-				__( 'No hay ningún cambio del diseño global de Divi para deshacer.', 'nexo-mcp' )
+				null === $area
+					? __( 'No hay ningún cambio del diseño global de Divi para deshacer.', 'nexo-mcp' )
+					: sprintf(
+						/* translators: %s: área. */
+						__( 'No hay ningún cambio del área «%s» del diseño global de Divi para deshacer.', 'nexo-mcp' ),
+						$area
+					)
+			);
+		}
+
+		// Cada área tiene su permiso: el cambio que está arriba de la pila lo deshace sólo quien puede escribir esa área.
+		if ( null !== $allowed && ! $allowed( $entry['area'] ) ) {
+			return $this->fail(
+				$tool,
+				'nexo_mcp_divi_design_area_forbidden',
+				'presets' === $entry['area']
+					? __( 'El último cambio es de los presets de Divi y deshacerlo exige el scope mcp:divi_presets (con su interruptor encendido). No se restauró nada.', 'nexo-mcp' )
+					: __( 'El último cambio es del diseño global de Divi y deshacerlo exige el scope mcp:divi_design (con su interruptor encendido). No se restauró nada.', 'nexo-mcp' )
 			);
 		}
 
@@ -793,7 +956,9 @@ final class DiviDesignStore {
 			);
 		}
 
-		array_pop( $history );
+		// Se saca la entrada deshecha (no necesariamente la de arriba si se pidió un área).
+		unset( $history[ $index ] );
+		$history = array_values( $history );
 		update_option( self::HISTORY_OPTION, $history, false );
 		$this->flush();
 
@@ -827,6 +992,12 @@ final class DiviDesignStore {
 	 * @throws \RuntimeException Si Divi rechaza la restauración o el área no se conoce.
 	 */
 	private function restore( string $area, $previous ): void {
+		if ( isset( $this->areas[ $area ] ) ) {
+			( $this->areas[ $area ]['restore'] )( $previous );
+
+			return;
+		}
+
 		if ( 'colors' === $area && is_array( $previous ) ) {
 			( $this->set_colors )( $this->without_customizer_ids( $previous ) );
 

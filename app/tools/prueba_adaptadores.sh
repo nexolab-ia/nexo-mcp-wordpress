@@ -52,6 +52,14 @@
 #    et_divi_global_variables, el historial y los ajustes al empezar y se devuelven al final (también si la
 #    corrida se corta: Divi agrega 5 colores del Customizer a et_divi al escribir la paleta y deshacer no los quita);
 #    el interruptor divi_design_tools_enabled y la capacidad se devuelven; se borra la página y su et-cache.
+# 7g. Presets de módulos de Divi 5 (D4; sólo con Divi 5 activo, con SKIP si falta): get-divi-presets, set-divi-preset
+#    (módulo y grupo), edit-divi-module con preset sobre una página publicada (va a la copia; el original no cambia;
+#    publicada la copia, el CSS del frontend trae la regla de la clase preset--module--… y preset--group--…),
+#    get-page-structure con las referencias, set-divi-default-preset, delete-divi-preset en uso → nexo_mcp_divi_preset_in_use
+#    sin escribir, y undo-divi-design-change {area: presets} de cada cambio; rechazos sin escribir (preset inexistente,
+#    modulePreset crudo en attrs, attrs con manejador de eventos). Se guardan crudos et_divi_builder_global_presets_d5,
+#    el historial, los ajustes y el bloqueo al empezar y se devuelven al final (también si la corrida se corta);
+#    el interruptor divi_presets_tools_enabled y la capacidad se devuelven; se borra la página y su et-cache.
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -319,6 +327,47 @@ $et = $crudo( "et_divi" ); $vars = $crudo( "et_divi_global_variables" ); $hist =
 echo "et_divi=" . ( null === $et ? "sin" : md5( $et ) ) . " variables=" . ( null === $vars ? "sin" : md5( $vars ) ) . " historial=" . ( null === $hist ? "sin" : md5( $hist ) ) . " ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
 	exit 0
 fi
+# Subcomandos y función del bloque de presets de Divi 5 (D4): foto cruda de las opciones que se tocan.
+#   --divi-presets-foto       guarda crudas (valor y autocarga) et_divi_builder_global_presets_d5, el historial, los ajustes y el bloqueo
+#   --divi-presets-huella     md5 crudo de lo guardado (presets, historial, ajustes, bloqueo)
+#   --divi-presets-restaurar  devuelve las opciones crudas, vacía el CSS de Divi y borra la foto
+divi_presets_opciones='array( "et_divi_builder_global_presets_d5", "nexo_mcp_divi_design_history", "nexo_mcp_settings", "nexo_mcp_lock_0" )'
+restaurar_divi_presets() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_presets_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+foreach ( $foto as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+if ( class_exists( "ET_Core_PageResource" ) ) { ET_Core_PageResource::remove_static_resources( "all", "all", true ); }
+delete_option( "nexo_prueba_divi_presets_foto" );
+echo "restaurado";'
+}
+if [ "${1:-}" = "--divi-presets-foto" ]; then
+	php_wp '
+global $wpdb;
+$foto = array();
+foreach ( '"$divi_presets_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$foto[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+update_option( "nexo_prueba_divi_presets_foto", $foto, false );
+echo "foto de " . count( $foto ) . " opciones";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-presets-huella" ]; then
+	php_wpr '
+global $wpdb;
+$crudo = static function ( $n ) use ( $wpdb ) { return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $n ) ); };
+$p = $crudo( "et_divi_builder_global_presets_d5" ); $hist = $crudo( "nexo_mcp_divi_design_history" ); $set = $crudo( "nexo_mcp_settings" );
+echo "presets=" . ( null === $p ? "sin" : md5( $p ) ) . " historial=" . ( null === $hist ? "sin" : md5( $hist ) ) . " ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
+	exit 0
+fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -419,6 +468,8 @@ componentes_cap_agregada=""
 divi_tema_previo=""
 divi_diseno_foto_tomada=""
 divi_diseno_cap_agregada=""
+divi_presets_foto_tomada=""
+divi_presets_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -536,6 +587,15 @@ cleanup() {
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_design" );' >/dev/null
 		echo "Capacidad nexo_mcp_divi_design quitada."
 		divi_diseno_cap_agregada=""
+	fi
+	if [ -n "$divi_presets_foto_tomada" ]; then
+		echo "Presets de Divi: $(restaurar_divi_presets)"
+		divi_presets_foto_tomada=""
+	fi
+	if [ -n "$divi_presets_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_presets" );' >/dev/null
+		echo "Capacidad nexo_mcp_divi_presets quitada."
+		divi_presets_cap_agregada=""
 	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
@@ -2178,6 +2238,7 @@ def pagina_con_color():
     css_con(d["id"], r"--" + re.escape(st["color"]) + r"\s*:")
 
 def cambiar_color():
+    time.sleep(1.2)  # Divi marca el CSS como vacío con el segundo entero: una hoja del mismo segundo se toma por vigente
     _, d = cli.ok("set-divi-global-color", {"id": st["color"], "label": f"Prueba divi-diseno-mcp {suffix}", "color": "#00ff00"})
     assert d["created"] is False and d["id"] == st["color"], d
     assert color(estado(), st["color"])["color"] == "#00ff00"
@@ -2202,6 +2263,7 @@ def variable_y_archivo():
     assert variable(estado(), "numbers", d["id"])["status"] == "archived"
 
 def tipografia():
+    time.sleep(1.2)  # Divi marca el CSS como vacío con el segundo entero: una hoja del mismo segundo se toma por vigente
     nuevo = "21" if st["tam0"] == "19" else "19"
     st["tam_nuevo"] = nuevo
     st["css0"] = css_de(st["pagina"])
@@ -2211,6 +2273,7 @@ def tipografia():
     css_con(st["pagina"], r"--et_global_body_font_size:\s*" + nuevo + r"px")
 
 def deshacer_todo():
+    time.sleep(1.2)  # Divi marca el CSS como vacío con el segundo entero: una hoja del mismo segundo se toma por vigente
     n = st["historial0"]
     # Orden inverso: tipografía, archivo, variable, cambio de color, color creado.
     _, u = cli.ok("undo-divi-design-change", {})
@@ -2279,6 +2342,238 @@ PY
 	if [ -n "$divi_diseno_cap_agregada" ]; then
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_design" );' >/dev/null
 		divi_diseno_cap_agregada=""
+	fi
+fi
+echo
+echo "### Presets de módulos de Divi 5 (D4: get-divi-presets, set-divi-preset, set-divi-default-preset, delete-divi-preset, preset en edit-divi-module, undo-divi-design-change)"
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba de los presets de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto cruda de lo que se toca (la limpieza la devuelve también si la corrida se corta).
+	tools/prueba_adaptadores.sh --divi-presets-foto
+	divi_presets_foto_tomada=1
+	divi_presets_huella_inicial="$(tools/prueba_adaptadores.sh --divi-presets-huella)"
+	echo "Huella cruda inicial: $divi_presets_huella_inicial"
+	# La capacidad nexo_mcp_divi_presets la da el instalador al subir de versión; si falta se concede y se quita.
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_presets" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_presets" );' >/dev/null
+		divi_presets_cap_agregada=1
+		echo "Capacidad nexo_mcp_divi_presets concedida al administrador (se quita al final)."
+	fi
+	tools/prueba_adaptadores.sh --ajuste divi_presets_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, time, urllib.parse, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+BG = "module.decoration.background"
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=180).stdout.strip()
+
+def huella():
+    return script("--divi-presets-huella")
+
+def descargar(url):
+    with urllib.request.urlopen(url, timeout=20) as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def css_de(i):
+    """HTML de la página más las hojas de et-cache que enlaza (donde Divi deja las reglas de las clases preset--…)."""
+    base = f"http://localhost:8080/?page_id={i}"
+    html = descargar(base)
+    partes = [html]
+    for href in re.findall(r"""href=["']([^"']*et-cache[^"']*\.css[^"']*)["']""", html):
+        partes.append(descargar(urllib.parse.urljoin(base, href)))
+    return "\n".join(partes)
+
+def css_con(i, patron, presente=True):
+    """El CSS se regenera en la primera visita tras el flush: se reintenta unos segundos."""
+    ultimo = ""
+    for _ in range(6):
+        ultimo = css_de(i)
+        hallado = re.search(patron, ultimo)
+        if bool(hallado) == presente:
+            return ultimo
+        time.sleep(1)
+    raise AssertionError(f"el CSS del frontend {'no trae' if presente else 'sigue trayendo'} /{patron}/" + ("" if presente else f": «{hallado.group(0)[:200]}»"))
+
+def leer(arg=None):
+    _, d = cli.ok("get-divi-presets", arg or {})
+    return d
+
+def estructura(i):
+    _, d = cli.ok("get-page-structure", {"id": i})
+    assert d["builder"] == "divi5", d.get("builder")
+    return {n["id"]: n for n in d["nodes"]}
+
+def valor(v):
+    return {"desktop": {"value": v}}
+
+def fondo(color):
+    return {"module": {"decoration": {"background": valor({"color": color})}}}
+
+st = {}
+titulo = f"Prueba presets divi5-mcp-{suffix}"
+T = f"Texto presets {suffix}"
+
+def leer_presets():
+    d = leer()
+    assert set(d) >= {"modules", "groups", "available_groups", "history_count"}, list(d)
+    texto = next((m for m in d["available_groups"] if m["module"] == "divi/text"), None)
+    assert texto and BG in [g["id"] for g in texto["groups"]], d["available_groups"]
+    st["historial0"] = d["history_count"]
+    st["modulos0"] = {m["module"]: len(m["presets"]) for m in d["modules"]}
+
+def crear_preset_modulo():
+    _, d = cli.ok("set-divi-preset", {"kind": "module", "name": "divi/text", "label": f"Preset divi5-mcp-{suffix}", "attrs": fondo("#ff0000")})
+    assert re.fullmatch(r"[0-9a-f-]{36}", d["id"]) and d["created"] is True and d["area"] == "presets" and d["undo_available"] is True, d
+    st["preset"] = d["id"]
+    g = leer({"module": "divi/text"})
+    p = next((x for x in next(m for m in g["modules"] if m["module"] == "divi/text")["presets"] if x["id"] == d["id"]), None)
+    assert p and p["name"] == f"Preset divi5-mcp-{suffix}" and p["attrs"] == fondo("#ff0000"), p
+    assert g["history_count"] == st["historial0"] + 1
+
+def crear_preset_grupo():
+    _, d = cli.ok("set-divi-preset", {"kind": "group", "name": "divi/background", "module": "divi/text", "group_id": BG, "label": f"Grupo divi5-mcp-{suffix}", "attrs": fondo("#00ff00")})
+    assert d["created"] is True and d["undo_available"] is True, d
+    st["grupo"] = d["id"]
+    g = leer({"module": "divi/text"})
+    assert any(x["id"] == d["id"] and x["group_id"] == BG for gr in g["groups"] for x in gr["presets"]), g["groups"]
+    assert g["history_count"] == st["historial0"] + 2
+
+def pagina_base():
+    seccion = {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [{"type": "divi/text", "attrs": {"content": {"innerContent": valor(f"<p>{T}</p>")}}}]}]}]}
+    _, d = cli.ok("create-divi-page", {"title": titulo, "sections": [seccion]})
+    st["pagina"] = d["id"]
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    assert script("--estado", d["id"]) == "publish"
+    assert T in descargar(f"http://localhost:8080/?page_id={d['id']}")
+    st["original"] = script("--contenido", d["id"])
+    st["paginas"] = int(script("--contar-paginas"))
+    assert "modulePreset" not in st["original"]
+
+def aplicar():
+    p = st["pagina"]
+    nodo = estructura(p)["0.0.0.0.0"]
+    assert "preset" not in nodo["attributes"], nodo["attributes"]
+    _, d = cli.ok("edit-divi-module", {"id": p, "path": "0.0.0.0.0", "fingerprint": nodo["attributes"]["fingerprint"], "preset": {"module": st["preset"], "groups": {BG: st["grupo"]}}})
+    assert d["draft_of"] == p and d["id"] != p and d["path"] == "0.0.0.0.0", d
+    st["copia"] = d["id"]
+    assert script("--contenido", p) == st["original"], "el original cambió"
+    assert int(script("--contar-paginas")) == st["paginas"] + 1, "debía nacer una sola copia"
+    crudo = script("--contenido", d["id"])
+    assert f'"modulePreset":["{st["preset"]}"]' in crudo and st["grupo"] in crudo, crudo[:400]
+    releido = estructura(d["id"])["0.0.0.0.0"]
+    assert releido["attributes"]["preset"] == {"module": [st["preset"]], "groups": {BG: [st["grupo"]]}}, releido["attributes"]
+    assert releido["attributes"]["fingerprint"] == d["fingerprint"]
+    assert "preset" not in estructura(p)["0.0.0.0.0"]["attributes"], "el original no debía llevar el preset"
+
+def publicar_y_css():
+    p, copia = st["pagina"], st["copia"]
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (p, copia), m
+    assert int(script("--contar-paginas")) == st["paginas"], "la copia no se borró al publicar"
+    assert estructura(p)["0.0.0.0.0"]["attributes"]["preset"]["module"] == [st["preset"]]
+    html = css_con(p, r"\.preset--module--divi-text--" + re.escape(st["preset"]) + r"[^{}<>\"]*\{[^}]*background-color:\s*#ff0000")
+    assert "preset--module--divi-text--" + st["preset"] in html, "la clase del preset no está en el HTML"
+    css_con(p, r"\.preset--group--divi-text--divi-background--" + re.escape(st["grupo"]) + r"[^{}<>\"]*\{[^}]*background-color:\s*#00ff00")
+
+def predeterminado():
+    _, d = cli.ok("set-divi-default-preset", {"kind": "module", "name": "divi/text", "id": st["preset"]})
+    assert d["changed"] is True and d["undo_available"] is True, d
+    m = next(m for m in leer()["modules"] if m["module"] == "divi/text")
+    assert m["default"] == st["preset"], m
+    assert leer()["history_count"] == st["historial0"] + 3
+    _, otra = cli.ok("set-divi-default-preset", {"kind": "module", "name": "divi/text", "id": st["preset"]})
+    assert otra["changed"] is False, otra  # mismo valor: no escribe
+
+def borrar_en_uso():
+    antes = huella()
+    es_error, texto, datos = cli.call("delete-divi-preset", {"kind": "module", "name": "divi/text", "id": st["preset"]})
+    assert es_error and "está en uso" in texto and str(st["pagina"]) in texto, texto[:300]  # nexo_mcp_divi_preset_in_use
+    assert huella() == antes, "cambió lo guardado"
+    assert any(x["id"] == st["preset"] for m in leer()["modules"] if m["module"] == "divi/text" for x in m["presets"]), "el preset se borró"
+
+def deshacer():
+    # Divi marca el CSS como vacío con el segundo entero (.cache-cleared-at): una hoja generada en el mismo segundo que
+    # el vaciado se toma por vigente. Entre la visita que la generó y el deshacer pasa más de un segundo, como en un uso real.
+    time.sleep(1.2)
+    return cli.ok("undo-divi-design-change", {"area": "presets"})
+
+def deshacer_todo():
+    n = st["historial0"]
+    # Orden inverso: predeterminado, grupo, módulo.
+    _, u = deshacer()
+    assert u["area"] == "presets" and u["tool"] == "set-divi-default-preset", u
+    assert next(m for m in leer()["modules"] if m["module"] == "divi/text")["default"] in (None, ""), "el predeterminado sigue puesto"
+    _, u = deshacer()
+    assert u["area"] == "presets" and u["tool"] == "set-divi-preset", u
+    assert not any(x["id"] == st["grupo"] for gr in leer()["groups"] for x in gr["presets"]), "el preset de grupo sigue"
+    css_con(st["pagina"], r"\.preset--group--divi-text--divi-background--" + re.escape(st["grupo"]) + r"[^{}<>\"]*\{", presente=False)
+    _, u = deshacer()
+    assert u["area"] == "presets" and u["tool"] == "set-divi-preset" and u["remaining"] == n, u
+    g = leer()
+    assert g["history_count"] == n and not any(x["id"] == st["preset"] for m in g["modules"] for x in m["presets"]), g["history_count"]
+    css_con(st["pagina"], r"\.preset--module--divi-text--" + re.escape(st["preset"]) + r"[^{}<>\"]*\{", presente=False)
+
+def sin_escribir(nombre, llamar, esperado):
+    def fn():
+        antes, paginas, contenido = huella(), script("--contar-paginas"), script("--contenido", st["pagina"])
+        es_error, texto, _ = llamar()
+        assert es_error, "debía rechazarse"
+        assert esperado in texto, f"falta «{esperado}» en: {texto[:300]!r}"
+        assert huella() == antes, "cambió lo guardado"
+        assert script("--contar-paginas") == paginas, "cambió la cantidad de páginas (¿copia?)"
+        assert script("--contenido", st["pagina"]) == contenido, "cambió el original"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+def huella_nodo():
+    return estructura(st["pagina"])["0.0.0.0.0"]["attributes"]["fingerprint"]
+
+comprobar("get-divi-presets: presets, predeterminados, grupos disponibles de divi/text y cantidad de cambios", leer_presets)
+comprobar("set-divi-preset: crea un preset de módulo (UUID) y get-divi-presets lo muestra con sus attrs", crear_preset_modulo)
+comprobar("set-divi-preset: crea un preset de grupo (fondo) para divi/text", crear_preset_grupo)
+comprobar("create-divi-page: página publicada con un texto sin preset", pagina_base)
+comprobar("edit-divi-module con preset: la copia lleva modulePreset y groupPreset, get-page-structure los expone y el original no cambia", aplicar)
+comprobar("publicar la copia: el CSS del frontend trae la regla de la clase del preset de módulo y del de grupo", publicar_y_css)
+comprobar("set-divi-default-preset: fija el predeterminado del módulo y repetirlo no escribe", predeterminado)
+comprobar("delete-divi-preset sin force: en uso → nexo_mcp_divi_preset_in_use y no escribe nada", borrar_en_uso)
+comprobar("undo-divi-design-change {area: presets}: cada cambio vuelve atrás en orden inverso y la regla CSS desaparece", deshacer_todo)
+if "pagina" in st:
+    sin_escribir("preset inexistente en edit-divi-module (nexo_mcp_divi_preset_unknown)", lambda: cli.call("edit-divi-module", {"id": st["pagina"], "path": "0.0.0.0.0", "fingerprint": huella_nodo(), "preset": {"module": "no-existe"}}), "preset.module")
+    sin_escribir("preset inexistente en un nodo de create-divi-page (nexo_mcp_divi_preset_unknown)", lambda: cli.call("create-divi-page", {"title": titulo + " x", "sections": [{"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [{"type": "divi/text", "preset": {"module": "no-existe"}}]}]}]}]}), "preset.module")
+    sin_escribir("modulePreset crudo dentro de attrs (nexo_mcp_divi_attr_denied)", lambda: cli.call("create-divi-page", {"title": titulo + " y", "sections": [{"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [{"type": "divi/text", "attrs": {"modulePreset": ["x"]}}]}]}]}]}), "modulePreset")
+    sin_escribir("attrs con manejador de eventos en un preset (nexo_mcp_divi_preset_invalid)", lambda: cli.call("set-divi-preset", {"kind": "module", "name": "divi/text", "label": "x", "attrs": {"attributes": {"onclick": "alert(1)"}}}), "attrs.attributes")
+    sin_escribir("preset inexistente en delete-divi-preset (nexo_mcp_divi_preset_not_found)", lambda: cli.call("delete-divi-preset", {"kind": "module", "name": "divi/text", "id": "no-existe"}), "no-existe")
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de los presets de Divi 5 (D4) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de los presets de Divi 5 (D4) tuvo comprobaciones fallidas"
+	tools/prueba_adaptadores.sh --ajuste divi_presets_tools_enabled false
+	echo "Presets de Divi: $(restaurar_divi_presets)"
+	divi_presets_foto_tomada=""
+	check_eq "Divi D4: lo guardado quedó byte a byte como al empezar (presets, historial, ajustes, bloqueo)" "$divi_presets_huella_inicial" "$(tools/prueba_adaptadores.sh --divi-presets-huella)"
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+	if [ -n "$divi_presets_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_presets" );' >/dev/null
+		divi_presets_cap_agregada=""
 	fi
 fi
 if [ -n "$divi_tema_previo" ]; then

@@ -17,6 +17,7 @@ use NexoDev\NexoMCP\Builders\BuilderGateway;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
 use NexoDev\NexoMCP\Builders\DiviDesignStore;
+use NexoDev\NexoMCP\Builders\DiviPresetOperations;
 use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
 use NexoDev\NexoMCP\Fields\FieldGateway;
 use NexoDev\NexoMCP\Support\Settings;
@@ -87,6 +88,10 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-variable',
 		'nexo-mcp/archive-divi-variable',
 		'nexo-mcp/set-divi-typography',
+		'nexo-mcp/get-divi-presets',
+		'nexo-mcp/set-divi-preset',
+		'nexo-mcp/set-divi-default-preset',
+		'nexo-mcp/delete-divi-preset',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -318,8 +323,8 @@ final class ExtendedAbilityRegistrar {
 		);
 		$this->ability(
 			'undo-divi-design-change',
-			'Deshacer el último cambio del diseño global de Divi',
-			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Requiere el scope mcp:divi_design que el administrador enciende aparte (y mcp:destructive con force).',
+			'Deshacer el último cambio del diseño global o de los presets de Divi',
+			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, colores y tipografía del Customizer, o el catálogo completo de presets de módulos —área presets—) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Diseño global y presets comparten una sola pila: cada área exige su propio scope (mcp:divi_design para colores, variables y tipografía; mcp:divi_presets para presets), y si el cambio de arriba es de un área para la que el token no tiene permiso responde nexo_mcp_divi_design_area_forbidden y no restaura nada. Con area (colors, variables —cualquier tipo—, theme_options o presets) deshace el último cambio de ESA área aunque haya cambios de otras encima (las áreas tocan opciones distintas), así quien sólo tiene mcp:divi_design no queda bloqueado por un cambio de presets y al revés; un area desconocida responde nexo_mcp_divi_design_area_invalid y sin cambios de esa área, nexo_mcp_divi_design_nothing_to_undo; sin area se deshace el de arriba de la pila, como siempre. Requiere el scope mcp:divi_design o mcp:divi_presets según el área, que el administrador enciende aparte (y mcp:destructive con force).',
 			'write',
 			array(
 				'type'                 => 'object',
@@ -329,11 +334,20 @@ final class ExtendedAbilityRegistrar {
 						'default'     => false,
 						'description' => 'true restaura aunque el área haya cambiado después del cambio del conector (pisa ese cambio).',
 					),
+					'area'  => array(
+						'type'        => 'string',
+						'enum'        => array( 'colors', 'variables', 'theme_options', 'presets' ),
+						'description' => 'Deshacer el último cambio de esta área aunque haya otros encima. Sin ella se deshace el de arriba de la pila.',
+					),
 				),
 				'additionalProperties' => false,
 			),
-			fn( array $input ) => $this->builders->undo_divi_design_change( true === ( $input['force'] ?? false ) ),
-			fn( array $input = array() ) => $this->divi_design_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
+			fn( array $input ) => $this->builders->undo_divi_design_change(
+				true === ( $input['force'] ?? false ),
+				fn( string $area ): bool => $this->divi_area_write( $area ),
+				isset( $input['area'] ) && is_string( $input['area'] ) ? $input['area'] : null
+			),
+			fn( array $input = array() ) => $this->divi_area_write( isset( $input['area'] ) && is_string( $input['area'] ) ? $input['area'] : $this->builders->divi_last_change_area() ) && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
 		);
 		$this->ability(
 			'set-divi-global-color',
@@ -501,6 +515,137 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->set_divi_typography( $input ),
 			fn() => $this->divi_design_write()
+		);
+		$this->ability(
+			'get-divi-presets',
+			'Obtener los presets de módulos de Divi 5',
+			'Lee los presets de Divi 5: los de módulo (uno por módulo, con su id, nombre, fechas y cuál es el predeterminado del módulo) y los de grupo de opciones (fondo, borde, fuente, espaciado…, con su grupo, el módulo para el que se hicieron y el predeterminado de cada grupo), más los grupos de opciones disponibles para cada módulo del catálogo (available_groups: id de grupo y nombre). Un preset pesa en todos los módulos que lo usan y el predeterminado en todos los que no tienen otro: lo que diga un attr propio del módulo gana siempre. Con module (por ejemplo divi/text; sólo módulos del catálogo de create-divi-page, si no responde nexo_mcp_divi_preset_module_unknown) devuelve además los attrs de cada preset de ese módulo y los de grupo hechos para él; sin module devuelve todo sin attrs. Los módulos fuera del catálogo se listan con in_catalog: false y no se gestionan. Se deshace el último cambio con nexo-mcp-undo-divi-design-change (área presets). Devuelve {modules, groups, available_groups, history_count}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Leer sólo requiere el permiso de lectura de constructores; cambiar presets requiere el scope mcp:divi_presets que el administrador enciende aparte.',
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'module' => array(
+						'type'        => 'string',
+						'description' => 'Nombre de bloque de un módulo del catálogo (divi/text, divi/heading, divi/button…). Sin él se devuelven todos los presets sin attrs.',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->get_divi_presets( $input ),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'set-divi-preset',
+			'Crear o cambiar un preset de módulo o de grupo de Divi 5',
+			'Crea (sin id) o cambia (con id) un preset de Divi 5: de un módulo del catálogo (kind: module, name: divi/text, divi/heading…) o de un grupo de opciones de uno de esos módulos (kind: group, name: el grupo, por ejemplo divi/background, de available_groups de nexo-mcp-get-divi-presets; al crear también module y group_id, p. ej. module.decoration.background). CAMBIA TODO EL SITIO EN VIVO: todos los módulos que usan el preset (y los que no tienen otro si es el predeterminado) cambian al instante. Antes llamar a nexo-mcp-get-divi-presets para reutilizar lo que existe. Se deshace con nexo-mcp-undo-divi-design-change (área presets). Sin id se crea con un UUID v4 (attrs obligatorios, Divi descarta los presets sin atributos); con id se renombra (label) y, si llegan attrs, se REEMPLAZAN los attrs del preset (mandar todos); el resto del preset (renderAttrs, styleAttrs, groupPresets, priority, order, fechas de creación…) se conserva. Crear no cambia el predeterminado (nexo-mcp-set-divi-default-preset). label: texto plano de 1 a 100 caracteres, sin etiquetas ni shortcodes. attrs: sólo el diseño de ESCRITORIO de los módulos del catálogo de nexo-mcp-create-divi-page, con la forma de los attrs de bloque de Divi (p. ej. {"module":{"decoration":{"background":{"desktop":{"value":{"color":"#ff0000"}}}}}}) y las mismas reglas de valor que esa herramienta (colores #hex, rgb()/hsl() o variable global, tamaños con unidad…); en un preset de grupo sólo las rutas de ese grupo. Se rechazan manejadores de eventos, attributes personalizados, javascript:, shortcodes, contenido, tablet, teléfono, hover y cualquier ruta fuera del catálogo, aunque el usuario tenga unfiltered_html: error nexo_mcp_divi_preset_invalid con «ruta: motivo» y data.path (sin escribir nada). Módulo fuera del catálogo: nexo_mcp_divi_preset_module_unknown; id inexistente: nexo_mcp_divi_preset_not_found. Devuelve {kind, name, id, label, created, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_presets que el administrador enciende aparte.',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'kind'     => array(
+						'type'        => 'string',
+						'enum'        => array( 'module', 'group' ),
+						'description' => 'module: preset de un módulo; group: preset de un grupo de opciones de un módulo.',
+					),
+					'name'     => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Con kind module, el módulo del catálogo (divi/text); con kind group, el nombre del grupo (divi/background).',
+					),
+					'id'       => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Id del preset que se cambia. Sin id se crea uno nuevo.',
+					),
+					'label'    => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'maxLength'   => 100,
+						'description' => 'Nombre del preset (texto plano, 1 a 100 caracteres).',
+					),
+					'attrs'    => array(
+						'type'                 => 'object',
+						'description'          => 'Attrs de diseño de escritorio del preset, con la forma de los attrs de bloque de Divi. Obligatorio al crear; con id reemplaza los attrs.',
+						'additionalProperties' => true,
+					),
+					'module'   => array(
+						'type'        => 'string',
+						'description' => 'Sólo al crear un preset de grupo: el módulo del catálogo para el que se hace (divi/text).',
+					),
+					'group_id' => array(
+						'type'        => 'string',
+						'description' => 'Sólo al crear un preset de grupo: el id del grupo de ese módulo (module.decoration.background), de available_groups.',
+					),
+				),
+				'required'             => array( 'kind', 'name', 'label' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->set_divi_preset( $input ),
+			fn() => $this->divi_presets_write()
+		);
+		$this->ability(
+			'set-divi-default-preset',
+			'Fijar o quitar el preset predeterminado de un módulo o grupo de Divi 5',
+			'Fija (id) o quita (id: null) el preset predeterminado de un módulo del catálogo (kind: module) o de un grupo de opciones (kind: group): el que se aplica a todos los módulos que no tienen otro preset. CAMBIA TODO EL SITIO EN VIVO. Antes llamar a nexo-mcp-get-divi-presets. Se deshace con nexo-mcp-undo-divi-design-change (área presets). El id debe ser el de un preset existente de esa colección (nexo_mcp_divi_preset_not_found) y un módulo fuera del catálogo se rechaza (nexo_mcp_divi_preset_module_unknown); datos inválidos: nexo_mcp_divi_preset_invalid con «ruta: motivo» y data.path. Si ya estaba así no escribe nada y responde changed: false. Devuelve {kind, name, id, changed, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_presets que el administrador enciende aparte.',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'kind' => array(
+						'type'        => 'string',
+						'enum'        => array( 'module', 'group' ),
+						'description' => 'module o group.',
+					),
+					'name' => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'El módulo (divi/text) o el grupo (divi/background).',
+					),
+					'id'   => array(
+						'type'        => array( 'string', 'null' ),
+						'description' => 'Id del preset predeterminado, o null para dejar sin predeterminado.',
+					),
+				),
+				'required'             => array( 'kind', 'name', 'id' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->set_divi_default_preset( $input ),
+			fn() => $this->divi_presets_write()
+		);
+		$this->ability(
+			'delete-divi-preset',
+			'Borrar un preset de módulo o de grupo de Divi 5',
+			'Borra un preset de Divi 5 (kind: module o group). CAMBIA TODO EL SITIO EN VIVO: los módulos que lo usan vuelven al estilo del predeterminado. Antes llamar a nexo-mcp-get-divi-presets. Busca el uso (el id exacto en modulePreset o groupPreset de las entradas de Divi 5 no borradas; un preset de grupo enlazado desde un preset de módulo también cuenta): si está en uso y no se manda force responde nexo_mcp_divi_preset_in_use con data.post_ids (hasta ' . DiviPresetOperations::MAX_POST_IDS . '; si hay más, data.post_ids_truncated: true y data.post_total) y data.preset_ids, y no borra nada. Un id con --, <, >, &, comillas, barra invertida o caracteres no ASCII (WordPress los escapa en el contenido, así que el uso no se puede comprobar) responde nexo_mcp_divi_preset_usage_unknown sin force; con force: true se borra igual (usage_unverified: true) y además exige el permiso destructivo. Al borrar con force, si era un preset de grupo enlazado desde presets de módulo, quita el enlace de sus groupPresets en el mismo cambio (links_removed). Si era el predeterminado, también lo desmarca (default_cleared). Se deshace con nexo-mcp-undo-divi-design-change (restaura el catálogo, con el mismo id). Id inexistente: nexo_mcp_divi_preset_not_found; módulo fuera del catálogo: nexo_mcp_divi_preset_module_unknown; datos inválidos: nexo_mcp_divi_preset_invalid. Devuelve {deleted, kind, name, default_cleared, posts_affected (y posts_affected_truncated/posts_affected_total si hay más de ' . DiviPresetOperations::MAX_POST_IDS . '), links_removed?, usage_unverified?, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_presets que el administrador enciende aparte (y mcp:destructive con force).',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'kind'  => array(
+						'type'        => 'string',
+						'enum'        => array( 'module', 'group' ),
+						'description' => 'module o group.',
+					),
+					'name'  => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'El módulo (divi/text) o el grupo (divi/background).',
+					),
+					'id'    => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Id del preset que se borra.',
+					),
+					'force' => array(
+						'type'        => 'boolean',
+						'default'     => false,
+						'description' => 'true borra aunque esté en uso (sin force, en uso se rechaza con la lista de entradas); exige el permiso destructivo.',
+					),
+				),
+				'required'             => array( 'kind', 'name', 'id' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->delete_divi_preset( $input ),
+			fn( array $input = array() ) => $this->divi_presets_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
 		);
 		$this->ability(
 			'create-global-class',
@@ -1353,9 +1498,11 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes ni URLs javascript:.',
 				'',
+				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
+				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid.',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
 			)
 		);
 	}
@@ -1396,6 +1543,23 @@ final class ExtendedAbilityRegistrar {
 					'additionalProperties' => true,
 					'description'          => 'Atributos de diseño de escritorio (color, espaciado, tipografía), con cada valor en <ruta>.desktop.value.',
 				),
+				'preset'      => array(
+					'type'                 => 'object',
+					'properties'           => array(
+						'module' => array(
+							'type'        => array( 'string', 'null' ),
+							'minLength'   => 1,
+							'description' => 'Id del preset de módulo (de nexo-mcp-get-divi-presets) o null para quitarlo.',
+						),
+						'groups' => array(
+							'type'                 => 'object',
+							'additionalProperties' => array( 'type' => array( 'string', 'null' ) ),
+							'description'          => 'Presets de grupo de opciones: {<id de grupo, p. ej. module.decoration.background>: id del preset o null para quitarlo}.',
+						),
+					),
+					'additionalProperties' => false,
+					'description'          => 'Aplica o quita presets en el módulo (escribe modulePreset/groupPreset). Se puede pasar sola o con content/design.',
+				),
 				'draft'       => array(
 					'type'        => 'boolean',
 					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
@@ -1410,7 +1574,7 @@ final class ExtendedAbilityRegistrar {
 	 * Descripción del árbol de módulos de Divi 5 que comparten create-divi-page y edit-divi-section.
 	 */
 	private function divi_tree_help(): string {
-		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes ni URLs javascript:. Máximo 200 módulos y 3 MB en la página resultante.';
+		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes ni URLs javascript:. Un nodo puede llevar además preset {module?: id | null, groups?: {<id de grupo>: id | null}} para aplicarle presets de Divi 5 (ids de nexo-mcp-get-divi-presets; se escriben como modulePreset/groupPreset; modulePreset/groupPreset dentro de attrs se rechazan; un id que no existe para ese módulo o grupo da nexo_mcp_divi_preset_unknown con data.path y no se escribe nada). Máximo 200 módulos y 3 MB en la página resultante.';
 	}
 
 	/**
@@ -2110,7 +2274,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),
@@ -2154,6 +2318,22 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function divi_design_write(): bool {
 		return $this->module_write( 'divi_design_tools_enabled', Capabilities::DIVI_DESIGN, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de escritura de los presets de módulos de Divi (cambian todo el sitio en vivo).
+	 */
+	private function divi_presets_write(): bool {
+		return $this->module_write( 'divi_presets_tools_enabled', Capabilities::DIVI_PRESETS, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de escritura del área del historial de Divi: `presets` el de presets y el resto el del diseño global.
+	 *
+	 * @param string|null $area Área del último cambio; null (sin historial) cuenta como diseño global.
+	 */
+	private function divi_area_write( ?string $area ): bool {
+		return 'presets' === $area ? $this->divi_presets_write() : $this->divi_design_write();
 	}
 
 	/**

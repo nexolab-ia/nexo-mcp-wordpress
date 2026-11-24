@@ -104,6 +104,20 @@ final class BuilderGateway {
 	private ?DiviDesignOperations $divi_design_ops;
 
 	/**
+	 * Presets de módulos de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviPresetStore|null
+	 */
+	private ?DiviPresetStore $divi_presets;
+
+	/**
+	 * Escrituras de los presets de Divi 5; se crean al usarlas.
+	 *
+	 * @var DiviPresetOperations|null
+	 */
+	private ?DiviPresetOperations $divi_preset_ops;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -120,6 +134,8 @@ final class BuilderGateway {
 	 * @param ComponentStore|null           $components       Almacén de componentes (las pruebas inyectan el de Elementor).
 	 * @param DiviDesignStore|null          $divi_design      Almacén del diseño global de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
+	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
+	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -132,7 +148,9 @@ final class BuilderGateway {
 		?DynamicTagCatalog $dynamic_tags = null,
 		?ComponentStore $components = null,
 		?DiviDesignStore $divi_design = null,
-		?DiviDesignOperations $divi_design_ops = null
+		?DiviDesignOperations $divi_design_ops = null,
+		?DiviPresetStore $divi_presets = null,
+		?DiviPresetOperations $divi_preset_ops = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -145,6 +163,8 @@ final class BuilderGateway {
 		$this->components       = $components;
 		$this->divi_design      = $divi_design;
 		$this->divi_design_ops  = $divi_design_ops;
+		$this->divi_presets     = $divi_presets;
+		$this->divi_preset_ops  = $divi_preset_ops;
 	}
 
 	/**
@@ -233,12 +253,112 @@ final class BuilderGateway {
 	/**
 	 * Deshace el último cambio del diseño global de Divi 5.
 	 *
-	 * @param bool $force Restaurar aunque el área haya cambiado después.
+	 * El historial es uno solo para el diseño global y los presets de Divi; el almacén de presets se crea antes para que
+	 * registre su área y el deshacer sepa restaurarla.
+	 *
+	 * @param bool          $force   Restaurar aunque el área haya cambiado después.
+	 * @param callable|null $allowed fn( string $area ): bool. Permiso de escritura del área que se deshace.
+	 * @param string|null   $area    Deshacer el último cambio de esta área aunque haya otros encima; null = el último de la pila.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function undo_divi_design_change( bool $force = false ) {
-		return $this->divi_design()->undo( $force );
+	public function undo_divi_design_change( bool $force = false, ?callable $allowed = null, ?string $area = null ) {
+		$this->divi_presets();
+
+		return $this->divi_design()->undo( $force, $allowed, $area );
+	}
+
+	/**
+	 * Área del último cambio del historial de Divi (`presets`, `colors`…), o null si no hay historial.
+	 */
+	public function divi_last_change_area(): ?string {
+		$history = $this->divi_design()->history();
+		$last    = end( $history );
+
+		return false === $last ? null : $last['area'];
+	}
+
+	/**
+	 * Lee los presets de módulos de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `module` opcional.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_divi_presets( array $input ) {
+		return $this->divi_presets()->read( isset( $input['module'] ) && is_string( $input['module'] ) ? $input['module'] : null );
+	}
+
+	/**
+	 * Crea o actualiza un preset de módulo o de grupo de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id?`, `label`, `attrs?`, `module?`, `group_id?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_preset( array $input ) {
+		return $this->divi_preset_ops()->set_preset( $input );
+	}
+
+	/**
+	 * Fija o quita el preset predeterminado de un módulo o de un grupo de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id` (o null).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_default_preset( array $input ) {
+		return $this->divi_preset_ops()->set_default_preset( $input );
+	}
+
+	/**
+	 * Borra un preset de Divi 5 (en uso, sólo con force).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `kind`, `name`, `id`, `force?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_preset( array $input ) {
+		return $this->divi_preset_ops()->delete_preset( $input );
+	}
+
+	/**
+	 * Escrituras de los presets de Divi (comparten el almacén de lectura y deshacer).
+	 */
+	public function divi_preset_ops(): DiviPresetOperations {
+		$this->divi_preset_ops ??= new DiviPresetOperations( $this->divi_presets() );
+
+		return $this->divi_preset_ops;
+	}
+
+	/**
+	 * Almacén de presets de Divi (comparte con el diseño global el historial, el bloqueo y el deshacer).
+	 */
+	public function divi_presets(): DiviPresetStore {
+		$this->divi_presets ??= new DiviPresetStore( $this->divi_design() );
+
+		return $this->divi_presets;
+	}
+
+	/**
+	 * Bloqueo de presets para las escrituras de página que aplican un preset: el mismo del borrado de presets.
+	 *
+	 * @return callable fn( callable ): mixed.
+	 */
+	private function divi_presets_lock(): callable {
+		return fn( callable $work ) => $this->divi_design()->locked( $work );
+	}
+
+	/**
+	 * Validador de los árboles y parches de Divi 5; los presets que un nodo aplica se leen del almacén de presets (sólo si hay `preset`).
+	 */
+	private function divi_validator(): DiviTreeValidator {
+		return new DiviTreeValidator(
+			null,
+			null,
+			fn(): array => $this->divi_presets()->current(),
+			fn( string $module ): array => $this->divi_presets()->module_groups( $module )
+		);
 	}
 
 	/**
@@ -645,8 +765,11 @@ final class BuilderGateway {
 			new Divi5Adapter(),
 			$this->backup,
 			new WorkingCopy( $this->settings ),
-			new DiviTreeValidator(),
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+			$this->divi_validator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			$this->divi_presets_lock()
 		);
 
 		return $editor->edit(
@@ -656,6 +779,7 @@ final class BuilderGateway {
 				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
 				'content'     => $input['content'] ?? null,
 				'design'      => $input['design'] ?? null,
+				'preset'      => $input['preset'] ?? null,
 				'draft'       => $input['draft'] ?? false,
 			)
 		);
@@ -669,7 +793,7 @@ final class BuilderGateway {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function create_divi_page( array $input ) {
-		return ( new Divi5PageCreator() )->create( $input );
+		return ( new Divi5PageCreator( $this->divi_validator(), null, null, null, null, null, $this->divi_presets_lock() ) )->create( $input );
 	}
 
 	/**
@@ -693,8 +817,12 @@ final class BuilderGateway {
 			new Divi5Adapter(),
 			$this->backup,
 			new WorkingCopy( $this->settings ),
-			new DiviTreeValidator(),
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+			$this->divi_validator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_presets_lock()
 		);
 
 		return $editor->edit(
