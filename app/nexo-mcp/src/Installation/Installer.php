@@ -91,6 +91,7 @@ final class Installer {
 			$administrator->add_cap( Capabilities::DESIGN_SYSTEM );
 			$administrator->add_cap( Capabilities::DIVI_DESIGN );
 			$administrator->add_cap( Capabilities::DIVI_PRESETS );
+			$administrator->add_cap( Capabilities::DIVI_DYNAMIC );
 		}
 	}
 

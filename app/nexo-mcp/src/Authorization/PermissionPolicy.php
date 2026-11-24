@@ -12,6 +12,7 @@ namespace NexoDev\NexoMCP\Authorization;
 use NexoDev\NexoMCP\OAuth\BearerTokenGuard;
 use NexoDev\NexoMCP\OAuth\ScopeMap;
 use NexoDev\NexoMCP\Support\Settings;
+use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
 /**
  * Combina capacidades WordPress, interruptores del panel y alcances por conexión.
@@ -160,6 +161,22 @@ final class PermissionPolicy {
 		return (bool) $this->settings->get( $setting_key )
 			&& $this->can_write( $wordpress_capability, ...$args )
 			&& $this->grants( $nexo_capability, 'write' );
+	}
+
+	/**
+	 * Comprueba si esta solicitud puede escribir contenido dinámico de Divi 5 en una página.
+	 *
+	 * Como set-dynamic-tag de Elementor: módulo de constructores y `edit_post` sobre el
+	 * original (aunque llegue el id de su copia de trabajo) Y la capacidad
+	 * `nexo_mcp_divi_dynamic` con su interruptor `divi_dynamic_tools_enabled` (y su scope en el token).
+	 *
+	 * @param int $post_id Página (o su copia de trabajo).
+	 */
+	public function can_write_divi_dynamic( int $post_id ): bool {
+		$original = WorkingCopy::original_id_for( $post_id );
+
+		return $this->can_module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', $original )
+			&& $this->can_module_write( 'divi_dynamic_tools_enabled', Capabilities::DIVI_DYNAMIC, 'edit_post', $original );
 	}
 
 	/**

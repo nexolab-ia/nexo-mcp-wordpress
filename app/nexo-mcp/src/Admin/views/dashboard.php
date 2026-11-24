@@ -98,6 +98,12 @@ $sensitive_options = array(
 		'confirm-title' => __( '¿Seguro que quieres activar los cambios a los presets de Divi?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear, cambiar y borrar los presets de módulos y de grupos de opciones de Divi 5, y fijar el predeterminado de cada módulo. Un preset afecta a todos los módulos que lo usan, y el predeterminado a todos los que no tienen otro: tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer.', 'nexo-mcp' ),
 	),
+	'divi_dynamic_tools_enabled'  => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'dinámico', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres activar el contenido dinámico de Divi?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá poner en las páginas de Divi 5 contenido dinámico (título, extracto, fecha y autor de las entradas, datos del sitio, WooCommerce básico y campos de texto de ACF) y bucles de consulta que listan contenido del sitio. Cualquier visitante verá esos datos publicados en la página, y un bucle puede mostrar muchas entradas. Los cambios se escriben en la copia de trabajo de la página, que revisas antes de publicar.', 'nexo-mcp' ),
+	),
 	'extension_deletion_enabled'  => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
@@ -991,6 +997,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'divi_presets_tools_enabled' ); ?>
 							<?php checked( ! empty( $settings['divi_presets_tools_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Contenido dinámico de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Pone contenido dinámico y bucles de consulta en las páginas de Divi 5 (copia de trabajo, con respaldo): muestra datos del sitio a cualquier visitante.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[divi_dynamic_tools_enabled]"
+							value="1"
+							<?php $print_sensitive( 'divi_dynamic_tools_enabled' ); ?>
+							<?php checked( ! empty( $settings['divi_dynamic_tools_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>
