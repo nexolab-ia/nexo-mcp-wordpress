@@ -16,6 +16,7 @@ use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
+use NexoDev\NexoMCP\Builders\DiviDesignStore;
 use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
 use NexoDev\NexoMCP\Fields\FieldGateway;
 use NexoDev\NexoMCP\Support\Settings;
@@ -79,6 +80,13 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/edit-divi-module',
 		'nexo-mcp/create-divi-page',
 		'nexo-mcp/edit-divi-section',
+		'nexo-mcp/get-divi-design-system',
+		'nexo-mcp/undo-divi-design-change',
+		'nexo-mcp/set-divi-global-color',
+		'nexo-mcp/delete-divi-global-color',
+		'nexo-mcp/set-divi-variable',
+		'nexo-mcp/archive-divi-variable',
+		'nexo-mcp/set-divi-typography',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -298,6 +306,201 @@ final class ExtendedAbilityRegistrar {
 			$this->confirmation_schema( 'undo-design-system-change' ),
 			fn() => $this->builders->undo_design_system_change(),
 			fn() => $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' )
+		);
+		$this->ability(
+			'get-divi-design-system',
+			'Obtener el diseño global de Divi 5',
+			'Lee el diseño global de Divi 5: la paleta de colores globales (id gcid-…, etiqueta, color y estado), las variables de diseño por tipo (numbers, strings, images, links, fonts y gradients —estos últimos sólo de lectura—, con id gvid-… y estado), los 5 colores del Customizer (accent, secondary_accent, header, font, link), las fuentes y pesos de títulos y cuerpo, el tamaño y la altura de línea del cuerpo (null = Divi usa su valor por defecto) y cuántos cambios hay para deshacer. Sólo lee. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+			'read',
+			$this->empty_schema(),
+			fn() => $this->builders->get_divi_design_system(),
+			fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'undo-divi-design-change',
+			'Deshacer el último cambio del diseño global de Divi',
+			'Restaura el valor anterior al último cambio hecho al diseño global de Divi 5 por este conector (colores globales, variables de un tipo, o colores y tipografía del Customizer) con las mismas funciones de Divi, vacía el CSS generado y saca ese cambio del historial (se guardan los últimos 20, se deshace de a uno, el más reciente primero). Una variable creada después del cambio no se borra: queda archivada, como hace Divi. Si esa área cambió después del cambio del conector (por ejemplo desde el panel de Divi) responde nexo_mcp_divi_design_changed_since y no restaura nada: force: true la restaura igual y pisa ese cambio. Devuelve {area, tool, changed_at, remaining}. Sin cambios que deshacer responde nexo_mcp_divi_design_nothing_to_undo; sin Divi 5 activo, nexo_mcp_divi5_required; si no se puede leer o restaurar el área, nexo_mcp_divi_design_undo_failed (el respaldo se conserva); si el valor se restauró pero no se pudo sacar del historial, nexo_mcp_divi_design_history_failed. Requiere el scope mcp:divi_design que el administrador enciende aparte (y mcp:destructive con force).',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'force' => array(
+						'type'        => 'boolean',
+						'default'     => false,
+						'description' => 'true restaura aunque el área haya cambiado después del cambio del conector (pisa ese cambio).',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->undo_divi_design_change( true === ( $input['force'] ?? false ) ),
+			fn( array $input = array() ) => $this->divi_design_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
+		);
+		$this->ability(
+			'set-divi-global-color',
+			'Crear o cambiar un color global de Divi 5',
+			'Crea (sin id) o cambia (con id) un color de la paleta global de Divi 5. CAMBIA TODO EL SITIO EN VIVO: las páginas que usan el color cambian al instante. Antes llamar a nexo-mcp-get-divi-design-system para reutilizar lo que existe. Se deshace con nexo-mcp-undo-divi-design-change. Sin id se crea uno nuevo (gcid- y 10 caracteres a-z0-9); se usa en los módulos con $variable({"type":"color","value":{"name":"gcid-…","settings":{}}})$. color: #hex de 3, 4, 6 u 8 dígitos, rgb()/rgba() o hsl()/hsla(); label: texto plano de 1 a 100 caracteres. Los 5 colores del Customizer (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) no se editan aquí sino con nexo-mcp-set-divi-typography (nexo_mcp_divi_design_customizer_color). Id inexistente: nexo_mcp_divi_design_not_found. Todo error de validación es nexo_mcp_divi_design_invalid con «ruta: motivo» y data.path, y no escribe nada. Devuelve {id, label, color, created, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte.',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'id'    => array(
+						'type'        => 'string',
+						'description' => 'Id del color a cambiar (gcid-…). Sin id se crea uno nuevo.',
+					),
+					'label' => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'maxLength'   => 100,
+						'description' => 'Nombre del color, texto plano de 1 a 100 caracteres.',
+					),
+					'color' => array(
+						'type'        => 'string',
+						'description' => 'Color: #hex (3, 4, 6 u 8 dígitos), rgb()/rgba() o hsl()/hsla().',
+					),
+				),
+				'required'             => array( 'label', 'color' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->set_divi_global_color( $input ),
+			fn() => $this->divi_design_write()
+		);
+		$this->ability(
+			'delete-divi-global-color',
+			'Borrar un color global de Divi 5',
+			'Borra un color de la paleta global de Divi 5. CAMBIA TODO EL SITIO EN VIVO: los módulos que lo usan quedan sin ese color (var(--gcid-…) sin definir). Antes llamar a nexo-mcp-get-divi-design-system. Busca el uso (gcid-… en el contenido de las entradas de Divi 5 no borradas): si está en uso y no se manda force responde nexo_mcp_divi_color_in_use con data.post_ids y no borra nada; con force: true se borra igual y además exige el permiso destructivo. Se deshace con nexo-mcp-undo-divi-design-change (restaura la paleta, con el mismo id). Los colores del Customizer no se borran (nexo_mcp_divi_design_customizer_color). Id inexistente: nexo_mcp_divi_design_not_found; id mal formado: nexo_mcp_divi_design_invalid. Devuelve {deleted, posts_affected, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte (y mcp:destructive con force).',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'id'    => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Id del color global (gcid-…).',
+					),
+					'force' => array(
+						'type'        => 'boolean',
+						'default'     => false,
+						'description' => 'true borra aunque esté en uso (sin force, en uso se rechaza con la lista de entradas); exige el permiso destructivo.',
+					),
+				),
+				'required'             => array( 'id' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->delete_divi_global_color( $input ),
+			fn( array $input = array() ) => $this->divi_design_write() && ( empty( $input['force'] ) || $this->policy->can_destroy( 'manage_options' ) )
+		);
+		$this->ability(
+			'set-divi-variable',
+			'Crear o cambiar una variable de diseño de Divi 5',
+			'Crea (sin id) o cambia (con id) una variable de diseño de Divi 5 de un tipo. CAMBIA TODO EL SITIO EN VIVO: lo que usa la variable cambia al instante. Antes llamar a nexo-mcp-get-divi-design-system. Se deshace con nexo-mcp-undo-divi-design-change. type: numbers (número con unidad px, em, rem, %, vw o vh, o sin unidad), strings (texto plano de hasta 200 caracteres), images (id de un adjunto, se guarda su URL, o URL http/https), links (http, https, mailto, tel o ruta relativa) o fonts (nombre de familia con letras, números, espacios, comillas simples, guion y guion bajo, hasta 100); los gradientes no se escriben (nexo_mcp_divi_design_type_invalid). label: texto plano de 1 a 100 caracteres. Sin id se crea (gvid- y 10 caracteres a-z0-9), con id se cambia (nexo_mcp_divi_design_not_found si no existe en ese tipo). Se usa en los módulos con $variable({"type":"content","value":{"name":"gvid-…","settings":{}}})$. Todo error de validación es nexo_mcp_divi_design_invalid con «ruta: motivo» y data.path, y no escribe nada. Devuelve {type, id, label, value, created, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte (y que el usuario pueda gestionar las variables de Divi).',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'type'  => array(
+						'type'        => 'string',
+						'enum'        => DiviDesignStore::WRITE_TYPES,
+						'description' => 'Tipo de variable.',
+					),
+					'id'    => array(
+						'type'        => 'string',
+						'description' => 'Id de la variable a cambiar (gvid-…). Sin id se crea una nueva.',
+					),
+					'label' => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'maxLength'   => 100,
+						'description' => 'Nombre de la variable, texto plano de 1 a 100 caracteres.',
+					),
+					'value' => array(
+						'type'        => array( 'string', 'number' ),
+						'description' => 'Valor según el tipo: numbers (12px, 1.5rem, 50%, 16), strings (texto), images (id de adjunto o URL), links (URL o ruta), fonts (familia).',
+					),
+				),
+				'required'             => array( 'type', 'label', 'value' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->set_divi_variable( $input ),
+			fn() => $this->divi_design_write()
+		);
+		$this->ability(
+			'archive-divi-variable',
+			'Archivar o reactivar una variable de diseño de Divi 5',
+			'Archiva (archived: true) o reactiva (archived: false) una variable de diseño de Divi 5; no se borra, como hace Divi. CAMBIA TODO EL SITIO EN VIVO. Antes llamar a nexo-mcp-get-divi-design-system. Se deshace con nexo-mcp-undo-divi-design-change. Id inexistente en ese tipo: nexo_mcp_divi_design_not_found; datos inválidos: nexo_mcp_divi_design_invalid (con «ruta: motivo»); si ya estaba en ese estado no escribe nada y responde changed: false. Devuelve {type, id, status, changed, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte.',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'type'     => array(
+						'type'        => 'string',
+						'enum'        => DiviDesignStore::WRITE_TYPES,
+						'description' => 'Tipo de variable.',
+					),
+					'id'       => array(
+						'type'        => 'string',
+						'minLength'   => 1,
+						'description' => 'Id de la variable (gvid-…).',
+					),
+					'archived' => array(
+						'type'        => 'boolean',
+						'description' => 'true archiva, false reactiva.',
+					),
+				),
+				'required'             => array( 'type', 'id', 'archived' ),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->archive_divi_variable( $input ),
+			fn() => $this->divi_design_write()
+		);
+		$this->ability(
+			'set-divi-typography',
+			'Cambiar la tipografía base y los colores del Customizer de Divi 5',
+			'Cambia a la vez las fuentes y pesos de títulos y cuerpo, el tamaño y la altura de línea del cuerpo y los 5 colores del Customizer de Divi 5 (colors: accent, secondary_accent, header, font, link). CAMBIA TODO EL SITIO EN VIVO. Antes llamar a nexo-mcp-get-divi-design-system. Todo o nada: si un campo es inválido no se escribe ninguno; si Divi falla a mitad se revierte lo ya escrito. Se deshace con nexo-mcp-undo-divi-design-change. heading_font y body_font: nombre de familia con letras, números, espacios, comillas simples, guion y guion bajo (hasta 100); pesos: 100 a 900, normal o bold; body_font_size: 8 a 72 px (16 o 16px); body_line_height: 1 a 3 (1.7); colores: #hex de 3, 4, 6 u 8 dígitos, rgb()/rgba() o hsl()/hsla(). Sin ningún campo responde nexo_mcp_divi_design_nothing_to_change; todo error de validación es nexo_mcp_divi_design_invalid con «ruta: motivo» y data.path. Devuelve {changed, area, undo_available}. Sin Divi 5 activo responde nexo_mcp_divi5_required. Requiere el scope mcp:divi_design que el administrador enciende aparte.',
+			'write',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'heading_font'        => array(
+						'type'        => 'string',
+						'description' => 'Familia de los títulos.',
+					),
+					'body_font'           => array(
+						'type'        => 'string',
+						'description' => 'Familia del cuerpo.',
+					),
+					'heading_font_weight' => array(
+						'type'        => array( 'string', 'integer' ),
+						'description' => 'Peso de los títulos: 100 a 900, normal o bold.',
+					),
+					'body_font_weight'    => array(
+						'type'        => array( 'string', 'integer' ),
+						'description' => 'Peso del cuerpo: 100 a 900, normal o bold.',
+					),
+					'body_font_size'      => array(
+						'type'        => array( 'string', 'number' ),
+						'description' => 'Tamaño del cuerpo en px, de 8 a 72 (16 o 16px).',
+					),
+					'body_line_height'    => array(
+						'type'        => array( 'string', 'number' ),
+						'description' => 'Altura de línea del cuerpo, de 1 a 3 (1.7).',
+					),
+					'colors'              => array(
+						'type'                 => 'object',
+						'description'          => 'Colores del Customizer de Divi.',
+						'properties'           => array(
+							'accent'           => array( 'type' => 'string' ),
+							'secondary_accent' => array( 'type' => 'string' ),
+							'header'           => array( 'type' => 'string' ),
+							'font'             => array( 'type' => 'string' ),
+							'link'             => array( 'type' => 'string' ),
+						),
+						'additionalProperties' => false,
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->set_divi_typography( $input ),
+			fn() => $this->divi_design_write()
 		);
 		$this->ability(
 			'create-global-class',
@@ -1863,7 +2066,10 @@ final class ExtendedAbilityRegistrar {
 				'category'            => AbilityRegistrar::CATEGORY,
 				'input_schema'        => $input_schema,
 				'output_schema'       => $output_schema,
-				'execute_callback'    => function ( array $input ) use ( $name, $operation, $callback, $wraps_result ) {
+				'execute_callback'    => function ( $input = null ) use ( $name, $operation, $callback, $wraps_result ) {
+					// La Abilities API entrega null cuando el cliente no manda entrada: es lo mismo que `{}`.
+					$input = is_array( $input ) ? $input : array();
+
 					// Acciones irreversibles: sin la palabra exacta no se ejecuta.
 					$confirmed = IrreversibleActions::check( $name, $input );
 
@@ -1889,7 +2095,8 @@ final class ExtendedAbilityRegistrar {
 				// El parámetro es opcional porque la Abilities API sólo lo entrega
 				// cuando la ability declara un esquema de entrada, y este envoltorio
 				// cubre a todas por igual.
-				'permission_callback' => function ( array $input = array() ) use ( $name, $permission, $operation ) {
+				'permission_callback' => function ( $input = array() ) use ( $name, $permission, $operation ) {
+					$input   = is_array( $input ) ? $input : array();
 					$allowed = $permission( $input );
 
 					if ( true === $allowed ) {
@@ -1903,7 +2110,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),
@@ -1940,6 +2147,13 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function design_write(): bool {
 		return $this->module_write( 'design_system_tools_enabled', Capabilities::DESIGN_SYSTEM, 'manage_options' );
+	}
+
+	/**
+	 * Permiso de escritura del diseño global de Divi (cambia todo el sitio en vivo).
+	 */
+	private function divi_design_write(): bool {
+		return $this->module_write( 'divi_design_tools_enabled', Capabilities::DIVI_DESIGN, 'manage_options' );
 	}
 
 	/**

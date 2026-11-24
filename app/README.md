@@ -309,6 +309,41 @@ Reglas que siempre se cumplen:
     el catálogo. Sin Divi 5 activo: `nexo_mcp_divi5_required`; una página que no es
     Divi 5: `nexo_mcp_divi_not_divi5`. Se probó con Divi 5.19.1
     (`tools/prueba_adaptadores.sh`, sección Divi 5; sin Divi 5 se saltea).
+- **Diseño global de Divi 5 (permiso propio)**: la paleta global, las variables de
+  diseño y la tipografía base afectan a todo el sitio en vivo, así que tienen su
+  scope OAuth `mcp:divi_design` (capacidad `nexo_mcp_divi_design`, administrador) y su
+  interruptor en el panel `divi_design_tools_enabled`, **apagado por defecto**
+  (habilitar Elementor o los constructores no lo habilita). Siete herramientas;
+  leer usa el permiso de constructores y las seis de escritura el nuevo. Sin
+  Divi 5 activo: `nexo_mcp_divi5_required`.
+  - `get-divi-design-system`: colores globales (`gcid-…`), variables por tipo
+    (`numbers`, `strings`, `images`, `links`, `fonts`; los `gradients` sólo se leen),
+    los 5 colores del Customizer, familias, pesos, tamaño y altura de línea del cuerpo.
+  - `set-divi-global-color` (crea sin `id`, cambia con `id`; `#hex`, `rgb[a]()` o
+    `hsl[a]()`), `delete-divi-global-color`, `set-divi-variable` y
+    `archive-divi-variable` (las variables **se archivan, no se borran**, como hace
+    Divi) y `set-divi-typography` (fuentes, pesos, tamaño 8-72 px, altura 1-3 y los
+    5 colores del Customizer). Todo error de validación es
+    `nexo_mcp_divi_design_invalid` con «ruta: motivo» y no escribe nada.
+  - **En vivo con respaldo y deshacer**: cada cambio guarda antes el valor anterior
+    del área tocada (opción `nexo_mcp_divi_design_history`, sin autocarga, últimos 20
+    cambios) y se escribe con las funciones de Divi, que también vacían su CSS.
+    `undo-divi-design-change` restaura el más reciente y lo saca de la pila. Si el
+    área cambió después (p. ej. desde el panel de Divi) responde
+    `nexo_mcp_divi_design_changed_since` y no restaura nada; `force: true` la
+    restaura igual y **exige además el permiso destructivo**.
+  - **Color en uso**: `delete-divi-global-color` busca `gcid-…` en las entradas de
+    Divi 5 no borradas (dentro del mismo bloqueo del borrado, sin límite de filas) y
+    en uso responde `nexo_mcp_divi_color_in_use` con los ids, sin escribir; con
+    `force: true` borra igual y exige el permiso destructivo. Los 5 colores del
+    Customizer no se borran ni se editan por `set-divi-global-color`
+    (`nexo_mcp_divi_design_customizer_color`): se cambian con `set-divi-typography`.
+  - **Efecto de Divi**: al escribir la paleta, `GlobalData::set_global_colors` agrega
+    a `et_divi` los 5 colores del Customizer con sus valores por defecto; deshacer no
+    los quita (mismos colores, otros bytes). Por eso el e2e restaura `et_divi` crudo.
+    Deshacer una variable creada después la deja archivada.
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D3; sin Divi 5
+    se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -506,7 +541,10 @@ la licencia activa: sin ella imprime `SKIP` y no falla; con ella enciende
 los restaura y borra los componentes que creó. La de Divi 5 necesita el tema Divi 5:
 sin él imprime `SKIP` y no falla; si está instalado pero no activo, lo activa sólo
 durante la sección y devuelve el tema anterior (también si la corrida se corta), y
-borra las páginas, copias y directorios `et-cache` que creó. Con Pro instalado, wp-cli necesita más
+borra las páginas, copias y directorios `et-cache` que creó. La del diseño global de
+Divi 5 (D3) también lo necesita (SKIP sin Divi 5): enciende `divi_design_tools_enabled`
+(y la capacidad, si falta) sólo durante la sección y devuelve crudos `et_divi`,
+`et_divi_global_variables`, el historial y los ajustes, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el

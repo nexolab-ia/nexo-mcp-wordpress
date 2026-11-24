@@ -90,6 +90,20 @@ final class BuilderGateway {
 	private ?ComponentStore $components;
 
 	/**
+	 * Diseño global de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviDesignStore|null
+	 */
+	private ?DiviDesignStore $divi_design;
+
+	/**
+	 * Escrituras del diseño global de Divi 5; se crean al usarlas.
+	 *
+	 * @var DiviDesignOperations|null
+	 */
+	private ?DiviDesignOperations $divi_design_ops;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -104,6 +118,8 @@ final class BuilderGateway {
 	 * @param DesignKitOperations|null      $design_kit       Operaciones del Kit.
 	 * @param DynamicTagCatalog|null        $dynamic_tags     Catálogo de dynamic tags (las pruebas inyectan los tags registrados).
 	 * @param ComponentStore|null           $components       Almacén de componentes (las pruebas inyectan el de Elementor).
+	 * @param DiviDesignStore|null          $divi_design      Almacén del diseño global de Divi (las pruebas inyectan uno sin Divi).
+	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -114,7 +130,9 @@ final class BuilderGateway {
 		?DesignVariableOperations $design_variables = null,
 		?DesignKitOperations $design_kit = null,
 		?DynamicTagCatalog $dynamic_tags = null,
-		?ComponentStore $components = null
+		?ComponentStore $components = null,
+		?DiviDesignStore $divi_design = null,
+		?DiviDesignOperations $divi_design_ops = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -125,6 +143,8 @@ final class BuilderGateway {
 		$this->design_kit       = $design_kit;
 		$this->dynamic_tags     = $dynamic_tags;
 		$this->components       = $components;
+		$this->divi_design      = $divi_design;
+		$this->divi_design_ops  = $divi_design_ops;
 	}
 
 	/**
@@ -199,6 +219,99 @@ final class BuilderGateway {
 	 */
 	public function get_design_system() {
 		return ( new ElementorDesignSystem() )->read();
+	}
+
+	/**
+	 * Lee el diseño global de Divi 5: paleta, variables, colores del Customizer y tipografía.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_divi_design_system() {
+		return $this->divi_design()->read();
+	}
+
+	/**
+	 * Deshace el último cambio del diseño global de Divi 5.
+	 *
+	 * @param bool $force Restaurar aunque el área haya cambiado después.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function undo_divi_design_change( bool $force = false ) {
+		return $this->divi_design()->undo( $force );
+	}
+
+	/**
+	 * Crea o actualiza un color global de Divi 5.
+	 *
+	 * @param array<string, mixed> $input `{id?, label, color}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_global_color( array $input ) {
+		return $this->divi_design_ops()->set_color( $input );
+	}
+
+	/**
+	 * Borra un color global de Divi 5 (en uso, sólo con force).
+	 *
+	 * @param array<string, mixed> $input `{id, force?}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_global_color( array $input ) {
+		return $this->divi_design_ops()->delete_color( $input );
+	}
+
+	/**
+	 * Crea o actualiza una variable de diseño de Divi 5.
+	 *
+	 * @param array<string, mixed> $input `{type, id?, label, value}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_variable( array $input ) {
+		return $this->divi_design_ops()->set_variable( $input );
+	}
+
+	/**
+	 * Archiva o reactiva una variable de diseño de Divi 5.
+	 *
+	 * @param array<string, mixed> $input `{type, id, archived}`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function archive_divi_variable( array $input ) {
+		return $this->divi_design_ops()->archive_variable( $input );
+	}
+
+	/**
+	 * Cambia la tipografía base y los colores del Customizer de Divi 5.
+	 *
+	 * @param array<string, mixed> $input Campos de tipografía.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_typography( array $input ) {
+		return $this->divi_design_ops()->set_typography( $input );
+	}
+
+	/**
+	 * Escrituras del diseño global de Divi (comparten el almacén de lectura y deshacer).
+	 */
+	public function divi_design_ops(): DiviDesignOperations {
+		$this->divi_design_ops ??= new DiviDesignOperations( $this->divi_design() );
+
+		return $this->divi_design_ops;
+	}
+
+	/**
+	 * Almacén del diseño global de Divi (compartido por lectura, escrituras y deshacer).
+	 */
+	public function divi_design(): DiviDesignStore {
+		$this->divi_design ??= new DiviDesignStore();
+
+		return $this->divi_design;
 	}
 
 	/**

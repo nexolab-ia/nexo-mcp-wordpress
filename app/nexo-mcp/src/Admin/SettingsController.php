@@ -65,6 +65,7 @@ final class SettingsController {
 		$sanitized['design_system_tools_enabled'] = ! empty( $input['design_system_tools_enabled'] );
 		$sanitized['builders_dynamic_enabled']    = ! empty( $input['builders_dynamic_enabled'] );
 		$sanitized['builders_components_enabled'] = ! empty( $input['builders_components_enabled'] );
+		$sanitized['divi_design_tools_enabled']   = ! empty( $input['divi_design_tools_enabled'] );
 		$sanitized['maintenance_tools_enabled']   = ! empty( $input['maintenance_tools_enabled'] );
 		$sanitized['extension_deletion_enabled']  = ! empty( $input['extension_deletion_enabled'] );
 		$sanitized['publishing_enabled']          = ! empty( $input['publishing_enabled'] );

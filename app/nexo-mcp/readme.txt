@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.7.0
+Stable tag: 1.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.8.0 =
+* Nuevo: diseño global de Divi 5 con scope propio `mcp:divi_design` (capacidad `nexo_mcp_divi_design`, interruptor apagado por defecto): `get-divi-design-system`, `set-divi-global-color`, `delete-divi-global-color`, `set-divi-variable`, `archive-divi-variable`, `set-divi-typography` y `undo-divi-design-change`. Cambian el sitio en vivo con respaldo (últimos 20 cambios) y deshacer; deshacer se niega si el área cambió después (`nexo_mcp_divi_design_changed_since`) y `force` exige además el permiso destructivo.
+* Un color en uso en páginas de Divi 5 no se borra sin `force` (`nexo_mcp_divi_color_in_use`); la búsqueda de uso recorre todo por lotes dentro del bloqueo. Las variables se archivan, no se borran; los gradientes son sólo de lectura.
+* Nota: al escribir la paleta, Divi agrega a `et_divi` los 5 colores del Customizer con sus valores por defecto; deshacer no los quita.
+* Corrección: `undo-divi-design-change` y `set-divi-typography` aceptan una entrada ausente sin error de tipo; si Divi falla al leer el estado al deshacer, responde `nexo_mcp_divi_design_undo_failed` (auditado) en vez de lanzar una excepción.
 
 = 1.7.0 =
 * Nuevo: Divi 5 como módulos reales (el contenido son bloques `wp:divi/…`; las páginas de Divi 4 con shortcodes siguen con el adaptador de siempre). `get-page-structure` lee una página de Divi 5 como árbol de nodos con `path` (índices desde la raíz) y `fingerprint` (hash del nodo): Divi 5 no tiene ids de nodo, así que toda escritura exige el `fingerprint` leído y, si la página cambió, responde `nexo_mcp_divi_node_changed` sin escribir.

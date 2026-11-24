@@ -86,6 +86,12 @@ $sensitive_options = array(
 		'confirm-title' => __( '¿Seguro que quieres permitir crear componentes de Elementor?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear componentes reutilizables de Elementor 4 (siempre en borrador). Un componente es parte del sitio, no de una sola página: al publicarlo y usarlo en varias páginas, un cambio se ve en todas.', 'nexo-mcp' ),
 	),
+	'divi_design_tools_enabled'   => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'divi', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres activar los cambios al diseño global de Divi?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá cambiar la paleta de colores, las variables, las fuentes y la tipografía globales de Divi 5 de todo el sitio, y tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer.', 'nexo-mcp' ),
+	),
 	'extension_deletion_enabled'  => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
@@ -949,6 +955,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'builders_components_enabled' ); ?>
 							<?php checked( ! empty( $settings['builders_components_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Diseño global de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Cambia paleta, variables, fuentes y tipografía globales de Divi 5 en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[divi_design_tools_enabled]"
+							value="1"
+							<?php $print_sensitive( 'divi_design_tools_enabled' ); ?>
+							<?php checked( ! empty( $settings['divi_design_tools_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

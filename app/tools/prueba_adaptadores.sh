@@ -43,6 +43,15 @@
 #    (el frontend muestra los textos nuevos y ningún comentario de bloque crudo); rechazos sin escribir ni crear
 #    copia: divi/code, shortcode en un texto, enlace javascript:, huella vieja y el divi/placeholder raíz. Se borran
 #    (force) las páginas y sus directorios et-cache, también si la corrida se corta.
+# 7f. Diseño global de Divi 5 (D3; sólo con Divi 5 activo, con SKIP si falta): get-divi-design-system, set-divi-global-color
+#    (crear y cambiar), una página Divi 5 publicada que usa el color (el CSS del frontend trae --gcid-…),
+#    delete-divi-global-color sin force → nexo_mcp_divi_color_in_use sin escribir, set-divi-variable +
+#    archive-divi-variable, set-divi-typography (el tamaño del cuerpo se ve en el CSS del frontend) y
+#    undo-divi-design-change de cada cambio (en orden inverso); rechazos sin escribir (color inválido, enlace
+#    javascript:, valor con salto de línea final, id inexistente). Se guardan crudos et_divi,
+#    et_divi_global_variables, el historial y los ajustes al empezar y se devuelven al final (también si la
+#    corrida se corta: Divi agrega 5 colores del Customizer a et_divi al escribir la paleta y deshacer no los quita);
+#    el interruptor divi_design_tools_enabled y la capacidad se devuelven; se borra la página y su et-cache.
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -269,6 +278,47 @@ if [ "${1:-}" = "--diseno-kit-lista" ]; then
 	php_wpr 'echo wp_json_encode( ( new \NexoDev\NexoMCP\Builders\ElementorDesignStore() )->snapshot( "kit" )[ (string) getenv( "NEXO_A1" ) ] ?? array() );' "$2"
 	exit 0
 fi
+# Subcomandos y función del bloque de diseño global de Divi 5 (D3): foto cruda de las opciones que se tocan.
+#   --divi-diseno-foto       guarda crudas (valor y autocarga) et_divi, et_divi_global_variables, el historial y los ajustes
+#   --divi-diseno-huella     md5 crudo de lo guardado: et_divi, variables, historial (cantidad) y bloqueo
+#   --divi-diseno-restaurar  devuelve las opciones crudas, vacía el CSS de Divi y borra la foto
+divi_diseno_opciones='array( "et_divi", "et_divi_global_variables", "nexo_mcp_divi_design_history", "nexo_mcp_settings", "nexo_mcp_lock_0" )'
+restaurar_divi_diseno() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_diseno_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+foreach ( $foto as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+if ( class_exists( "ET_Core_PageResource" ) ) { ET_Core_PageResource::remove_static_resources( "all", "all", true ); }
+delete_option( "nexo_prueba_divi_diseno_foto" );
+echo "restaurado";'
+}
+if [ "${1:-}" = "--divi-diseno-foto" ]; then
+	php_wp '
+global $wpdb;
+$foto = array();
+foreach ( '"$divi_diseno_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$foto[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+update_option( "nexo_prueba_divi_diseno_foto", $foto, false );
+echo "foto de " . count( $foto ) . " opciones";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-diseno-huella" ]; then
+	php_wpr '
+global $wpdb;
+$crudo = static function ( $n ) use ( $wpdb ) { return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $n ) ); };
+$et = $crudo( "et_divi" ); $vars = $crudo( "et_divi_global_variables" ); $hist = $crudo( "nexo_mcp_divi_design_history" ); $set = $crudo( "nexo_mcp_settings" );
+echo "et_divi=" . ( null === $et ? "sin" : md5( $et ) ) . " variables=" . ( null === $vars ? "sin" : md5( $vars ) ) . " historial=" . ( null === $hist ? "sin" : md5( $hist ) ) . " ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
+	exit 0
+fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -367,6 +417,8 @@ diseno_foto_tomada=""
 dinamicos_cap_agregada=""
 componentes_cap_agregada=""
 divi_tema_previo=""
+divi_diseno_foto_tomada=""
+divi_diseno_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -474,7 +526,17 @@ cleanup() {
 		echo "Capacidad nexo_mcp_builders_components quitada."
 		componentes_cap_agregada=""
 	fi
-	# Divi 5: páginas del bloque (por el marcador del título, también si se cortó) y el tema previo.
+	# Divi 5, diseño global: opciones crudas como estaban, capacidad concedida y páginas (por el marcador del título,
+	# también si se cortó); el tema previo se devuelve después.
+	if [ -n "$divi_diseno_foto_tomada" ]; then
+		echo "Diseño global de Divi: $(restaurar_divi_diseno)"
+		divi_diseno_foto_tomada=""
+	fi
+	if [ -n "$divi_diseno_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_design" );' >/dev/null
+		echo "Capacidad nexo_mcp_divi_design quitada."
+		divi_diseno_cap_agregada=""
+	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
 		if wp theme activate "$divi_tema_previo" >/dev/null; then echo "Tema restaurado: $divi_tema_previo"
@@ -1999,6 +2061,225 @@ sys.exit(1 if fallas else 0)
 PY
 	[ $? -eq 0 ] || falla "la prueba de Divi 5 tuvo comprobaciones fallidas"
 	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+fi
+echo
+echo "### Diseño global de Divi 5 (D3: get-divi-design-system, set-divi-global-color, delete-divi-global-color, set-divi-variable, archive-divi-variable, set-divi-typography, undo-divi-design-change)"
+# Mismo criterio que 7e: sin Divi 5 activo se saltea con aviso y no falla (la limpieza devuelve el tema previo).
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba del diseño global de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto cruda de lo que se toca (la limpieza la devuelve también si la corrida se corta).
+	tools/prueba_adaptadores.sh --divi-diseno-foto
+	divi_diseno_foto_tomada=1
+	divi_huella_inicial="$(tools/prueba_adaptadores.sh --divi-diseno-huella)"
+	echo "Huella cruda inicial: $divi_huella_inicial"
+	# La capacidad nexo_mcp_divi_design la da el instalador; un sitio que sólo se actualizó no la tiene: se concede y se quita.
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_design" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_design" );' >/dev/null
+		divi_diseno_cap_agregada=1
+		echo "Capacidad nexo_mcp_divi_design concedida al administrador (se quita al final)."
+	fi
+	tools/prueba_adaptadores.sh --ajuste divi_design_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, time, urllib.parse, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=180).stdout.strip()
+
+def huella():
+    return script("--divi-diseno-huella")
+
+def descargar(url):
+    with urllib.request.urlopen(url, timeout=20) as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def css_de(i):
+    """HTML de la página más las hojas de et-cache que enlaza (donde Divi deja las variables --gcid-… y --et_global_…)."""
+    base = f"http://localhost:8080/?page_id={i}"
+    html = descargar(base)
+    partes = [html]
+    for href in re.findall(r"""href=["']([^"']*et-cache[^"']*\.css[^"']*)["']""", html):
+        partes.append(descargar(urllib.parse.urljoin(base, href)))
+    return "\n".join(partes)
+
+def css_con(i, patron, presente=True):
+    """El CSS se regenera en la primera visita tras el flush: se reintenta unos segundos."""
+    ultimo = ""
+    for _ in range(6):
+        ultimo = css_de(i)
+        if bool(re.search(patron, ultimo)) == presente:
+            return ultimo
+        time.sleep(1)
+    raise AssertionError(f"el CSS del frontend {'no trae' if presente else 'sigue trayendo'} /{patron}/")
+
+def estado():
+    _, d = cli.ok("get-divi-design-system", {})
+    return d
+
+def color(d, i):
+    return next((c for c in d["colors"] if c["id"] == i), None)
+
+def variable(d, tipo, i):
+    return next((v for v in d["variables"][tipo] if v["id"] == i), None)
+
+def valor(texto):
+    return {"desktop": {"value": texto}}
+
+st = {}
+titulo = f"Prueba diseno divi5-mcp-{suffix}"
+
+def leer_diseno():
+    d = estado()
+    assert set(d) >= {"colors", "variables", "customizer_colors", "typography", "history_count"}, list(d)
+    assert list(d["variables"]) == ["numbers", "strings", "images", "links", "fonts", "gradients"], list(d["variables"])
+    assert list(d["customizer_colors"]) == ["accent", "secondary_accent", "header", "font", "link"]
+    assert set(d["typography"]) == {"heading_font", "body_font", "heading_font_weight", "body_font_weight", "body_font_size", "body_line_height"}
+    st["base"] = d
+    st["historial0"] = d["history_count"]
+    st["colores0"] = len(d["colors"])
+    st["tam0"] = d["typography"]["body_font_size"]
+
+def crear_color():
+    _, d = cli.ok("set-divi-global-color", {"label": f"Prueba divi-diseno-mcp {suffix}", "color": "#ff0000"})
+    assert re.fullmatch(r"gcid-[a-z0-9]{10}", d["id"]) and d["created"] is True and d["undo_available"] is True, d
+    st["color"] = d["id"]
+    g = estado()
+    c = color(g, d["id"])
+    assert c and c["color"] == "#ff0000" and c["status"] == "active", c
+    assert len(g["colors"]) == st["colores0"] + 1 and g["history_count"] == st["historial0"] + 1
+
+def pagina_con_color():
+    ref = '$variable({"type":"color","value":{"name":"' + st["color"] + '","settings":{}}})$'
+    texto = {"type": "divi/text", "attrs": {"content": {"innerContent": valor(f"<p>Color global {suffix}</p>")}, "module": {"decoration": {"background": valor({"color": ref})}}}}
+    seccion = {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [texto]}]}]}
+    _, d = cli.ok("create-divi-page", {"title": titulo, "sections": [seccion]})
+    st["pagina"] = d["id"]
+    assert st["color"] in script("--contenido", d["id"]), "la página no lleva el color global"
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    assert script("--estado", d["id"]) == "publish"
+    css_con(d["id"], r"--" + re.escape(st["color"]) + r"\s*:")
+
+def cambiar_color():
+    _, d = cli.ok("set-divi-global-color", {"id": st["color"], "label": f"Prueba divi-diseno-mcp {suffix}", "color": "#00ff00"})
+    assert d["created"] is False and d["id"] == st["color"], d
+    assert color(estado(), st["color"])["color"] == "#00ff00"
+    css_con(st["pagina"], r"--" + re.escape(st["color"]) + r"\s*:\s*#00ff00")
+
+def borrar_en_uso():
+    antes = huella()
+    es_error, texto, datos = cli.call("delete-divi-global-color", {"id": st["color"]})
+    assert es_error and "está en uso" in texto, texto[:300]  # nexo_mcp_divi_color_in_use
+    assert str(st["pagina"]) in texto, "no lista la entrada que lo usa"
+    assert color(estado(), st["color"]) is not None, "el color se borró"
+    assert huella() == antes, "cambió lo guardado"
+
+def variable_y_archivo():
+    _, d = cli.ok("set-divi-variable", {"type": "numbers", "label": f"Espacio divi-diseno-mcp {suffix}", "value": "24px"})
+    assert re.fullmatch(r"gvid-[a-z0-9]{10}", d["id"]) and d["created"] is True, d
+    st["variable"] = d["id"]
+    v = variable(estado(), "numbers", d["id"])
+    assert v and v["value"] == "24px" and v["status"] == "active", v
+    _, a = cli.ok("archive-divi-variable", {"type": "numbers", "id": d["id"], "archived": True})
+    assert a["status"] == "archived" and a["changed"] is True, a
+    assert variable(estado(), "numbers", d["id"])["status"] == "archived"
+
+def tipografia():
+    nuevo = "21" if st["tam0"] == "19" else "19"
+    st["tam_nuevo"] = nuevo
+    st["css0"] = css_de(st["pagina"])
+    _, d = cli.ok("set-divi-typography", {"body_font_size": int(nuevo)})
+    assert d["changed"] == {"body_font_size": nuevo} and d["undo_available"] is True, d
+    assert estado()["typography"]["body_font_size"] == nuevo
+    css_con(st["pagina"], r"--et_global_body_font_size:\s*" + nuevo + r"px")
+
+def deshacer_todo():
+    n = st["historial0"]
+    # Orden inverso: tipografía, archivo, variable, cambio de color, color creado.
+    _, u = cli.ok("undo-divi-design-change", {})
+    assert u["area"] == "theme_options" and u["tool"] == "set-divi-typography", u
+    assert estado()["typography"]["body_font_size"] == st["tam0"]
+    css_con(st["pagina"], r"--et_global_body_font_size:\s*" + re.escape(st["tam0"] or "14") + r"px")
+    _, u = cli.ok("undo-divi-design-change", {})
+    assert u["area"] == "variables:numbers" and u["tool"] == "archive-divi-variable", u
+    assert variable(estado(), "numbers", st["variable"])["status"] == "active"
+    _, u = cli.ok("undo-divi-design-change", {})
+    assert u["area"] == "variables:numbers" and u["tool"] == "set-divi-variable", u
+    # Lo creado después se archiva, no se borra (Divi no admite borrar).
+    assert variable(estado(), "numbers", st["variable"])["status"] == "archived"
+    _, u = cli.ok("undo-divi-design-change", {})
+    assert u["area"] == "colors" and color(estado(), st["color"])["color"] == "#ff0000", u
+    _, u = cli.ok("undo-divi-design-change", {})
+    assert u["area"] == "colors" and u["remaining"] == n, u
+    g = estado()
+    assert color(g, st["color"]) is None and len(g["colors"]) == st["colores0"] and g["history_count"] == n, g["history_count"]
+    css_con(st["pagina"], r"--" + re.escape(st["color"]) + r"\s*:", presente=False)
+
+def sin_nada_que_deshacer():
+    if st["historial0"] != 0:
+        return
+    antes = huella()
+    es_error, texto, _ = cli.call("undo-divi-design-change", {})
+    assert es_error and "No hay ningún cambio" in texto, texto[:300]  # nexo_mcp_divi_design_nothing_to_undo
+    assert huella() == antes
+
+def sin_escribir(nombre, llamar, esperado):
+    def fn():
+        antes = huella()
+        es_error, texto, _ = llamar()
+        assert es_error, "debía rechazarse"
+        assert esperado in texto, f"falta «{esperado}» en: {texto[:300]!r}"
+        assert huella() == antes, "cambió lo guardado"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+comprobar("get-divi-design-system: colores, variables por tipo, Customizer, tipografía y cantidad de cambios", leer_diseno)
+comprobar("set-divi-global-color: crea un gcid-… y get-divi-design-system lo muestra", crear_color)
+comprobar("create-divi-page con el color global: publicada, el CSS del frontend define --gcid-…", pagina_con_color)
+comprobar("set-divi-global-color: cambia el color y el CSS del frontend lo refleja", cambiar_color)
+comprobar("delete-divi-global-color sin force: en uso → nexo_mcp_divi_color_in_use y no escribe nada", borrar_en_uso)
+comprobar("set-divi-variable + archive-divi-variable: la variable se crea y se archiva", variable_y_archivo)
+comprobar("set-divi-typography: el tamaño del cuerpo se ve en el CSS del frontend", tipografia)
+comprobar("undo-divi-design-change: cada cambio vuelve atrás en orden inverso (tipografía, archivo, variable, color)", deshacer_todo)
+comprobar("undo-divi-design-change sin historial: nexo_mcp_divi_design_nothing_to_undo y no escribe", sin_nada_que_deshacer)
+sin_escribir("color inválido (nexo_mcp_divi_design_invalid)", lambda: cli.call("set-divi-global-color", {"label": "x", "color": "rojo"}), "color: debe ser un color")
+sin_escribir("variable de enlace javascript: (nexo_mcp_divi_design_invalid)", lambda: cli.call("set-divi-variable", {"type": "links", "label": "x", "value": "javascript:alert(1)"}), "value: debe ser un enlace")
+sin_escribir("valor con salto de línea final (nexo_mcp_divi_design_invalid)", lambda: cli.call("set-divi-variable", {"type": "numbers", "label": "x", "value": "12px\n"}), "value: debe ser un número")
+sin_escribir("color con salto de línea final (nexo_mcp_divi_design_invalid)", lambda: cli.call("set-divi-global-color", {"label": "x", "color": "#ff0000\n"}), "color: debe ser un color")
+sin_escribir("id de color inexistente (nexo_mcp_divi_design_not_found)", lambda: cli.call("delete-divi-global-color", {"id": "gcid-zzzzzzzzzz"}), "No existe «gcid-zzzzzzzzzz»")
+sin_escribir("id de variable inexistente (nexo_mcp_divi_design_not_found)", lambda: cli.call("archive-divi-variable", {"type": "numbers", "id": "gvid-zzzzzzzzzz", "archived": True}), "No existe «gvid-zzzzzzzzzz»")
+sin_escribir("tamaño del cuerpo fuera de rango (nexo_mcp_divi_design_invalid)", lambda: cli.call("set-divi-typography", {"body_font_size": 500}), "body_font_size: debe ser un tamaño en px")
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones del diseño global de Divi 5 (D3) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba del diseño global de Divi 5 (D3) tuvo comprobaciones fallidas"
+	tools/prueba_adaptadores.sh --ajuste divi_design_tools_enabled false
+	# El deshacer deja los 5 colores del Customizer que Divi agregó a et_divi: se devuelven las opciones crudas.
+	echo "Diseño global de Divi: $(restaurar_divi_diseno)"
+	divi_diseno_foto_tomada=""
+	check_eq "Divi D3: lo guardado quedó byte a byte como al empezar (et_divi, variables, historial, ajustes)" "$divi_huella_inicial" "$(tools/prueba_adaptadores.sh --divi-diseno-huella)"
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+	if [ -n "$divi_diseno_cap_agregada" ]; then
+		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_design" );' >/dev/null
+		divi_diseno_cap_agregada=""
+	fi
 fi
 if [ -n "$divi_tema_previo" ]; then
 	if wp theme activate "$divi_tema_previo" >/dev/null; then echo "Tema restaurado: $divi_tema_previo"; divi_tema_previo=""
