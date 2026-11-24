@@ -125,6 +125,13 @@ final class BuilderGateway {
 	private ?DiviDynamicCatalog $divi_dynamic;
 
 	/**
+	 * Esquema del bucle de consulta de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviLoopSchema|null
+	 */
+	private ?DiviLoopSchema $divi_loops;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -144,6 +151,7 @@ final class BuilderGateway {
 	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
 	 * @param DiviDynamicCatalog|null       $divi_dynamic     Catálogo de contenido dinámico de Divi (las pruebas inyectan Divi, ACF y los tipos).
+	 * @param DiviLoopSchema|null           $divi_loops       Esquema del bucle de consulta de Divi (las pruebas inyectan tipos, taxonomías y términos).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -159,7 +167,8 @@ final class BuilderGateway {
 		?DiviDesignOperations $divi_design_ops = null,
 		?DiviPresetStore $divi_presets = null,
 		?DiviPresetOperations $divi_preset_ops = null,
-		?DiviDynamicCatalog $divi_dynamic = null
+		?DiviDynamicCatalog $divi_dynamic = null,
+		?DiviLoopSchema $divi_loops = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -175,6 +184,7 @@ final class BuilderGateway {
 		$this->divi_presets     = $divi_presets;
 		$this->divi_preset_ops  = $divi_preset_ops;
 		$this->divi_dynamic     = $divi_dynamic;
+		$this->divi_loops       = $divi_loops;
 	}
 
 	/**
@@ -726,8 +736,15 @@ final class BuilderGateway {
 			return $sources;
 		}
 
-		$out['sources'] = $sources;
-		$out['targets'] = DiviDynamicCatalog::targets();
+		$loop_sources = $catalog->loop_listing( $post_id );
+
+		if ( is_wp_error( $loop_sources ) ) {
+			return $loop_sources;
+		}
+
+		$out['sources']      = $sources;
+		$out['loop_sources'] = $loop_sources;
+		$out['targets']      = DiviDynamicCatalog::targets();
 
 		return $out;
 	}
@@ -877,7 +894,11 @@ final class BuilderGateway {
 			$this->backup,
 			new WorkingCopy( $this->settings ),
 			$validator,
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked )
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_loops ?? new DiviLoopSchema()
 		);
 
 		return $editor->edit(
@@ -889,6 +910,61 @@ final class BuilderGateway {
 					'field'  => isset( $input['field'] ) && is_string( $input['field'] ) ? $input['field'] : '',
 					'source' => $input['source'],
 				),
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Activa (o quita) el bucle de consulta de un módulo de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::set_divi_dynamic()} y mismo permiso (`$allowed` = `PermissionPolicy::can_write_divi_dynamic()`
+	 * sobre el original, vuelto a comprobar aquí ANTES de tocar el esquema; sin `$allowed` se deniega). El bucle sólo se
+	 * escribe con el esquema cerrado de {@see DiviLoopSchema} (S7); `loop` es obligatorio y `null` lo quita.
+	 *
+	 * @param array<string, mixed> $input   Parámetros de la herramienta: `id`, `path`, `fingerprint`, `loop`, `draft`.
+	 * @param callable|null        $allowed fn( int ): bool. Permiso de escribir dinámico sobre esa página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_loop( array $input, ?callable $allowed = null ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( null === $allowed || ! $allowed( (int) $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		if ( ! array_key_exists( 'loop', $input ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_loop_invalid',
+				__( 'loop: es obligatorio: un objeto {post_type, per_page, order_by, order, offset?, exclude_current?, terms?} o null para quitar el bucle.', 'nexo-mcp' ),
+				array( 'path' => 'loop' )
+			);
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$this->divi_validator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_loops ?? new DiviLoopSchema()
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'loop'        => $input['loop'],
 				'draft'       => $input['draft'] ?? false,
 			)
 		);

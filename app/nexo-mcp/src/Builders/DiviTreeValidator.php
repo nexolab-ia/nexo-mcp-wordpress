@@ -130,6 +130,13 @@ final class DiviTreeValidator {
 	private int $dynamic_post = 0;
 
 	/**
+	 * Tipo de contenido del bucle del conector donde está el campo (propio o de un ancestro), o null si no hay uno.
+	 *
+	 * @var string|null
+	 */
+	private ?string $loop_type = null;
+
+	/**
 	 * Si el valor que se valida está en un campo que admite token (sólo dentro de una hoja de contenido y con contexto).
 	 *
 	 * @var bool
@@ -172,6 +179,21 @@ final class DiviTreeValidator {
 		$copy->dynamic_post = $post_id;
 		$copy->token_slot   = false;
 		$copy->emitted      = array();
+
+		return $copy;
+	}
+
+	/**
+	 * Copia del validador (con contexto dinámico) que además admite las fuentes `loop_*` del tipo de bucle dado.
+	 *
+	 * Quien llama decide el contexto mirando el árbol ACTUAL de la página: un bucle del conector válido en el módulo o en
+	 * un ancestro. Sin contexto dinámico no cambia nada (todo token se rechaza).
+	 *
+	 * @param string|null $post_type Tipo de contenido del bucle, o null para quitar el contexto.
+	 */
+	public function with_loop( ?string $post_type ): self {
+		$copy            = clone $this;
+		$copy->loop_type = $post_type;
 
 		return $copy;
 	}
@@ -894,7 +916,7 @@ final class DiviTreeValidator {
 			return $this->error( 'nexo_mcp_divi_dynamic_denied', $path, __( 'este campo no admite contenido dinámico (sólo texto, enlaces e imágenes de contenido).', 'nexo-mcp' ) );
 		}
 
-		$token = $this->dynamic->validate_token( $value, $category, $this->dynamic_post );
+		$token = $this->dynamic->validate_token( $value, $category, $this->dynamic_post, $this->loop_type );
 
 		if ( $token instanceof \WP_Error ) {
 			return $this->error( (string) $token->get_error_code(), $path, $token->get_error_message() );

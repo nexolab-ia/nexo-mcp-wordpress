@@ -80,6 +80,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-dynamic-tag',
 		'nexo-mcp/edit-divi-module',
 		'nexo-mcp/set-divi-dynamic',
+		'nexo-mcp/set-divi-loop',
 		'nexo-mcp/create-divi-page',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
@@ -797,6 +798,18 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->divi_dynamic_set_schema(),
 			fn( array $input ) => $this->builders->set_divi_dynamic(
+				$input,
+				fn( int $post_id ): bool => $this->policy->can_write_divi_dynamic( $post_id )
+			),
+			fn( array $input ) => $this->policy->can_write_divi_dynamic( (int) ( $input['id'] ?? 0 ) )
+		);
+		$this->ability(
+			'set-divi-loop',
+			'Activar o quitar el bucle de consulta de un módulo de Divi 5',
+			$this->divi_loop_set_description(),
+			'write',
+			$this->divi_loop_set_schema(),
+			fn( array $input ) => $this->builders->set_divi_loop(
 				$input,
 				fn( int $post_id ): bool => $this->policy->can_write_divi_dynamic( $post_id )
 			),
@@ -1529,9 +1542,9 @@ final class ExtendedAbilityRegistrar {
 			array(
 				'Lista las fuentes de contenido dinámico de Divi 5 que el conector deja usar en una página (lista cerrada, sin meta personalizado, sin usuarios y sin enlaces a otros posts): de la entrada (título, extracto, fecha, autor, categorías y etiquetas, enlace, URL, imagen destacada), del sitio (título, lema, URL, logo), la fecha actual, WooCommerce básico (precio, SKU y descripción corta; el título de un producto es post_title) y los campos de texto, área de texto y número de ACF (custom_meta_<nombre del campo>, sólo de grupos de campos registrados, nunca claves de meta crudas ni las que empiezan por _). Sólo lee. Requiere Divi 5 activo: si no, nexo_mcp_divi_dynamic_unavailable.',
 				'',
-				'SALIDA: {post_id?, post_type?, sources, targets}. sources: lista de {name, label, category (text | url | image), source (divi | acf), requires (\'\' | taxonomy | product), settings, forced}. settings es el esquema de los ajustes admitidos de la opción ({type: text | number | onoff | enum | taxonomy, options?, min?, max?, pattern?}); before y after son texto plano sin etiquetas, shortcodes, $ ni \\; forced indica lo que el conector fija siempre (enable_html: off en las de texto). targets: por módulo, las rutas de contenido donde cabe cada categoría (text en títulos, textos, botones y alt; url en enlaces; image en src). Con post_id sólo lo que aplica a esa página (los de WooCommerce sólo en un producto, categorías y etiquetas sólo si el tipo tiene taxonomías, los campos de ACF de los grupos que aplican a ella).',
+				'SALIDA: {post_id?, post_type?, sources, loop_sources, targets}. loop_sources: las fuentes loop_* por elemento de un bucle del plugin (nexo-mcp-set-divi-loop; con la misma forma que sources, source divi-loop, requires loop | loop_taxonomy | loop_product): sólo valen dentro de un módulo con ese bucle y las de producto en un bucle de product. sources: lista de {name, label, category (text | url | image), source (divi | acf), requires (\'\' | taxonomy | product), settings, forced}. settings es el esquema de los ajustes admitidos de la opción ({type: text | number | onoff | enum | taxonomy, options?, min?, max?, pattern?}); before y after son texto plano sin etiquetas, shortcodes, $ ni \\; forced indica lo que el conector fija siempre (enable_html: off en las de texto). targets: por módulo, las rutas de contenido donde cabe cada categoría (text en títulos, textos, botones y alt; url en enlaces; image en src). Con post_id sólo lo que aplica a esa página (los de WooCommerce sólo en un producto, categorías y etiquetas sólo si el tipo tiene taxonomías, los campos de ACF de los grupos que aplican a ella).',
 				'',
-				'Esta herramienta sólo lista: asignar un token a un módulo se hace con nexo-mcp-set-divi-dynamic (scope mcp:divi_dynamic); create-divi-page, edit-divi-module y edit-divi-section siguen rechazando todo $variable(…)$ con nexo_mcp_divi_dynamic_denied. Errores: nexo_mcp_builder_not_found, nexo_mcp_builder_invalid_id (post_id).',
+				'Esta herramienta sólo lista: asignar un token a un módulo se hace con nexo-mcp-set-divi-dynamic (scope mcp:divi_dynamic) y activar un bucle de consulta con nexo-mcp-set-divi-loop (mismo scope); create-divi-page, edit-divi-module y edit-divi-section siguen rechazando todo $variable(…)$ con nexo_mcp_divi_dynamic_denied. Errores: nexo_mcp_builder_not_found, nexo_mcp_builder_invalid_id (post_id).',
 			)
 		);
 	}
@@ -1549,13 +1562,13 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'ENTRADA: id, path y fingerprint del módulo (como en nexo-mcp-edit-divi-module), field y source. field es uno de los destinos de ese tipo de módulo que publica nexo-mcp-list-divi-dynamic-sources en targets (por ejemplo title.innerContent en divi/heading, button.innerContent.text o button.innerContent.linkUrl en divi/button, image.innerContent.src o .alt en divi/image). source es {name, settings?}: name de la lista cerrada de nexo-mcp-list-divi-dynamic-sources (sources, con su category) y settings con los ajustes que admite esa opción. La categoría de la fuente debe ser la del campo: text en textos, títulos y alt; url en enlaces; image en src (si no, nexo_mcp_divi_dynamic_denied). Un campo lleva UN solo token: sin texto alrededor (el texto antes y después se pone con los ajustes before y after de la fuente). Lo que se guarda es el token canónico que arma el plugin (enable_html siempre off), nunca la cadena del cliente.',
 				'',
-				'QUITAR: source: null deja el campo VACÍO (cadena vacía) si hoy tiene un token; después se pone el valor normal con nexo-mcp-edit-divi-module. Si el campo no tenía contenido dinámico responde nexo_mcp_divi_dynamic_not_set y no cambia nada (nunca borra un texto normal). Quitar también exige mcp:divi_dynamic.',
+				'QUITAR: source: null deja el campo VACÍO (cadena vacía) si hoy tiene un token; después se pone el valor normal con nexo-mcp-edit-divi-module. Si el campo no tenía contenido dinámico responde nexo_mcp_divi_dynamic_not_set y no cambia nada (nunca borra un texto normal). Quitar también exige mcp:divi_dynamic. Las fuentes loop_* (loop_post_title…) sólo se aceptan dentro de un módulo con un bucle del plugin (nexo-mcp-set-divi-loop), propio o de un ancestro; si el campo mezcla el token con otro texto, nexo_mcp_divi_dynamic_mixed y no se cambia nada.',
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path, fingerprint nuevo del módulo (úsalo en la siguiente edición), field y token (el canónico guardado) o removed: true.',
 				'',
 				'Los demás tokens de la página no se tocan. nexo-mcp-edit-divi-module, nexo-mcp-create-divi-page y nexo-mcp-edit-divi-section siguen rechazando todo $variable(…)$ nuevo (nexo_mcp_divi_dynamic_denied) y conservan los que ya existen.',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_builder_forbidden (sin permiso), nexo_mcp_divi_node_changed (la huella no coincide), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (módulo fuera del catálogo de contenido), nexo_mcp_divi_dynamic_denied (fuente fuera de la lista, de otra categoría que el campo, que no aplica a esta página o token mal formado), nexo_mcp_divi_dynamic_invalid (field que no es un destino del módulo, source mal formado o ajustes inválidos, con «ruta: motivo»), nexo_mcp_divi_dynamic_not_set (quitar donde no hay token), nexo_mcp_divi_dynamic_unavailable (Divi 5 o ACF no respondieron al consultar las fuentes).',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_builder_forbidden (sin permiso), nexo_mcp_divi_node_changed (la huella no coincide), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (módulo fuera del catálogo de contenido), nexo_mcp_divi_dynamic_denied (fuente fuera de la lista, de otra categoría que el campo, que no aplica a esta página o token mal formado), nexo_mcp_divi_dynamic_invalid (field que no es un destino del módulo, source mal formado o ajustes inválidos, con «ruta: motivo»), nexo_mcp_divi_dynamic_not_set (quitar donde no hay token), nexo_mcp_divi_dynamic_mixed (quitar de un campo con más que un token), nexo_mcp_divi_dynamic_unavailable (Divi 5 o ACF no respondieron al consultar las fuentes).',
 			)
 		);
 	}
@@ -1622,6 +1635,123 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Descripción de set-divi-loop.
+	 */
+	private function divi_loop_set_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Activa, cambia o quita (loop: null) el bucle de consulta de UN módulo de Divi 5, en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. El bucle repite el módulo (con todos sus hijos) una vez por contenido encontrado y muestra datos del sitio al PÚBLICO, por eso comparte el scope de set-divi-dynamic: requiere mcp:divi_dynamic (que el administrador enciende aparte, apagado por defecto), además del permiso de constructores y edit_post sobre la página. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'DESTINO: igual que nexo-mcp-set-divi-dynamic (draft_of, preview_url; draft: true si el sitio apagó la copia por defecto; se respalda antes de guardar; puedes pasar el id del original o el de su copia).',
+				'',
+				'ENTRADA: id, path y fingerprint del módulo (nexo-mcp-get-page-structure) y loop. Módulos que lo admiten: divi/section, divi/row, divi/column, divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon-list y divi/icon-list-item (no divi/icon, divi/video ni el placeholder: nexo_mcp_divi_module_denied). loop es {post_type, per_page, order_by, order, offset?, exclude_current?, terms?}: post_type, UN solo tipo de contenido público (post, page, product…; no attachment, no any, no varios); per_page de 1 a 24; order_by date | title | id; order asc | desc; offset de 0 a 1000; exclude_current true para no listar la página actual; terms {taxonomía: [ids de término]} de taxonomías públicas de ese tipo (categorías, etiquetas…), términos que existan. NO hay metaQuery, búsqueda, usuarios, términos como lista, repetidores, menús ni nada más: cualquier otra clave da nexo_mcp_divi_loop_invalid (con data.path). Lo que se guarda en module.advanced.loop.desktop.value es sólo lo que arma el plugin (enable, queryType post_types, subTypes, orderBy, order, postPerPage, postOffset, excludeCurrentPost, ignoreStickysPost, loopId, y los términos), nunca la cadena del cliente.',
+				'',
+				'VISIBILIDAD: el bucle muestra SÓLO contenido publicado y sin contraseña (los privados, borradores, programados y protegidos no salen), forzado por el plugin al renderizar; el bucle del plugin se reconoce por su loopId (loop-nx…). La paginación por URL (?<loopId>=N) de Divi sigue funcionando sobre el mismo tope por página.',
+				'',
+				'SIN ANIDAR: si algún ancestro o descendiente del módulo ya tiene un bucle activo, nexo_mcp_divi_loop_nested y no se escribe nada. Sobre un módulo que ya tiene bucle, loop lo reemplaza entero (conserva su loopId si ya era del plugin).',
+				'',
+				'CAMPOS POR ELEMENTO: dentro del módulo con bucle (o de sus hijos) se ponen fuentes loop_* con nexo-mcp-set-divi-dynamic (la lista y sus ajustes, en loop_sources de nexo-mcp-list-divi-dynamic-sources): loop_post_title, loop_post_excerpt, loop_post_date, loop_post_author, loop_post_terms, loop_post_link (URL), loop_post_featured_image y, si el tipo es product, loop_product_title, loop_product_price_current, loop_product_sku y loop_product_short_description. Sin bucle del plugin válido en el módulo o en un ancestro, esas fuentes dan nexo_mcp_divi_dynamic_denied. Nunca hay usuarios, términos ni meta personalizado.',
+				'',
+				'QUITAR: loop: null borra module.advanced.loop (y deja el módulo como uno normal). Si el módulo no tiene bucle, nexo_mcp_divi_loop_not_set. Mientras queden fuentes loop_* dentro del módulo (o, al cambiar el tipo, fuentes que el tipo nuevo no admite, como las de producto en un bucle de entradas) responde nexo_mcp_divi_loop_in_use y no escribe: quítalas antes con nexo-mcp-set-divi-dynamic (source: null).',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path, fingerprint nuevo del módulo y loop (los parámetros normalizados y loop_id) o loop: null y removed: true.',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_builder_forbidden (sin permiso), nexo_mcp_divi_node_changed (la huella no coincide), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied, nexo_mcp_divi_loop_invalid (loop mal formado o fuera de los límites, con «ruta: motivo»), nexo_mcp_divi_loop_nested, nexo_mcp_divi_loop_in_use, nexo_mcp_divi_loop_not_set.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de set-divi-loop.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_loop_set_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'          => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 o su copia de trabajo.',
+				),
+				'path'        => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del módulo (por ejemplo 0.0.0.0; ver get-page-structure).',
+				),
+				'fingerprint' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del módulo tal como la devolvió la lectura.',
+				),
+				'loop'        => array(
+					'type'                 => array( 'object', 'null' ),
+					'properties'           => array(
+						'post_type'       => array(
+							'type'        => 'string',
+							'minLength'   => 1,
+							'maxLength'   => 20,
+							'description' => 'UN tipo de contenido público (post, page, product…). No attachment ni any.',
+						),
+						'per_page'        => array(
+							'type'        => 'integer',
+							'minimum'     => 1,
+							'maximum'     => 24,
+							'description' => 'Contenidos por página del bucle (1-24).',
+						),
+						'order_by'        => array(
+							'type'        => 'string',
+							'enum'        => array( 'date', 'title', 'id' ),
+							'description' => 'Orden: fecha, título o id.',
+						),
+						'order'           => array(
+							'type'        => 'string',
+							'enum'        => array( 'asc', 'desc' ),
+							'description' => 'Ascendente o descendente.',
+						),
+						'offset'          => array(
+							'type'        => 'integer',
+							'minimum'     => 0,
+							'maximum'     => 1000,
+							'description' => 'Contenidos a saltar al principio (0 por omisión).',
+						),
+						'exclude_current' => array(
+							'type'        => 'boolean',
+							'description' => 'No listar la página actual.',
+						),
+						'terms'           => array(
+							'type'                 => 'object',
+							'additionalProperties' => array(
+								'type'     => 'array',
+								'items'    => array(
+									'type'    => 'integer',
+									'minimum' => 1,
+								),
+								'minItems' => 1,
+								'maxItems' => 20,
+							),
+							'description'          => 'Sólo contenido con alguno de estos términos: {taxonomía: [ids]} de taxonomías públicas del tipo (category, post_tag, product_cat…).',
+						),
+					),
+					'required'             => array( 'post_type', 'per_page', 'order_by', 'order' ),
+					'additionalProperties' => false,
+					'description'          => 'El bucle que se pone en el módulo, o null para quitarlo.',
+				),
+				'draft'       => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'path', 'fingerprint', 'loop' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Descripción de edit-divi-module.
 	 */
 	private function divi_module_description(): string {
@@ -1632,7 +1762,7 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
 				'',
-				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic) ni URLs javascript:.',
+				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic; el bucle de consulta es nexo-mcp-set-divi-loop) ni URLs javascript:.',
 				'',
 				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
 				'',

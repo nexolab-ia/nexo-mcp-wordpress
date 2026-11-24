@@ -329,9 +329,41 @@ final class Divi5DynamicEditorTest extends NexoTestCase {
 		$this->assertSame( array( 'text' => 'Comprar', 'linkUrl' => '' ), $value );
 		$this->assertSame( self::page(), $this->content( self::ORIGINAL ) );
 
-		$text = $this->assign( self::TEXT, 'content.innerContent', null, self::ORIGINAL, false );
+		$text = $this->assign( self::TEXT, 'content.innerContent', array( 'name' => 'site_title' ) );
 		$this->assertIsArray( $text );
-		$this->assertSame( '', $this->attrs( $this->content( (int) $text['id'] ), self::TEXT )['content']['innerContent']['desktop']['value'] );
+		$removed = $this->assign( self::TEXT, 'content.innerContent', null, (int) $text['id'], false, $text['fingerprint'] );
+		$this->assertIsArray( $removed );
+		$this->assertSame( '', $this->attrs( $this->content( (int) $removed['id'] ), self::TEXT )['content']['innerContent']['desktop']['value'] );
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function mixed_values(): array {
+		return array(
+			'texto antes'      => array( 'Hola ' . self::OLD_TOKEN ),
+			'texto después'    => array( self::OLD_TOKEN . ' adiós' ),
+			'en un párrafo'    => array( '<p>' . self::OLD_TOKEN . '</p>' ),
+			'dos tokens'       => array( self::OLD_TOKEN . self::OLD_TOKEN ),
+			'espacio alrededor' => array( ' ' . self::OLD_TOKEN ),
+		);
+	}
+
+	/**
+	 * @dataProvider mixed_values
+	 */
+	public function test_removing_from_a_field_that_mixes_a_token_with_other_text_is_refused_and_writes_nothing( string $value ): void {
+		$blocks = parse_blocks( self::page() );
+		$block  = Divi5Tree::locate_block( $blocks, self::TEXT );
+		$this->assertIsArray( $block );
+		$block['attrs']['content']['innerContent']['desktop']['value'] = $value;
+		\WP_Test_State::$posts[ self::ORIGINAL ]->post_content         = serialize_blocks( Divi5Tree::replace_block( $blocks, self::TEXT, $block ) ?? array() );
+		$before = $this->snapshot();
+
+		$error = $this->assertRejected( 'nexo_mcp_divi_dynamic_mixed', $this->assign( self::TEXT, 'content.innerContent', null, self::ORIGINAL, false ), $before );
+
+		$this->assertSame( array( 'path' => 'field' ), $error->get_error_data() );
+		$this->assertStringContainsString( 'edit-divi-module', $error->get_error_message() );
 	}
 
 	public function test_removing_a_token_from_an_image_source_leaves_it_empty(): void {

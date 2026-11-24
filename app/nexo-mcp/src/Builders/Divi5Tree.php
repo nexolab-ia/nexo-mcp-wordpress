@@ -110,6 +110,35 @@ final class Divi5Tree {
 	}
 
 	/**
+	 * Bloques descendientes de un bloque, con su ruta (los freeform en blanco no ocupan índice), en orden de aparición.
+	 *
+	 * @param array<string, mixed> $block Bloque (de `parse_blocks()`).
+	 * @param string               $path  Ruta del bloque.
+	 *
+	 * @return array<int, array{path: string, block: array<string, mixed>}>
+	 */
+	public static function descendants( array $block, string $path ): array {
+		$out   = array();
+		$index = 0;
+
+		foreach ( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array() as $child ) {
+			if ( ! self::counts( $child ) ) {
+				continue;
+			}
+
+			$child_path = $path . '.' . $index;
+			$out[]      = array(
+				'path'  => $child_path,
+				'block' => $child,
+			);
+			$out        = array_merge( $out, self::descendants( $child, $child_path ) );
+			++$index;
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Devuelve los bloques con el de esa ruta sustituido; null si la ruta no existe.
 	 *
 	 * Conserva el resto tal cual (incluidos los freeform en blanco y el orden de `innerContent`).
