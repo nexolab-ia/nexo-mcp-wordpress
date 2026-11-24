@@ -1502,7 +1502,7 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
 			)
 		);
 	}
@@ -1591,7 +1591,7 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id, status (draft), preview_url y nodes: lista plana de {path, type, fingerprint} con la ruta de cada nodo (úsala con nexo-mcp-edit-divi-section y nexo-mcp-edit-divi-module).',
 				'',
-				'ERRORES (no crean nada; si falla el guardado el borrador a medias se elimina): nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
+				'ERRORES (no crean nada; si falla el guardado el borrador a medias se elimina): nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
 			)
 		);
 	}

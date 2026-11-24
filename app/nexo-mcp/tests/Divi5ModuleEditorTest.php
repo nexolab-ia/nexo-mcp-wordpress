@@ -433,4 +433,38 @@ final class Divi5ModuleEditorTest extends NexoTestCase {
 
 		$this->assertTrue( \WP_Test_State::$kses_active );
 	}
+
+	private const TOKEN_JSON = '$variable({"type":"content","value":{"name":"post_title","settings":{}}})$';
+
+	public function test_a_token_written_by_the_client_is_rejected_with_its_path_and_nothing_is_written(): void {
+		$before = $this->snapshot();
+		$result = $this->run_edit( array( 'content' => array( 'content' => array( 'innerContent' => array( 'desktop' => array( 'value' => '<p>$variable({"type":"content","value":{"name":"custom_meta__edit_last","settings":{}}})$</p>' ) ) ) ) ) );
+
+		$this->assertRejected( 'nexo_mcp_divi_dynamic_denied', $result, $before );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'content.content.innerContent.desktop.value', $result->get_error_data()['path'] ?? null );
+	}
+
+	public function test_an_existing_token_elsewhere_on_the_page_survives_an_edit_of_another_module(): void {
+		$blocks = parse_blocks( self::page() );
+		$set    = static function ( array &$list ) use ( &$set ): void {
+			foreach ( $list as &$block ) {
+				if ( 'divi/button' === $block['blockName'] ) {
+					$block['attrs']['button']['innerContent']['desktop']['value']['text'] = 'Comprar ' . self::TOKEN_JSON;
+				}
+
+				$set( $block['innerBlocks'] );
+			}
+		};
+		$set( $blocks );
+		$page = serialize_blocks( $blocks );
+		$this->assertStringContainsString( 'post_title', $page );
+		$this->put_page( 103, 'draft', $page );
+
+		$result = $this->run_edit( array(), 103 );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'Nuevo', $this->node( $this->content( 103 ), self::TEXT )['text'] );
+		$this->assertSame( substr_count( $page, 'post_title' ), substr_count( $this->content( 103 ), 'post_title' ), 'el token que ya estaba no se toca' );
+	}
 }

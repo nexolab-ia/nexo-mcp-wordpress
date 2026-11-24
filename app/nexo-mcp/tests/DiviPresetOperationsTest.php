@@ -881,4 +881,12 @@ final class DiviPresetOperationsTest extends NexoTestCase {
 		$this->assertSame( range( 1, DiviPresetOperations::MAX_POST_IDS ), $found['post_ids'] );
 		$this->assertSame( 450, $found['total'], 'cuenta todos los lotes, no se detiene en el tope de ids' );
 	}
+
+	public function test_un_token_dinamico_en_los_attrs_de_un_preset_se_rechaza_sin_escribir(): void {
+		$before = $this->snapshot();
+		$token  = '$variable({"type":"content","value":{"name":"custom_meta__edit_last","settings":{}}})$';
+
+		$this->assert_rejected( $this->ops()->set_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'label' => 'X', 'attrs' => $this->bg( $token ) ) ), 'nexo_mcp_divi_dynamic_denied', $before, 'attrs.module.decoration.background.desktop.value.color' );
+		$this->assert_rejected( $this->ops()->set_preset( array( 'kind' => 'module', 'name' => 'divi/text', 'id' => 'p-text-1', 'label' => 'Y', 'attrs' => $this->bg( '&#36;variable(x)' ) ) ), 'nexo_mcp_divi_dynamic_denied', $before, 'attrs.module.decoration.background.desktop.value.color' );
+	}
 }

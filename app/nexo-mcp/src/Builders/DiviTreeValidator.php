@@ -28,7 +28,7 @@ namespace NexoDev\NexoMCP\Builders;
  *
  * Todo error lleva el código de la regla, la ruta en el mensaje (`nodes[0].children[1].attrs.title.innerContent.tablet: …`)
  * y la ruta en `error_data`. Códigos: `nexo_mcp_divi_module_denied`, `_attr_denied`, `_value_invalid`,
- * `_nesting_invalid`, `_shortcode_denied`, `_tree_invalid` (forma), `_too_many_nodes` y `_too_large`.
+ * `_nesting_invalid`, `_shortcode_denied`, `_dynamic_denied` (token `$variable(…)$`), `_tree_invalid` (forma), `_too_many_nodes` y `_too_large`.
  */
 final class DiviTreeValidator {
 
@@ -733,10 +733,25 @@ final class DiviTreeValidator {
 			return $this->error( 'nexo_mcp_divi_value_invalid', $shown . '.desktop.value', __( 'falta el valor.', 'nexo-mcp' ) );
 		}
 
-		$value = $this->check_value( $desktop['value'], $spec, $shown . '.desktop.value' );
+		$where = $shown . '.desktop.value';
+
+		// Antes de sanear: lo que manda el cliente. Después: lo que se guardaría (quitar etiquetas o normalizar una URL puede armar un token).
+		$found = self::dynamic_token_path( $desktop['value'], $where );
+
+		if ( null !== $found ) {
+			return $this->dynamic_error( $found );
+		}
+
+		$value = $this->check_value( $desktop['value'], $spec, $where );
 
 		if ( is_wp_error( $value ) ) {
 			return $value;
+		}
+
+		$found = self::dynamic_token_path( $value, $where );
+
+		if ( null !== $found ) {
+			return $this->dynamic_error( $found );
 		}
 
 		return array( 'desktop' => array( 'value' => $value ) );
@@ -1006,6 +1021,109 @@ final class DiviTreeValidator {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Indica si un valor (cadena o estructura, a cualquier profundidad) lleva un token de contenido dinámico de Divi.
+	 *
+	 * Divi 5 resuelve al renderizar toda cadena que contenga el literal `$variable(` (sensible a mayúsculas, sin
+	 * decodificar entidades), pero se rechaza también un superset conservador: mayúsculas, espacios dentro del
+	 * token, entidades HTML (`&#36;`, `&#x24;`, `&dollar;`, con o sin `;`), escapes JSON (`\u0024`, `\x24`),
+	 * `%24`, etiquetas intercaladas (`$<b></b>variable(`) y el marcador heredado `@ET-DC@` de Divi 4.
+	 *
+	 * @param mixed $value Valor a revisar.
+	 */
+	public static function has_dynamic_token( $value ): bool {
+		return null !== self::dynamic_token_path( $value, '' );
+	}
+
+	/**
+	 * Ruta (relativa, `.clave.sub`) de la primera cadena con un token dinámico dentro de un valor, o null si no hay.
+	 *
+	 * @param mixed  $value  Valor a revisar.
+	 * @param string $prefix Ruta acumulada.
+	 */
+	private static function dynamic_token_path( $value, string $prefix ): ?string {
+		if ( is_array( $value ) ) {
+			foreach ( $value as $key => $item ) {
+				$found = self::dynamic_token_path( $item, $prefix . '.' . $key );
+
+				if ( null !== $found ) {
+					return $found;
+				}
+			}
+
+			return null;
+		}
+
+		return is_string( $value ) && self::string_has_token( $value ) ? $prefix : null;
+	}
+
+	/**
+	 * Indica si una cadena lleva un token, tras decodificar hasta 4 capas.
+	 *
+	 * @param string $value Cadena.
+	 */
+	private static function string_has_token( string $value ): bool {
+
+		$text = $value;
+
+		for ( $pass = 0; $pass < 4; $pass++ ) {
+			$variants = array( $text, (string) preg_replace( '/<[^>]*>/', '', $text ), (string) preg_replace( '/<[^>]*>|[\x00-\x08\x0E-\x1F\x{200B}-\x{200F}\x{2060}\x{FEFF}\x{00AD}]+/u', '', $text ) );
+
+			foreach ( $variants as $variant ) {
+				if ( 1 === preg_match( '/\$\s*variable\s*\(|@ET-DC@/i', $variant ) ) {
+					return true;
+				}
+			}
+
+			$decoded = self::decode_once( $text );
+
+			if ( $decoded === $text ) {
+				return false;
+			}
+
+			$text = $decoded;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Una capa de decodificación: entidades de `$`, entidades HTML, escapes `\uXXXX`/`\xXX` y `%XX`.
+	 *
+	 * @param string $text Texto.
+	 */
+	private static function decode_once( string $text ): string {
+		$text = (string) preg_replace( array( '/&#0*36(?!\d);?/', '/&#x0*24(?![0-9a-f]);?/i', '/&dollar;?/i' ), '$', $text );
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$text = (string) preg_replace_callback(
+			'/\\\\+(?:u([0-9a-f]{4})|x([0-9a-f]{2}))/i',
+			static function ( array $m ): string {
+				$code = hexdec( '' !== $m[1] ? $m[1] : $m[2] );
+
+				return $code < 128 ? chr( (int) $code ) : "\u{FFFD}";
+			},
+			$text
+		);
+
+		return rawurldecode( $text );
+	}
+
+	/**
+	 * Error de contenido dinámico no habilitado.
+	 *
+	 * @param string $path Ruta del valor.
+	 */
+	public function dynamic_error( string $path ): \WP_Error {
+		return $this->error( 'nexo_mcp_divi_dynamic_denied', $path, self::dynamic_reason() );
+	}
+
+	/**
+	 * Motivo del rechazo de un token dinámico.
+	 */
+	public static function dynamic_reason(): string {
+		return __( 'el contenido dinámico de Divi ($variable(…)$) no está habilitado: el valor no puede llevar tokens dinámicos.', 'nexo-mcp' );
 	}
 
 	/**

@@ -301,6 +301,13 @@ Reglas que siempre se cumplen:
     imágenes que no sean un adjunto existente o una URL http/https
     (`nexo_mcp_divi_value_invalid`). El texto rico pasa por `wp_kses` con una lista
     corta de etiquetas y sin `target`.
+  - **Sin contenido dinámico (1.9.1)**: Divi 5 resuelve al renderizar todo token
+    `$variable({…})$` de una página (meta personalizado, emails…), así que lo que
+    escribe el MCP no puede llevarlo: se rechaza con `nexo_mcp_divi_dynamic_denied`
+    (`data.path`) en árboles, parches, `attrs` de presets y variables globales de
+    texto, enlace e imagen, antes y después de sanear y también ofuscado (mayúsculas,
+    `\u0024`, `&#36;`, `&dollar;`, `%24`, `@ET-DC@`). Lo que ya está guardado en la
+    página no se toca. `module.advanced.loop` tampoco se puede escribir.
   - **Copia de trabajo**: igual que en Elementor, una página publicada se edita en su
     copia (el original no cambia hasta publicarla con `set-content-status`),
     con respaldo y bloqueo; nunca publica. El kses del núcleo corrompe los
