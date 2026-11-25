@@ -16,6 +16,7 @@ use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
+use NexoDev\NexoMCP\Builders\DiviConditionsSchema;
 use NexoDev\NexoMCP\Builders\DiviDesignStore;
 use NexoDev\NexoMCP\Builders\DiviPresetOperations;
 use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
@@ -81,6 +82,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/edit-divi-module',
 		'nexo-mcp/set-divi-dynamic',
 		'nexo-mcp/set-divi-loop',
+		'nexo-mcp/set-divi-conditions',
 		'nexo-mcp/create-divi-page',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
@@ -95,6 +97,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-default-preset',
 		'nexo-mcp/delete-divi-preset',
 		'nexo-mcp/list-divi-dynamic-sources',
+		'nexo-mcp/list-divi-conditions',
 		'nexo-mcp/list-components',
 		'nexo-mcp/create-component',
 		'nexo-mcp/insert-component',
@@ -774,6 +777,27 @@ final class ExtendedAbilityRegistrar {
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
+			'list-divi-conditions',
+			'Listar las condiciones de visualización de Divi 5',
+			$this->divi_conditions_list_description(),
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'post_id' => array(
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Página (o su copia de trabajo) para comprobar que existe y devolver su id y tipo. Sin él, sólo el catálogo.',
+					),
+				),
+				'additionalProperties' => false,
+			),
+			fn( array $input ) => $this->builders->list_divi_conditions( $input ),
+			fn( array $input ) => isset( $input['post_id'] )
+				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
+		);
+		$this->ability(
 			'set-dynamic-tag',
 			'Asignar dato dinámico a un elemento de Elementor 4',
 			$this->dynamic_set_description(),
@@ -814,6 +838,18 @@ final class ExtendedAbilityRegistrar {
 				fn( int $post_id ): bool => $this->policy->can_write_divi_dynamic( $post_id )
 			),
 			fn( array $input ) => $this->policy->can_write_divi_dynamic( (int) ( $input['id'] ?? 0 ) )
+		);
+		$this->ability(
+			'set-divi-conditions',
+			'Poner o quitar las condiciones de visualización de un módulo de Divi 5',
+			$this->divi_conditions_set_description(),
+			'write',
+			$this->divi_conditions_set_schema(),
+			fn( array $input ) => $this->builders->set_divi_conditions(
+				$input,
+				fn( int $post_id ): bool => $this->policy->can_write_divi_conditions( $post_id )
+			),
+			fn( array $input ) => $this->policy->can_write_divi_conditions( (int) ( $input['id'] ?? 0 ) )
 		);
 		$this->ability(
 			'create-divi-page',
@@ -1752,6 +1788,180 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Descripción de list-divi-conditions.
+	 */
+	private function divi_conditions_list_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Lista las condiciones de visualización de Divi 5 que el conector deja poner en un módulo con nexo-mcp-set-divi-conditions (catálogo cerrado: sesión, rol, fecha y hora, tipo de contenido, categorías y etiquetas, contenidos concretos, navegador, sistema operativo, parámetro de URL y WooCommerce) y los valores que admite cada una. Sólo lee: no hace falta el scope mcp:divi_conditions (sólo permiso de constructores).',
+				'',
+				'SALIDA: {post_id?, post_type?, match, max_conditions, modules, types, roles, post_types, woocommerce}. match: all (se cumplen todas) | any (basta una). types: lista de {type, label, description, rules (reglas válidas del tipo), settings ({clave: {type, description, values?}}; values son las listas cerradas de navegadores, sistemas y días), requires (woocommerce o vacío), available (false si requiere WooCommerce y no está activo)}. roles: {slug, label} de los roles del sitio; post_types: {name, label} de los tipos de contenido públicos; woocommerce: si está activo. modules: los módulos que admiten condiciones (divi/placeholder no). Los ids de categorías, etiquetas, contenidos y productos se buscan con las herramientas de lectura normales (nexo-mcp-list-terms…).',
+				'',
+				'NO ES CONTROL DE ACCESO: las condiciones sólo cambian lo que se muestra; el contenido oculto sigue en la página (lo ven quienes la editan, la API con permisos de edición, las revisiones y copias) y el texto de un módulo oculto sigue siendo buscable en el buscador del sitio. Navegador, sistema, parámetro de URL y cookies los controla el visitante. Nunca las presentes como «privado» ni «restringido».',
+				'',
+				'Errores: nexo_mcp_builder_not_found, nexo_mcp_builder_invalid_id (post_id).',
+			)
+		);
+	}
+
+	/**
+	 * Descripción de set-divi-conditions.
+	 */
+	private function divi_conditions_set_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Pone, reemplaza o quita (conditions: []) las condiciones de visualización de UN módulo de Divi 5, en la copia de trabajo de la página (se crea o se reutiliza): el original publicado no cambia hasta que revises y publiques la copia. Nunca publica. Cambia lo que ve cada visitante, por eso tiene su propio scope: requiere mcp:divi_conditions (que el administrador enciende aparte, apagado por defecto), además del permiso de constructores y edit_post sobre la página. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'NO ES CONTROL DE ACCESO: es presentación. Un módulo oculto no sale en el HTML, pero su contenido sigue en la página: lo ven quienes la editan y la API con permisos, y su texto es buscable en el buscador del sitio. Navegador, sistema operativo y parámetro de URL los controla el visitante. Con una caché de página completa (plugin de caché o CDN) el resultado del primer visitante se sirve a todos. Fallan abiertas: si Divi no entiende una condición, MUESTRA el módulo. Nunca lo describas como «privado» ni «restringido»; ocultar un contenedor oculta todo lo que lleva dentro. Si necesitas confidencialidad real, no pongas el contenido en la página.',
+				'',
+				'DESTINO: igual que nexo-mcp-edit-divi-module (draft_of, preview_url; draft: true si el sitio apagó la copia por defecto; se respalda antes de guardar; puedes pasar el id del original o el de su copia).',
+				'',
+				'ENTRADA: id, path y fingerprint del módulo (nexo-mcp-get-page-structure), match y conditions. Módulos que las admiten: divi/section, divi/row, divi/column, divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list y divi/icon-list-item (no divi/placeholder: nexo_mcp_divi_module_denied). match: all (se cumplen todas) o any (basta una); el mismo operador vale para todas (no hay listas mixtas). conditions: de 0 a 5 objetos {type, rule, …ajustes}, el conjunto ENTERO (reemplaza al que había; conserva el id de las que no cambian). Los tipos, reglas, ajustes y valores permitidos (roles, tipos de contenido, navegadores…) están en nexo-mcp-list-divi-conditions: sesión (logged_in), rol (user_role), fecha y hora (date_time: before, after, on_date, on_days; sin repeticiones), tipo de contenido (post_type), categorías y etiquetas (categories, tags), contenidos concretos (posts), navegador (browser), sistema operativo (operating_system), parámetro de URL (url_parameter) y, con WooCommerce activo, cart_contents, product_stock y product_purchase. Con match any no se admiten dos condiciones del mismo tipo (Divi descartaría la segunda), salvo fecha/hora y parámetro de URL. NO hay customField, cookie, número de visitas, páginas visitadas, autor, archivos ni dispositivo (eso es otra opción de Divi): cualquier otra cosa da nexo_mcp_divi_conditions_invalid con data.path. Lo que se guarda en module.decoration.conditions.desktop.value es sólo lo que arma el plugin (nunca la cadena del cliente).',
+				'',
+				'LAS HECHAS EN EL VISUAL BUILDER: si el módulo ya tiene condiciones que no son de este conector, reemplazarlas o quitarlas las pierde: responde nexo_mcp_divi_conditions_foreign con un resumen en data.summary y no escribe nada; repite con replace_foreign: true para confirmar (la salida trae replaced con el resumen de lo que había). Las propias se reemplazan sin confirmar. edit-divi-module, create-divi-page y edit-divi-section no las tocan (y las rechazan como atributo: nexo_mcp_divi_attr_denied).',
+				'',
+				'QUITAR: conditions: [] borra module.decoration.conditions.desktop.value (y deja el módulo sin condiciones); la salida trae removed: true.',
+				'',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path, fingerprint nuevo del módulo, match, conditions (las guardadas, con su id), replaced (si había una lista ajena) y removed: true al quitar.',
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_builder_forbidden (sin permiso), nexo_mcp_divi_node_changed (la huella no coincide), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied, nexo_mcp_divi_conditions_invalid (conjunto mal formado, con «ruta: motivo»), nexo_mcp_divi_conditions_foreign (lista ajena sin replace_foreign).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de set-divi-conditions.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_conditions_set_schema(): array {
+		$strings  = static fn( string $description, int $max ): array => array(
+			'type'        => 'array',
+			'minItems'    => 1,
+			'maxItems'    => $max,
+			'items'       => array( 'type' => 'string' ),
+			'description' => $description,
+		);
+		$integers = static fn( string $description ): array => array(
+			'type'        => 'array',
+			'minItems'    => 1,
+			'maxItems'    => DiviConditionsSchema::MAX_ITEMS,
+			'items'       => array(
+				'type'    => 'integer',
+				'minimum' => 1,
+			),
+			'description' => $description,
+		);
+		$time     = static fn( string $description ): array => array(
+			'type'        => 'string',
+			'pattern'     => '^([01][0-9]|2[0-3]):[0-5][0-9]$',
+			'description' => $description,
+		);
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'              => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 o su copia de trabajo.',
+				),
+				'path'            => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del módulo (por ejemplo 0.0.0.0; ver get-page-structure).',
+				),
+				'fingerprint'     => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del módulo tal como la devolvió la lectura.',
+				),
+				'match'           => array(
+					'type'        => 'string',
+					'enum'        => array( 'all', 'any' ),
+					'description' => 'all: se cumplen todas las condiciones; any: basta una. Con conditions vacío no importa.',
+				),
+				'conditions'      => array(
+					'type'        => 'array',
+					'minItems'    => 0,
+					'maxItems'    => DiviConditionsSchema::MAX_CONDITIONS,
+					'items'       => array(
+						'type'                 => 'object',
+						'properties'           => array(
+							'type'       => array(
+								'type'        => 'string',
+								'enum'        => array_keys( DiviConditionsSchema::TYPES ),
+								'description' => 'Tipo de condición (ver nexo-mcp-list-divi-conditions).',
+							),
+							'rule'       => array(
+								'type'        => 'string',
+								'minLength'   => 1,
+								'maxLength'   => 30,
+								'description' => 'Regla del tipo (logged_in | logged_out, is | is_not, before | after | on_date | on_days, equals…).',
+							),
+							'roles'      => $strings( 'user_role: slugs de rol que existan (1 a 10).', DiviConditionsSchema::MAX_ROLES ),
+							'post_types' => $strings( 'post_type: tipos de contenido públicos (1 a 10).', DiviConditionsSchema::MAX_ROLES ),
+							'terms'      => $integers( 'categories o tags: ids de término que existan (1 a 20).' ),
+							'post_type'  => array(
+								'type'        => 'string',
+								'minLength'   => 1,
+								'maxLength'   => 20,
+								'description' => 'posts: UN tipo de contenido público (no attachment).',
+							),
+							'posts'      => $integers( 'posts: ids de contenido publicado de ese tipo (1 a 20).' ),
+							'browsers'   => $strings( 'browser: chrome | firefox | safari | edge | ie | opera | maxthon | ucbrowser.', 8 ),
+							'systems'    => $strings( 'operating_system: windows | macos | linux | android | iphone | ipad | ipod | appletv | playstation | xbox | nintendo | webos.', 12 ),
+							'weekdays'   => $strings( 'date_time con on_days: sunday … saturday.', 7 ),
+							'products'   => $integers( 'WooCommerce: ids de productos que existan (1 a 20); sólo con las reglas que nombran productos.' ),
+							'name'       => array(
+								'type'        => 'string',
+								'minLength'   => 1,
+								'maxLength'   => 40,
+								'description' => 'url_parameter: nombre del parámetro [A-Za-z0-9_-].',
+							),
+							'value'      => array(
+								'type'        => 'string',
+								'minLength'   => 1,
+								'maxLength'   => DiviConditionsSchema::MAX_TEXT,
+								'description' => 'url_parameter con equals, not_equals, contains o not_contains.',
+							),
+							'date'       => array(
+								'type'        => 'string',
+								'pattern'     => '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
+								'description' => 'date_time con before, after u on_date: fecha real Y-m-d.',
+							),
+							'time'       => $time( 'date_time con before o after: hora HH:MM.' ),
+							'all_day'    => array(
+								'type'        => 'boolean',
+								'description' => 'date_time con on_date u on_days: todo el día (por omisión); con false, from_time y until_time.',
+							),
+							'from_time'  => $time( 'date_time con all_day false: hora HH:MM.' ),
+							'until_time' => $time( 'date_time con all_day false: hora HH:MM, posterior a from_time.' ),
+						),
+						'required'             => array( 'type' ),
+						'additionalProperties' => false,
+					),
+					'description' => 'El conjunto ENTERO de condiciones del módulo (reemplaza al que había); [] las quita.',
+				),
+				'replace_foreign' => array(
+					'type'        => 'boolean',
+					'description' => 'true confirma reemplazar o quitar condiciones que no son de este conector (por ejemplo hechas en el Visual Builder).',
+				),
+				'draft'           => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'path', 'fingerprint', 'match', 'conditions' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Descripción de edit-divi-module.
 	 */
 	private function divi_module_description(): string {
@@ -1762,7 +1972,7 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'DESTINO: si la página está publicada el cambio va a su copia de trabajo (draft_of, preview_url); si es un borrador, se edita el borrador. Si el sitio apagó la copia de trabajo por defecto, pasa draft: true para no escribir en vivo. Puedes pasar el id del original o el de su copia. Se respalda antes de guardar (nexo-mcp-restore-builder-backup).',
 				'',
-				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic; el bucle de consulta es nexo-mcp-set-divi-loop) ni URLs javascript:.',
+				'ENTRADA: id, path y fingerprint del módulo (se leen con nexo-mcp-get-page-structure: el id del nodo es el path), y content y/o design: objetos con la forma de los atributos del bloque donde cada valor va en <ruta>.desktop.value, p. ej. content {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}} o design {"module":{"decoration":{"spacing":{"desktop":{"value":{"margin":{"top":"20px"}}}}}}}. Sólo se cambian las rutas indicadas: tablet, teléfono, hover y todo lo no indicado se conserva. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic; el bucle de consulta es nexo-mcp-set-divi-loop; las condiciones de visualización, nexo-mcp-set-divi-conditions) ni URLs javascript:.',
 				'',
 				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
 				'',
@@ -1840,7 +2050,7 @@ final class ExtendedAbilityRegistrar {
 	 * Descripción del árbol de módulos de Divi 5 que comparten create-divi-page y edit-divi-section.
 	 */
 	private function divi_tree_help(): string {
-		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic) ni URLs javascript:. Un nodo puede llevar además preset {module?: id | null, groups?: {<id de grupo>: id | null}} para aplicarle presets de Divi 5 (ids de nexo-mcp-get-divi-presets; se escriben como modulePreset/groupPreset; modulePreset/groupPreset dentro de attrs se rechazan; un id que no existe para ese módulo o grupo da nexo_mcp_divi_preset_unknown con data.path y no se escribe nada). Máximo 200 módulos y 3 MB en la página resultante.';
+		return 'ÁRBOL: lista de nodos {type, attrs?, children?}. type es un módulo de la lista cerrada: divi/section, divi/row, divi/column y los de contenido divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list (con hijos divi/icon-list-item). Anidado: placeholder > section > row > column > módulos de contenido. attrs lleva los atributos de bloque de Divi tal como se guardan, con cada valor en <ruta>.desktop.value (p. ej. {"content":{"innerContent":{"desktop":{"value":"<p>Hola</p>"}}}}); no lleva builderVersion ni ids (los pone el plugin). Sólo contenido y diseño de escritorio: tablet, teléfono y hover se rechazan. No admite código, HTML crudo, shortcodes, tokens $variable(…)$ nuevos (para eso nexo-mcp-set-divi-dynamic) ni URLs javascript:. Un nodo puede llevar además preset {module?: id | null, groups?: {<id de grupo>: id | null}} para aplicarle presets de Divi 5 (ids de nexo-mcp-get-divi-presets; se escriben como modulePreset/groupPreset; modulePreset/groupPreset dentro de attrs se rechazan; un id que no existe para ese módulo o grupo da nexo_mcp_divi_preset_unknown con data.path y no se escribe nada). Las condiciones de visualización (module.decoration.conditions) no se aceptan aquí (nexo_mcp_divi_attr_denied): se ponen sólo con nexo-mcp-set-divi-conditions. Máximo 200 módulos y 3 MB en la página resultante.';
 	}
 
 	/**

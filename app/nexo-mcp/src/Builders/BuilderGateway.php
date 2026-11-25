@@ -132,6 +132,20 @@ final class BuilderGateway {
 	private ?DiviLoopSchema $divi_loops;
 
 	/**
+	 * Esquema de las condiciones de visualización de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviConditionsSchema|null
+	 */
+	private ?DiviConditionsSchema $divi_conditions;
+
+	/**
+	 * Catálogo de las condiciones de visualización; se crea al usarlo.
+	 *
+	 * @var DiviConditionsCatalog|null
+	 */
+	private ?DiviConditionsCatalog $divi_conditions_catalog;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -152,6 +166,8 @@ final class BuilderGateway {
 	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
 	 * @param DiviDynamicCatalog|null       $divi_dynamic     Catálogo de contenido dinámico de Divi (las pruebas inyectan Divi, ACF y los tipos).
 	 * @param DiviLoopSchema|null           $divi_loops       Esquema del bucle de consulta de Divi (las pruebas inyectan tipos, taxonomías y términos).
+	 * @param DiviConditionsSchema|null     $divi_conditions  Esquema de las condiciones de visualización de Divi (las pruebas inyectan roles, tipos, términos y WooCommerce).
+	 * @param DiviConditionsCatalog|null    $divi_conditions_catalog Catálogo de condiciones (las pruebas inyectan roles, tipos y WooCommerce).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -168,23 +184,27 @@ final class BuilderGateway {
 		?DiviPresetStore $divi_presets = null,
 		?DiviPresetOperations $divi_preset_ops = null,
 		?DiviDynamicCatalog $divi_dynamic = null,
-		?DiviLoopSchema $divi_loops = null
+		?DiviLoopSchema $divi_loops = null,
+		?DiviConditionsSchema $divi_conditions = null,
+		?DiviConditionsCatalog $divi_conditions_catalog = null
 	) {
-		$this->registry         = $registry ?? new BuilderRegistry();
-		$this->backup           = $backup ?? new BuilderBackup();
-		$this->settings         = $settings ?? new Settings();
-		$this->design_writer    = $design_writer;
-		$this->design_classes   = $design_classes;
-		$this->design_variables = $design_variables;
-		$this->design_kit       = $design_kit;
-		$this->dynamic_tags     = $dynamic_tags;
-		$this->components       = $components;
-		$this->divi_design      = $divi_design;
-		$this->divi_design_ops  = $divi_design_ops;
-		$this->divi_presets     = $divi_presets;
-		$this->divi_preset_ops  = $divi_preset_ops;
-		$this->divi_dynamic     = $divi_dynamic;
-		$this->divi_loops       = $divi_loops;
+		$this->registry                = $registry ?? new BuilderRegistry();
+		$this->backup                  = $backup ?? new BuilderBackup();
+		$this->settings                = $settings ?? new Settings();
+		$this->design_writer           = $design_writer;
+		$this->design_classes          = $design_classes;
+		$this->design_variables        = $design_variables;
+		$this->design_kit              = $design_kit;
+		$this->dynamic_tags            = $dynamic_tags;
+		$this->components              = $components;
+		$this->divi_design             = $divi_design;
+		$this->divi_design_ops         = $divi_design_ops;
+		$this->divi_presets            = $divi_presets;
+		$this->divi_preset_ops         = $divi_preset_ops;
+		$this->divi_dynamic            = $divi_dynamic;
+		$this->divi_loops              = $divi_loops;
+		$this->divi_conditions         = $divi_conditions;
+		$this->divi_conditions_catalog = $divi_conditions_catalog;
 	}
 
 	/**
@@ -750,6 +770,32 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Catálogo de las condiciones de visualización de Divi 5 que el conector deja escribir, con las listas vivas del sitio.
+	 *
+	 * Con `post_id` (la página o su copia de trabajo) se comprueba que exista y se devuelve su id y tipo.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `post_id?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_conditions( array $input ) {
+		$out = array();
+
+		if ( array_key_exists( 'post_id', $input ) ) {
+			$post = $this->resolve_page_or_copy( array( 'id' => $input['post_id'] ) );
+
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$out['post_id']   = WorkingCopy::original_id_for( (int) $post->ID );
+			$out['post_type'] = $post->post_type;
+		}
+
+		return array_merge( $out, ( $this->divi_conditions_catalog ?? new DiviConditionsCatalog() )->listing() );
+	}
+
+	/**
 	 * Lista los componentes de Elementor 4 (sin el árbol).
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
@@ -966,6 +1012,70 @@ final class BuilderGateway {
 				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
 				'loop'        => $input['loop'],
 				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Pone (o quita) las condiciones de visualización de un módulo de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::set_divi_loop()} y su propio permiso: `$allowed` (`PermissionPolicy::can_write_divi_conditions()`
+	 * sobre el original) se vuelve a comprobar aquí ANTES de tocar el esquema; sin `$allowed` se deniega. Sólo se escribe
+	 * con el esquema cerrado de {@see DiviConditionsSchema} (S5, S6); `conditions` es obligatorio y la lista vacía las quita.
+	 * Una lista que no es del conector exige `replace_foreign: true` (S7).
+	 *
+	 * @param array<string, mixed> $input   Parámetros de la herramienta: `id`, `path`, `fingerprint`, `match`, `conditions`, `replace_foreign`, `draft`.
+	 * @param callable|null        $allowed fn( int ): bool. Permiso de escribir condiciones sobre esa página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_conditions( array $input, ?callable $allowed = null ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( null === $allowed || ! $allowed( (int) $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		if ( ! array_key_exists( 'conditions', $input ) ) {
+			return new \WP_Error(
+				DiviConditionsSchema::CODE,
+				__( 'conditions: es obligatorio: una lista de condiciones {type, …} (vacía para quitar todas).', 'nexo-mcp' ),
+				array( 'path' => 'conditions' )
+			);
+		}
+
+		$set = array( 'conditions' => $input['conditions'] );
+
+		if ( array_key_exists( 'match', $input ) ) {
+			$set['match'] = $input['match'];
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$this->divi_validator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			null,
+			$this->divi_conditions ?? new DiviConditionsSchema()
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'            => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint'     => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'conditions'      => $set,
+				'replace_foreign' => true === ( $input['replace_foreign'] ?? false ),
+				'draft'           => $input['draft'] ?? false,
 			)
 		);
 	}
