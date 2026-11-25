@@ -272,8 +272,10 @@ final class Divi5SectionEditor {
 		$new = array();
 
 		if ( 'delete' !== $operation ) {
-			$base  = Divi5Tree::count_blocks( $blocks ) - ( $replaces ? Divi5Tree::count_blocks( array( $located ) ) : 0 );
-			$clean = $this->validator->validate_tree( $sections, $kind, 0, $base );
+			$base = Divi5Tree::count_blocks( $blocks ) - ( $replaces ? Divi5Tree::count_blocks( array( $located ) ) : 0 );
+			// Un layout del Theme Builder admite además `divi/post-content`, `divi/post-title` y `divi/menu`; una página no.
+			$validator = DiviLayoutGuard::is_layout( $source ) ? $this->validator->with_layout() : $this->validator;
+			$clean     = $validator->validate_tree( $sections, $kind, 0, $base );
 
 			if ( is_wp_error( $clean ) ) {
 				return $clean;
