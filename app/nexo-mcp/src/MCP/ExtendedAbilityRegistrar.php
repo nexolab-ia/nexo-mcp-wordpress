@@ -956,7 +956,8 @@ final class ExtendedAbilityRegistrar {
 					Capabilities::BUILDER_ATTRS,
 					'edit_post',
 					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
-				)
+				),
+				fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDER_ATTRS, 'edit_theme_options' )
 			)
 		);
 		$this->ability(
@@ -1472,13 +1473,16 @@ final class ExtendedAbilityRegistrar {
 	 * Para cualquier otro contenido rige `$normal`. Los demás tipos `et_*` no tienen atajo: el permiso de siempre y, al
 	 * ejecutar, el gateway los rechaza con `nexo_mcp_divi_post_type_denied` ({@see DiviLayoutGuard}).
 	 *
-	 * @param int      $post_id Contenido indicado (original o copia de trabajo).
-	 * @param callable $normal  fn(): bool. Permiso de una página.
+	 * @param int           $post_id Contenido indicado (original o copia de trabajo).
+	 * @param callable      $normal  fn(): bool. Permiso de una página.
+	 * @param callable|null $extra   fn(): bool. Scope propio de la herramienta que también rige en un layout (sin `edit_post`).
 	 */
-	private function layout_gate( int $post_id, callable $normal ): bool {
-		return DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( $post_id )
-			? $this->policy->can_write_divi_theme_builder()
-			: (bool) $normal();
+	private function layout_gate( int $post_id, callable $normal, ?callable $extra = null ): bool {
+		if ( DiviLayoutGuard::KIND_LAYOUT !== DiviLayoutGuard::kind_of_id( $post_id ) ) {
+			return (bool) $normal();
+		}
+
+		return $this->policy->can_write_divi_theme_builder() && ( null === $extra || (bool) $extra() );
 	}
 
 	/**
@@ -1499,7 +1503,8 @@ final class ExtendedAbilityRegistrar {
 					Capabilities::BUILDERS_DYNAMIC,
 					'edit_post',
 					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
-				)
+				),
+				fn() => $this->module_write( 'builders_dynamic_enabled', Capabilities::BUILDERS_DYNAMIC, 'edit_theme_options' )
 			);
 	}
 
@@ -1532,7 +1537,8 @@ final class ExtendedAbilityRegistrar {
 					Capabilities::BUILDERS_COMPONENTS,
 					'edit_post',
 					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
-				)
+				),
+				fn() => $this->module_write( 'builders_components_enabled', Capabilities::BUILDERS_COMPONENTS, 'edit_theme_options' )
 			);
 	}
 

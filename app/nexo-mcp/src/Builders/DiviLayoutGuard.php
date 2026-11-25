@@ -62,6 +62,10 @@ final class DiviLayoutGuard {
 	/**
 	 * Clasifica un contenido por su tipo y por el de su original (si es una copia de trabajo): manda lo más restrictivo.
 	 *
+	 * El original sólo cuenta si la relación es verdadera: el propio tipo es de un layout (`et_*_layout`) o el original
+	 * apunta de vuelta a este contenido ({@see WorkingCopy::copy_of()}). Una página-borrador que sólo lleva la meta
+	 * `draft_of` de un layout (la meta de un contenido propio se puede escribir) se trata por su tipo y conserva `edit_post`.
+	 *
 	 * @param \WP_Post $post Contenido.
 	 */
 	public static function kind( \WP_Post $post ): string {
@@ -71,7 +75,9 @@ final class DiviLayoutGuard {
 		if ( $orig > 0 && $orig !== (int) $post->ID ) {
 			$original = get_post( $orig );
 
-			if ( $original instanceof \WP_Post ) {
+			$own_is_layout = in_array( $post->post_type, self::LAYOUT_TYPES, true );
+
+			if ( $original instanceof \WP_Post && ( $own_is_layout || WorkingCopy::copy_of( $original ) === (int) $post->ID ) ) {
 				$kinds[] = self::kind_of_type( $original->post_type );
 			}
 		}

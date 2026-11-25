@@ -18,6 +18,7 @@ use NexoDev\NexoMCP\Audit\AuditLogger;
 use NexoDev\NexoMCP\Audit\AuditRepository;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\Divi5Tree;
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar;
 use NexoDev\NexoMCP\MCP\ToolExecutor;
 use NexoDev\NexoMCP\WooCommerce\ProductGateway;
@@ -56,10 +57,9 @@ final class DiviLayoutGuardTest extends NexoTestCase {
 		\WP_Test_State::$posts[210] = new \WP_Post( array( 'ID' => 210, 'post_type' => 'et_body_layout', 'post_status' => 'draft', 'post_title' => 'Cuerpo', 'post_content' => $content ) );
 		update_post_meta( 210, WorkingCopy::META_DRAFT_OF, 200 );
 		update_post_meta( 200, WorkingCopy::META_DRAFT, 210 );
-		// Un borrador de PÁGINA que dice ser copia de un layout: el original manda.
+		// Un borrador de PÁGINA que dice ser copia de un layout pero el layout no apunta a él (apunta a 210): se trata como página.
 		\WP_Test_State::$posts[211] = new \WP_Post( array( 'ID' => 211, 'post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Falsa', 'post_content' => $content ) );
 		update_post_meta( 211, WorkingCopy::META_DRAFT_OF, 200 );
-		update_post_meta( 200, WorkingCopy::META_DRAFT, 211 );
 
 		foreach ( array( 300 => 'et_template', 301 => 'et_theme_builder', 302 => 'et_pb_layout', 303 => 'et_code_snippet' ) as $id => $type ) {
 			\WP_Test_State::$posts[ $id ] = new \WP_Post( array( 'ID' => $id, 'post_type' => $type, 'post_status' => 'publish', 'post_title' => $type, 'post_content' => $content ) );
@@ -206,9 +206,13 @@ final class DiviLayoutGuardTest extends NexoTestCase {
 	}
 
 	/**
+	 * Una página-borrador que el layout reconoce como su copia (el layout apunta de vuelta) se cubre con el permiso del Theme Builder.
+	 *
 	 * @dataProvider builder_tools
 	 */
-	public function test_a_page_pretending_to_be_the_copy_of_a_layout_is_denied_by_its_original( string $tool ): void {
+	public function test_a_page_typed_copy_the_layout_points_back_to_is_denied_by_its_original( string $tool ): void {
+		update_post_meta( 200, WorkingCopy::META_DRAFT, 211 );
+
 		$input  = $this->input( $tool, 211 );
 		$before = $this->snapshot();
 		$tools  = $this->tools( $this->all_on() + array( self::SWITCH => false ) );
@@ -220,6 +224,81 @@ final class DiviLayoutGuardTest extends NexoTestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_divi_layout_denied', $result->get_error_code() );
 		$this->assertSame( $before, $this->snapshot() );
+	}
+
+	public function test_a_forged_copy_pointer_without_a_back_pointer_keeps_the_page_rules(): void {
+		$this->assertSame( DiviLayoutGuard::KIND_NONE, DiviLayoutGuard::kind( \WP_Test_State::$posts[211] ), 'el layout apunta a 210, no a 211' );
+		$this->assertSame( DiviLayoutGuard::KIND_LAYOUT, DiviLayoutGuard::kind( \WP_Test_State::$posts[210] ), 'la copia verdadera sigue siendo layout' );
+		$this->assertSame( DiviLayoutGuard::KIND_LAYOUT, DiviLayoutGuard::kind( \WP_Test_State::$posts[200] ) );
+
+		// El layout sin copia vigente: la página tampoco hereda nada.
+		unset( \WP_Test_State::$meta[200][ WorkingCopy::META_DRAFT ] );
+		$this->assertSame( DiviLayoutGuard::KIND_NONE, DiviLayoutGuard::kind( \WP_Test_State::$posts[211] ) );
+
+		// Sigue mandando edit_post de la página: con el Theme Builder apagado se permite; sin edit_post, no.
+		$tools = $this->tools( $this->all_on() + array( self::SWITCH => false ) );
+
+		foreach ( array( 'get-page-structure', 'update-node-text', 'edit-divi-section' ) as $tool ) {
+			$this->assertTrue( $tools[ $tool ]['permission_callback']( $this->input( $tool, 211 ) ), "$tool: edit_post basta" );
+		}
+
+		\WP_Test_State::$denied_edit_posts = array( 200, 211 );
+		$tools                             = $this->tools( $this->all_on() + array( self::SWITCH => true ) );
+
+		$this->assertNotTrue( $tools['get-page-structure']['permission_callback']( array( 'id' => 211 ) ), 'con el Theme Builder encendido tampoco abre una página falsa' );
+	}
+
+	/**
+	 * Las herramientas con scope propio lo siguen exigiendo en un layout, además del permiso del Theme Builder.
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: array<string, bool>}>
+	 */
+	public static function own_scopes(): array {
+		return array(
+			'update-node-attribute / scope BUILDER_ATTRS'  => array( 'update-node-attribute', 'nexo_mcp_builder_attrs', array() ),
+			'set-dynamic-tag / capacidad'                  => array( 'set-dynamic-tag', 'nexo_mcp_builders_dynamic', array() ),
+			'set-dynamic-tag / interruptor'                => array( 'set-dynamic-tag', '', array( 'builders_dynamic_enabled' => false ) ),
+			'insert-component / capacidad'                 => array( 'insert-component', 'nexo_mcp_builders_components', array() ),
+			'insert-component / interruptor'               => array( 'insert-component', '', array( 'builders_components_enabled' => false ) ),
+		);
+	}
+
+	/**
+	 * @dataProvider own_scopes
+	 *
+	 * @param array<string, bool> $off Ajustes que se apagan.
+	 */
+	public function test_a_layout_still_needs_the_tools_own_scope_on_top_of_the_theme_builder( string $tool, string $capability, array $off ): void {
+		$settings = $this->all_on() + array( self::SWITCH => true );
+
+		foreach ( array( 200, 210 ) as $id ) {
+			$input = $this->input( $tool, $id );
+
+			$this->assertTrue( $this->tools( $settings )[ $tool ]['permission_callback']( $input ), "$tool $id: control, todo en regla" );
+
+			if ( '' !== $capability ) {
+				\WP_Test_State::$caps[ $capability ] = false;
+			}
+
+			$this->assertNotTrue( $this->tools( array_merge( $settings, $off ) )[ $tool ]['permission_callback']( $input ), "$tool $id: sin su scope propio" );
+
+			if ( '' !== $capability ) {
+				\WP_Test_State::$caps[ $capability ] = true;
+			}
+		}
+
+		// Y sin el Theme Builder, con el scope propio, tampoco.
+		$this->assertNotTrue( $this->tools( $this->all_on() + array( self::SWITCH => false ) )[ $tool ]['permission_callback']( $this->input( $tool, 200 ) ), "$tool: sin Theme Builder" );
+	}
+
+	public function test_a_token_without_the_builder_attrs_scope_cannot_edit_a_layout_attribute(): void {
+		$settings = $this->all_on() + array( self::SWITCH => true, 'enforce_connection_scopes' => true );
+
+		$this->connect_with_scopes( array( 'mcp:connect', 'mcp:write', self::SCOPE ) );
+		$this->assertNotTrue( $this->tools( $settings )['update-node-attribute']['permission_callback']( $this->input( 'update-node-attribute', 200 ) ) );
+
+		$this->connect_with_scopes( array( 'mcp:connect', 'mcp:write', self::SCOPE, 'mcp:builder_attrs' ) );
+		$this->assertTrue( $this->tools( $settings )['update-node-attribute']['permission_callback']( $this->input( 'update-node-attribute', 200 ) ) );
 	}
 
 	/**
