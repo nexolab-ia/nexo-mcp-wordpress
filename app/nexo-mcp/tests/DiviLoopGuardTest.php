@@ -111,13 +111,65 @@ final class DiviLoopGuardTest extends NexoTestCase {
 		$this->assertSame( $this->data(), $guard->force( $this->data(), array() ) );
 	}
 
-	public function test_only_post_queries_are_touched_never_users_terms_or_menus(): void {
+	public function test_non_connector_loops_are_untouched_for_every_query_type(): void {
 		$guard = $this->guard();
 
-		foreach ( array( 'user_roles', 'terms', 'menus', 'users', 'repeater_x' ) as $type ) {
+		foreach ( array( 'user_roles', 'terms', 'menus', 'users', 'repeater_x', 'current_page', 'post_taxonomies' ) as $type ) {
+			foreach ( array( 'loop-abcdefghij', 'loop-nx', 'otro' ) as $id ) {
+				$data = $this->data( array(), $type );
+				$this->assertSame( $data, $guard->force( $data, $this->attrs( $id, array( 'queryType' => $type ) ) ), $type . ' ' . $id );
+			}
 			$data = $this->data( array(), $type );
-			$this->assertSame( $data, $guard->force( $data, $this->attrs( 'loop-nxabcd1234' ) ), $type );
+			$this->assertSame( $data, $guard->force( $data, array() ), $type );
 		}
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function non_post_query_types(): array {
+		return array(
+			'user_roles'      => array( 'user_roles' ),
+			'users'           => array( 'users' ),
+			'terms'           => array( 'terms' ),
+			'post_taxonomies' => array( 'post_taxonomies' ),
+			'menus'           => array( 'menus' ),
+			'current_page'    => array( 'current_page' ),
+			'repeater'        => array( 'repeater_field' ),
+		);
+	}
+
+	/**
+	 * Divi deriva `query_type` de `queryType` guardado: un bucle del conector editado a otro tipo llega así al filtro.
+	 *
+	 * @dataProvider non_post_query_types
+	 */
+	public function test_a_connector_loop_edited_to_a_non_post_query_type_renders_nothing( string $type ): void {
+		$real = array(
+			'loop_enabled' => 'on',
+			'query_args'   => array( 'role__in' => array( 'administrator' ), 'number' => 50, 'taxonomy' => 'category', 'include' => array( 1 ), 'orderby' => 'user_email' ),
+			'query_type'   => $type,
+			'post_type'    => array( 'post' ),
+		);
+
+		$out = $this->guard()->force( $real, $this->attrs( 'loop-nxabcd1234', array( 'queryType' => $type ) ) );
+
+		// Divi ejecuta lo que sale del filtro según `query_type`: debe ser una consulta de entradas vacía.
+		$this->assertSame( 'post_types', $out['query_type'] );
+		$this->assertSame( array( 0 ), $out['query_args']['post__in'] );
+		$this->assertSame( 'publish', $out['query_args']['post_status'] );
+		$this->assertFalse( $out['query_args']['has_password'] );
+		$this->assertArrayNotHasKey( 'role__in', $out['query_args'] );
+		$this->assertArrayNotHasKey( 'include', $out['query_args'] );
+		$this->assertLessThanOrEqual( 24, $out['query_args']['posts_per_page'] );
+		$this->assertTrue( $out['query_args']['ignore_sticky_posts'] );
+	}
+
+	public function test_a_connector_loop_with_a_non_post_query_type_is_emptied_even_if_the_stored_value_looks_valid(): void {
+		$out = $this->guard()->force( $this->data( array(), 'user_roles' ), $this->attrs( 'loop-nxabcd1234' ) );
+
+		$this->assertSame( 'post_types', $out['query_type'] );
+		$this->assertSame( array( 0 ), $out['query_args']['post__in'] );
 	}
 
 	public function test_malformed_filter_input_is_returned_unchanged(): void {
@@ -155,7 +207,7 @@ final class DiviLoopGuardTest extends NexoTestCase {
 	}
 
 	/**
-	 * @return array<string, array{0: array<string, mixed>}>
+	 * @return array<string, array{0: array<string, mixed>, 1?: string}>
 	 */
 	public static function edited_values(): array {
 		return array(
@@ -170,20 +222,24 @@ final class DiviLoopGuardTest extends NexoTestCase {
 			'offset above the cap'  => array( array( 'postOffset' => '1001' ) ),
 			'per page above the cap' => array( array( 'postPerPage' => '500' ) ),
 			'a type that is gone'   => array( array( 'subTypes' => array( array( 'value' => 'borrado', 'label' => 'x' ) ) ) ),
-			'user query'            => array( array( 'queryType' => 'user_roles' ) ),
+			'user query'            => array( array( 'queryType' => 'user_roles' ), 'user_roles' ),
+			'terms query'           => array( array( 'queryType' => 'terms' ), 'terms' ),
+			'menus query'           => array( array( 'queryType' => 'menus' ), 'menus' ),
 		);
 	}
 
 	/**
 	 * @dataProvider edited_values
-	 * @param array<string, mixed> $edit Cambio manual del valor guardado.
+	 * @param array<string, mixed> $edit       Cambio manual del valor guardado.
+	 * @param string               $query_type Tipo que Divi deriva de `queryType` y pasa al filtro.
 	 */
-	public function test_a_stored_value_edited_after_the_connector_wrote_it_renders_an_empty_query( array $edit ): void {
+	public function test_a_stored_value_edited_after_the_connector_wrote_it_renders_an_empty_query( array $edit, string $query_type = 'post_types' ): void {
 		$out = $this->guard()->force(
-			$this->data( array( 'post_type' => array( 'any' ), 's' => 'privado', 'meta_query' => array( array( 'key' => '_secret' ) ), 'offset' => 5000, 'posts_per_page' => 500, 'post__in' => array( 12 ) ) ),
+			$this->data( array( 'post_type' => array( 'any' ), 's' => 'privado', 'meta_query' => array( array( 'key' => '_secret' ) ), 'offset' => 5000, 'posts_per_page' => 500, 'post__in' => array( 12 ) ), $query_type ),
 			$this->attrs( 'loop-nxabcd1234', $edit )
 		);
 
+		$this->assertSame( 'post_types', $out['query_type'] );
 		$this->assertSame( array( 0 ), $out['query_args']['post__in'] );
 		$this->assertSame( 'publish', $out['query_args']['post_status'] );
 		$this->assertFalse( $out['query_args']['has_password'] );

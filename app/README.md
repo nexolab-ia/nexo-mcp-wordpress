@@ -468,10 +468,11 @@ Reglas que siempre se cumplen:
     meta.
   - **Guarda de visibilidad**: Divi no excluye las entradas con contraseña y ninguna clave
     guardada lo controla, así que el plugin fija, en el filtro `divi_loop_data_after_execution`
-    y sólo para bucles `loop-nx…` de tipos de contenido, `post_status = publish`, sin
+    y sólo para bucles `loop-nx…`, `post_status = publish`, sin
     contraseña, `posts_per_page` ≤ 24 y sin entradas fijas; y si el valor guardado ya no es lo que
     escribió el conector (alguien lo editó a `any`, `attachment`, con `metaQuery`, búsqueda,
-    ids o un desplazamiento mayor) la consulta se renderiza **vacía**. La garantía necesita
+    ids, un desplazamiento mayor o un `queryType` de usuarios, términos, menús, repetidores o
+    página actual) la consulta se renderiza **vacía**, sea cual sea el tipo de consulta. La garantía necesita
     el plugin activo. **Los bucles hechos en el Visual Builder no se guardan** (Divi con
     un tipo vacío o `attachment` incluye privados), y el plugin no los toca.
   - **Hallazgos de Divi 5.19.1**: ACF sólo texto, área de texto y número; los productos sólo
