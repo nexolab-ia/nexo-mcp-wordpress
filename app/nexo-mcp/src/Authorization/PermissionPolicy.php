@@ -196,6 +196,19 @@ final class PermissionPolicy {
 	}
 
 	/**
+	 * Comprueba si esta solicitud puede escribir plantillas y layouts del Theme Builder de Divi 5.
+	 *
+	 * Sin id de página: una plantilla afecta a todo el sitio. Exige `edit_theme_options` y `edit_others_posts`, el
+	 * permiso `theme_builder` de Divi cuando Divi está cargado, la capacidad `nexo_mcp_divi_theme_builder` con su
+	 * interruptor `divi_theme_builder_tools_enabled` (y su scope en el token). No depende de los otros interruptores.
+	 */
+	public function can_write_divi_theme_builder(): bool {
+		return $this->can_module_write( 'divi_theme_builder_tools_enabled', Capabilities::DIVI_THEME_BUILDER, 'edit_theme_options' )
+			&& current_user_can( 'edit_others_posts' )
+			&& ( ! function_exists( 'et_pb_is_allowed' ) || (bool) et_pb_is_allowed( 'theme_builder' ) );
+	}
+
+	/**
 	 * Comprueba una acción destructiva separada.
 	 *
 	 * @param string $wordpress_capability Capacidad nativa.
