@@ -14,6 +14,7 @@ use NexoDev\NexoMCP\Authorization\DenialExplainer;
 use NexoDev\NexoMCP\Authorization\IrreversibleActions;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
 use NexoDev\NexoMCP\Builders\DiviConditionsSchema;
@@ -289,15 +290,18 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-page-structure',
 			'Obtener estructura de la página',
-			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
+			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Con el id de un layout del Theme Builder (encabezado, cuerpo o pie, o su copia de trabajo) pide el permiso del Theme Builder (scope mcp:divi_theme_builder) y no el de una página: nexo_mcp_divi_layout_denied sin él; los demás tipos internos de Divi se rechazan (nexo_mcp_divi_post_type_denied). Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->builders->get_structure( $input ),
-			fn( array $input ) => $this->module_read(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					(int) ( $input['id'] ?? 0 )
+				)
 			)
 		);
 		$this->ability(
@@ -773,7 +777,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_dynamic_sources( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -794,7 +798,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_conditions( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -914,11 +918,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_text_schema(),
 			fn( array $input ) => $this->builders->update_node_text( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -931,11 +938,14 @@ final class ExtendedAbilityRegistrar {
 			fn( array $input ) => $this->builders->update_node_attribute( $input ),
 			// Capacidad propia y no BUILDERS: cambiar a dónde apunta un enlace no
 			// es lo mismo que corregir una palabra, así que se concede aparte.
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDER_ATTRS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDER_ATTRS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -945,11 +955,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_restore_schema(),
 			fn( array $input ) => $this->builders->restore_backup( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -960,11 +973,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_structure_schema(),
 			fn( array $input ) => $this->builders->edit_structure( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 	}
@@ -1379,7 +1395,9 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->confirmed_id_schema( 'restore-revision' ),
 			fn( array $input ) => $this->content->restore_revision( (int) $input['id'] ),
-			fn() => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+			fn( array $input ) => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+				// Restaurar la revisión de un layout reescribe el layout vivo (todo el sitio): además, el permiso del Theme Builder.
+				&& ( ! $this->is_layout_revision( (int) ( $input['id'] ?? 0 ) ) || $this->policy->can_write_divi_theme_builder() )
 		);
 		$this->ability(
 			'set-content-status',
@@ -1395,11 +1413,14 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-working-copy-diff',
 			'Comparar copia de trabajo',
-			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post).',
+			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post). Para un layout del Theme Builder pide el permiso del Theme Builder (nexo_mcp_divi_layout_denied sin él); los demás tipos internos de Divi se rechazan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->content->get_working_copy_diff( (int) $input['id'] ),
-			fn( array $input ) => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			)
 		);
 	}
 
@@ -1412,12 +1433,41 @@ final class ExtendedAbilityRegistrar {
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 */
 	private function elementor_page_permission( array $input ): bool {
-		return $this->module_write(
-			'builders_tools_enabled',
-			Capabilities::BUILDERS,
-			'edit_post',
-			WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+		return $this->layout_gate(
+			(int) ( $input['id'] ?? 0 ),
+			fn() => $this->module_write(
+				'builders_tools_enabled',
+				Capabilities::BUILDERS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			)
 		);
+	}
+
+	/**
+	 * Indica si la revisión es de un layout del Theme Builder.
+	 *
+	 * @param int $revision_id Revisión.
+	 */
+	private function is_layout_revision( int $revision_id ): bool {
+		$revision = function_exists( 'wp_get_post_revision' ) ? wp_get_post_revision( $revision_id ) : null;
+
+		return $revision instanceof \WP_Post && DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( (int) $revision->post_parent );
+	}
+
+	/**
+	 * Capa de permiso del tipo de contenido (T5): un layout del Theme Builder pide el permiso del Theme Builder y NO el de una página.
+	 *
+	 * Para cualquier otro contenido rige `$normal`. Los demás tipos `et_*` no tienen atajo: el permiso de siempre y, al
+	 * ejecutar, el gateway los rechaza con `nexo_mcp_divi_post_type_denied` ({@see DiviLayoutGuard}).
+	 *
+	 * @param int      $post_id Contenido indicado (original o copia de trabajo).
+	 * @param callable $normal  fn(): bool. Permiso de una página.
+	 */
+	private function layout_gate( int $post_id, callable $normal ): bool {
+		return DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( $post_id )
+			? $this->policy->can_write_divi_theme_builder()
+			: (bool) $normal();
 	}
 
 	/**
@@ -1431,11 +1481,14 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function dynamic_tag_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_dynamic_enabled',
-				Capabilities::BUILDERS_DYNAMIC,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_dynamic_enabled',
+					Capabilities::BUILDERS_DYNAMIC,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			);
 	}
 
@@ -1461,11 +1514,14 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function component_insert_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_components_enabled',
-				Capabilities::BUILDERS_COMPONENTS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_components_enabled',
+					Capabilities::BUILDERS_COMPONENTS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			);
 	}
 

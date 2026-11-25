@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\WordPress;
 
+use NexoDev\NexoMCP\Authorization\PermissionPolicy;
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\Media\UploadThrottle;
 use NexoDev\NexoMCP\Media\UploadTicket;
 use NexoDev\NexoMCP\Media\UploadValidator;
@@ -81,19 +83,28 @@ final class ContentAdminGateway {
 	private WorkingCopy $copies;
 
 	/**
+	 * Permiso del Theme Builder para tocar un layout: fn(): bool. Por omisión, `PermissionPolicy::can_write_divi_theme_builder()`.
+	 *
+	 * @var callable|null
+	 */
+	private $layout_allowed;
+
+	/**
 	 * Construye el gateway.
 	 *
-	 * @param Settings            $settings Configuración.
-	 * @param UploadThrottle|null $throttle Techo de subidas.
-	 * @param UploadTicket|null   $tickets  Enlaces de subida.
-	 * @param WorkingCopy|null    $copies   Copias de trabajo.
+	 * @param Settings            $settings       Configuración.
+	 * @param UploadThrottle|null $throttle       Techo de subidas.
+	 * @param UploadTicket|null   $tickets        Enlaces de subida.
+	 * @param WorkingCopy|null    $copies         Copias de trabajo.
+	 * @param callable|null       $layout_allowed fn(): bool. Permiso del Theme Builder (las pruebas lo inyectan); por omisión, el de la política con estos ajustes.
 	 */
-	public function __construct( Settings $settings, ?UploadThrottle $throttle = null, ?UploadTicket $tickets = null, ?WorkingCopy $copies = null ) {
-		$this->settings  = $settings;
-		$this->validator = new UploadValidator();
-		$this->throttle  = $throttle ?? new UploadThrottle();
-		$this->tickets   = $tickets ?? new UploadTicket();
-		$this->copies    = $copies ?? new WorkingCopy( $settings );
+	public function __construct( Settings $settings, ?UploadThrottle $throttle = null, ?UploadTicket $tickets = null, ?WorkingCopy $copies = null, ?callable $layout_allowed = null ) {
+		$this->settings       = $settings;
+		$this->validator      = new UploadValidator();
+		$this->throttle       = $throttle ?? new UploadThrottle();
+		$this->tickets        = $tickets ?? new UploadTicket();
+		$this->copies         = $copies ?? new WorkingCopy( $settings );
+		$this->layout_allowed = $layout_allowed;
 	}
 
 	/**
@@ -486,6 +497,13 @@ final class ContentAdminGateway {
 			return new \WP_Error( 'nexo_mcp_content_not_found', __( 'No se encontró el contenido.', 'nexo-mcp' ) );
 		}
 
+		// Restaurar reescribe el contenido vivo: un layout del Theme Builder pide su permiso y los demás tipos `et_*` no se restauran por aquí.
+		$guard = $this->layout_guard( $post );
+
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
+
 		if ( (bool) $this->settings->get( 'drafts_only' ) && 'draft' !== $post->post_status ) {
 			return new \WP_Error( 'nexo_mcp_draft_required', __( 'El modo sólo borradores impide restaurar contenido publicado.', 'nexo-mcp' ) );
 		}
@@ -575,6 +593,13 @@ final class ContentAdminGateway {
 
 		if ( ! $post instanceof \WP_Post ) {
 			return new \WP_Error( 'nexo_mcp_content_not_found', __( 'No se encontró el contenido.', 'nexo-mcp' ) );
+		}
+
+		// El diff enseña el contenido de un layout del Theme Builder (todo el sitio): pide su permiso, no el de una página.
+		$guard = $this->layout_guard( $post );
+
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
 		}
 
 		if ( WorkingCopy::original_of( $post ) > 0 ) {
@@ -836,5 +861,19 @@ final class ContentAdminGateway {
 	 */
 	private function taxonomy_allowed( string $taxonomy ): bool {
 		return in_array( $taxonomy, self::ALLOWED_TAXONOMIES, true ) && taxonomy_exists( $taxonomy );
+	}
+
+	/**
+	 * Guarda de tipo de contenido (T5): un layout del Theme Builder pide el permiso del Theme Builder; los demás tipos `et_*` se rechazan.
+	 *
+	 * @param \WP_Post $post Contenido (o la revisión ya resuelta a su padre).
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function layout_guard( \WP_Post $post ) {
+		return DiviLayoutGuard::check(
+			$post,
+			$this->layout_allowed ?? fn(): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_theme_builder()
+		);
 	}
 }

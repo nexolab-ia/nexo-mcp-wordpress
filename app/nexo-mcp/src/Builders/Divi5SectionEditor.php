@@ -84,6 +84,7 @@ final class Divi5SectionEditor {
 	 * @param callable|null             $version      fn(): string. Por omisión, la versión de Divi instalada.
 	 * @param callable|null             $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 * @param DiviConditionsSchema|null $conditions Esquema que resume las condiciones del subárbol reemplazado o borrado.
+	 * @param callable|null             $layout_allowed fn(): bool. Permiso del Theme Builder para escribir un layout (ver {@see DiviLayoutGuard}).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -96,9 +97,10 @@ final class Divi5SectionEditor {
 		?callable $saver = null,
 		?callable $version = null,
 		?callable $presets_lock = null,
-		?DiviConditionsSchema $conditions = null
+		?DiviConditionsSchema $conditions = null,
+		?callable $layout_allowed = null
 	) {
-		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver, $layout_allowed );
 		$this->validator    = $validator;
 		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
 		$this->conditions   = $conditions ?? new DiviConditionsSchema();
