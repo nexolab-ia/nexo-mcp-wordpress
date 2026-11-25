@@ -181,6 +181,35 @@ final class DiviSetDynamicGatewayTest extends NexoTestCase {
 		$this->assertSame( $before, $this->snapshot(), 'ninguna escribió' );
 	}
 
+	public function test_no_page_tool_can_leave_a_loop_token_without_its_loop(): void {
+		// Los `loop_*` y los bucles sólo los escribe el conector dentro del mismo subárbol; las demás herramientas ni los escriben
+		// (create-divi-page, edit-divi-section replace/insert, edit-divi-module) ni mueven nodos: no hay forma de dejar un token huérfano.
+		$tools  = $this->tools();
+		$before = $this->snapshot();
+		$token  = '$variable({"type":"content","value":{"name":"loop_post_title","settings":{"enable_html":"off"}}})$';
+		$title  = array( 'title' => array( 'innerContent' => array( 'desktop' => array( 'value' => $token ) ) ) );
+		$heading = array( 'type' => 'divi/heading', 'attrs' => $title );
+		$loop    = array( 'module' => array( 'advanced' => array( 'loop' => array( 'desktop' => array( 'value' => array( 'enable' => 'on', 'loopId' => 'loop-nxabcd1234' ) ) ) ) ) );
+
+		$results = array(
+			'create-divi-page'   => $tools['nexo-mcp/create-divi-page']['execute_callback']( array( 'title' => 'N', 'sections' => array( array( 'type' => 'divi/section', 'children' => array( array( 'type' => 'divi/row', 'children' => array( array( 'type' => 'divi/column', 'children' => array( $heading ) ) ) ) ) ) ) ) ),
+			'replace + token'    => $tools['nexo-mcp/edit-divi-section']['execute_callback']( array( 'id' => 100, 'operation' => 'replace', 'path' => '0.0.0.0.0', 'fingerprint' => $this->input()['fingerprint'], 'sections' => array( $heading ) ) ),
+			'insert + token'     => $tools['nexo-mcp/edit-divi-section']['execute_callback']( array( 'id' => 100, 'operation' => 'insert', 'position' => 'after', 'path' => '0.0.0.0.0', 'fingerprint' => $this->input()['fingerprint'], 'sections' => array( $heading ) ) ),
+			'module + token'     => $tools['nexo-mcp/edit-divi-module']['execute_callback']( array( 'id' => 100, 'path' => '0.0.0.0.0', 'fingerprint' => $this->input()['fingerprint'], 'content' => $title ) ),
+			'module + own loop'  => $tools['nexo-mcp/edit-divi-module']['execute_callback']( array( 'id' => 100, 'path' => '0.0.0.0', 'fingerprint' => $this->input()['fingerprint'], 'design' => $loop ) ),
+		);
+
+		foreach ( $results as $name => $result ) {
+			$this->assertInstanceOf( \WP_Error::class, $result, $name );
+		}
+
+		foreach ( array( 'create-divi-page', 'replace + token', 'insert + token', 'module + token' ) as $name ) {
+			$this->assertSame( 'nexo_mcp_divi_dynamic_denied', $results[ $name ]->get_error_code(), $name );
+		}
+
+		$this->assertSame( $before, $this->snapshot(), 'ninguna escribió' );
+	}
+
 	public function test_existing_tokens_survive_an_edit_divi_module_of_the_same_module_as_in_1_9_1(): void {
 		$tools = $this->tools();
 		$set   = $tools['nexo-mcp/set-divi-dynamic']['execute_callback']( $this->input( array( 'path' => '0.0.0.0.1', 'field' => 'button.innerContent.text' ), '0.0.0.0.1' ) );

@@ -317,6 +317,64 @@ final class Divi5LoopEditorTest extends NexoTestCase {
 		$this->assertRejected( 'nexo_mcp_divi_module_denied', $this->set_loop( self::ICON, self::params() ), $before );
 	}
 
+	public function test_the_whole_module_matrix_of_the_catalog_accepts_a_loop_except_icon_and_video(): void {
+		$raw = self::block(
+			'placeholder',
+			array(),
+			self::block(
+				'section',
+				array(),
+				self::block(
+					'row',
+					array(),
+					self::block(
+						'column',
+						array(),
+						array(
+							self::block( 'button', array() ),
+							self::block( 'image', array() ),
+							self::block( 'divider', array() ),
+							self::block( 'blurb', array() ),
+							self::block( 'icon-list', array(), self::block( 'icon-list-item', array() ) ),
+							self::block( 'video', array() ),
+							self::block( 'icon', array() ),
+						)
+					)
+				)
+			)
+		);
+		$this->put_page( serialize_blocks( parse_blocks( $raw ) ) );
+
+		$accept = array(
+			'button'         => '0.0.0.0.0',
+			'image'          => '0.0.0.0.1',
+			'divider'        => '0.0.0.0.2',
+			'blurb'          => '0.0.0.0.3',
+			'icon-list'      => '0.0.0.0.4',
+			'icon-list-item' => '0.0.0.0.4.0',
+		);
+
+		foreach ( $accept as $module => $path ) {
+			$result = $this->set_loop( $path, self::params() );
+			$this->assertIsArray( $result, $module . ': ' . ( $result instanceof \WP_Error ? $result->get_error_message() : '' ) );
+			$this->assertSame( $path, $result['path'], $module );
+			$this->assertSame( 'loop-nxnewid001', $result['loop']['loop_id'], $module );
+			\WP_Test_State::$posts = array( self::ORIGINAL => \WP_Test_State::$posts[ self::ORIGINAL ] );
+			\WP_Test_State::$meta  = array();
+		}
+
+		$before = $this->snapshot();
+
+		foreach ( array(
+			'video' => '0.0.0.0.5',
+			'icon'  => '0.0.0.0.6',
+		) as $module => $path ) {
+			$error = $this->set_loop( $path, self::params() );
+			$this->assertRejected( 'nexo_mcp_divi_module_denied', $error, $before );
+			$this->assertStringContainsString( 'divi/' . $module, $error->get_error_message() );
+		}
+	}
+
 	public function test_an_invalid_loop_is_rejected_with_its_path_and_nothing_is_written(): void {
 		$this->put_page( self::page() );
 		$before = $this->snapshot();

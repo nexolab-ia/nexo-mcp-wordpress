@@ -217,6 +217,38 @@ final class DiviDynamicPermissionTest extends NexoTestCase {
 		$this->assertFalse( \WP_Test_State::$roles['nexo_mcp_operator']->has_cap( Capabilities::DIVI_DYNAMIC ), 'el operador no la recibe' );
 	}
 
+	public function test_una_actualizacion_desde_1_9_1_da_la_capacidad_al_administrador_ya_instalado(): void {
+		$real_wpdb = $GLOBALS['wpdb'];
+		// Doble con lo que pide la creación de tablas (sin base de datos real).
+		$GLOBALS['wpdb'] = new class() extends \WPDB_Test_Double {
+			public function get_charset_collate(): string {
+				return '';
+			}
+		};
+		$GLOBALS['nexo_test_dbdelta'] = array();
+
+		\WP_Test_State::$roles['administrator'] = new \WP_Role_Double( 'Administrator', array( Capabilities::CONNECT => true, Capabilities::DIVI_PRESETS => true ) );
+		\WP_Test_State::$options[ Settings::VERSION_OPTION ] = '1.9.1';
+
+		try {
+			$this->assertFalse( \WP_Test_State::$roles['administrator']->has_cap( Capabilities::DIVI_DYNAMIC ), 'el sitio ya instalado no la tiene' );
+
+			( new Installer() )->maybe_upgrade();
+
+			$this->assertTrue( \WP_Test_State::$roles['administrator']->has_cap( Capabilities::DIVI_DYNAMIC ), 'la migración la concede' );
+			$this->assertSame( NEXO_MCP_VERSION, \WP_Test_State::$options[ Settings::VERSION_OPTION ] );
+			$this->assertNotEmpty( $GLOBALS['nexo_test_dbdelta'], 'la actualización pasó por la instalación completa' );
+
+			// Con la versión al día no vuelve a correr (idempotente y barato).
+			\WP_Test_State::$roles['administrator']->capabilities = array();
+			( new Installer() )->maybe_upgrade();
+			$this->assertFalse( \WP_Test_State::$roles['administrator']->has_cap( Capabilities::DIVI_DYNAMIC ) );
+		} finally {
+			$GLOBALS['wpdb'] = $real_wpdb;
+			unset( $GLOBALS['nexo_test_dbdelta'] );
+		}
+	}
+
 	private function input_tag( string $html ): string {
 		$start = (int) strpos( $html, 'name="nexo_mcp_settings[' . self::SWITCH . ']"' );
 		$from  = (int) strrpos( substr( $html, 0, $start ), '<input' );
