@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.9.1
+Stable tag: 1.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.10.0 =
+* Nuevo: contenido dinámico y bucles de consulta de Divi 5 con scope propio `mcp:divi_dynamic` (capacidad `nexo_mcp_divi_dynamic` que el instalador da al administrador al actualizar a 1.10.0; interruptor `divi_dynamic_tools_enabled` apagado por defecto): `list-divi-dynamic-sources` (se lee con el permiso de constructores y no pide el interruptor), `set-divi-dynamic` (pone o quita un token en un campo de un módulo, en la copia de trabajo) y `set-divi-loop` (activa, cambia o quita el bucle de un módulo). Escribir exige además el permiso de constructores y `edit_post` sobre la página.
+* Fuentes dinámicas de lista cerrada: entrada (título, extracto, fecha, autor, categorías y etiquetas, enlace, URL, imagen destacada), sitio (título, lema, URL, logo), fecha actual, WooCommerce básico (título, precio, SKU, descripción corta, sólo en productos) y campos de texto, área de texto y número de ACF; nunca meta personalizado, usuarios ni claves protegidas. Cada fuente sólo en un campo de su categoría, con ajustes cerrados y `enable_html` siempre `off`; `create-divi-page`, `edit-divi-section` y `edit-divi-module` siguen rechazando tokens (`nexo_mcp_divi_dynamic_denied`).
+* Bucles: un solo tipo de contenido público (no `any` ni `attachment`), sólo publicado y sin contraseña, hasta 24 por página (el visitante pagina con `?loop-nx…=N`), desplazamiento hasta 1000, orden por fecha, título o id, términos de taxonomías públicas, sin `metaQuery`, búsqueda ni anidamiento; las fuentes por elemento (`loop_post_title`, `loop_post_link`…, y las de producto) sólo valen dentro de un bucle del conector. Errores: `nexo_mcp_divi_loop_invalid`, `nexo_mcp_divi_loop_nested`, `nexo_mcp_divi_loop_in_use`, `nexo_mcp_divi_loop_not_set`, `nexo_mcp_divi_dynamic_mixed`, `nexo_mcp_divi_module_denied` (`divi/icon` y `divi/video` no admiten bucle).
+* Seguridad: el plugin fija en el filtro `divi_loop_data_after_execution` «sólo publicado y sin contraseña», el tope de 24 y sin entradas fijas para los bucles que escribe (identificados por su `loopId` `loop-nx…`), y renderiza vacío un bucle cuyo valor guardado se editó después a mano (tipo `any` o `attachment`, `metaQuery`, búsqueda, ids, desplazamiento mayor o un `queryType` de usuarios, términos o menús). La garantía necesita el plugin activo. Los bucles hechos en el Visual Builder no están protegidos por esta guarda.
+* Nota: el contenido de Divi de un producto de WooCommerce no se muestra a los visitantes mientras la tienda esté en «próximamente».
 
 = 1.9.1 =
 * Seguridad: Divi 5 resuelve al renderizar cualquier cadena de una página que contenga un token de contenido dinámico `$variable({…})$`, y hasta ahora el validador lo dejaba pasar en texto y texto rico, así que un cliente con el permiso de constructores podía publicar a visitantes anónimos datos privados del sitio (meta personalizado o protegido, emails de usuarios). Ahora ningún valor que escribe el MCP en Divi 5 puede llevar ese token: se rechaza con `nexo_mcp_divi_dynamic_denied` (`data.path` con el campo) en `create-divi-page`, `edit-divi-section` y `edit-divi-module` (texto, texto rico, enlaces, imágenes, ajustes de diseño), en los `attrs` de `set-divi-preset` y en las etiquetas y valores de texto, enlace e imagen de `set-divi-variable` y de `set-divi-global-color` (Divi también resuelve tokens dentro de las variables globales). Se comprueba el valor recibido y el ya saneado, y también las formas ofuscadas (mayúsculas, `\u0024`, `&#36;`, `&dollar;`, `%24`, etiquetas intercaladas) y el marcador heredado `@ET-DC@`. Lo que ya estaba guardado en una página (p. ej. hecho en el Visual Builder) no se toca ni se revisa mientras la edición no lo reescriba. `module.advanced.loop` (bucles de consulta) sigue sin poderse escribir. El contenido dinámico y los bucles se habilitarán más adelante con permiso propio.

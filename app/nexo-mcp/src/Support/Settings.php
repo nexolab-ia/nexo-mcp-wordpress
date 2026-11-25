@@ -55,6 +55,8 @@ final class Settings {
 			'divi_design_tools_enabled'   => false,
 			// Cambia los presets de módulos de Divi 5 (afectan a todo el sitio en vivo): apagado hasta que el dueño lo enciende.
 			'divi_presets_tools_enabled'  => false,
+			// Pone contenido dinámico y bucles de consulta en páginas de Divi 5 (muestra datos del sitio a cualquier visitante): apagado hasta que el dueño lo enciende.
+			'divi_dynamic_tools_enabled'  => false,
 			'publishing_enabled'          => true,
 			'destructive_enabled'         => false,
 			'read_only'                   => true,

@@ -118,6 +118,20 @@ final class BuilderGateway {
 	private ?DiviPresetOperations $divi_preset_ops;
 
 	/**
+	 * Catálogo de fuentes de contenido dinámico de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviDynamicCatalog|null
+	 */
+	private ?DiviDynamicCatalog $divi_dynamic;
+
+	/**
+	 * Esquema del bucle de consulta de Divi 5; se crea al usarlo.
+	 *
+	 * @var DiviLoopSchema|null
+	 */
+	private ?DiviLoopSchema $divi_loops;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -136,6 +150,8 @@ final class BuilderGateway {
 	 * @param DiviDesignOperations|null     $divi_design_ops  Escrituras del diseño global de Divi (las pruebas inyectan las suyas).
 	 * @param DiviPresetStore|null          $divi_presets     Almacén de presets de Divi (las pruebas inyectan uno sin Divi).
 	 * @param DiviPresetOperations|null     $divi_preset_ops  Escrituras de los presets de Divi (las pruebas inyectan las suyas).
+	 * @param DiviDynamicCatalog|null       $divi_dynamic     Catálogo de contenido dinámico de Divi (las pruebas inyectan Divi, ACF y los tipos).
+	 * @param DiviLoopSchema|null           $divi_loops       Esquema del bucle de consulta de Divi (las pruebas inyectan tipos, taxonomías y términos).
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -150,7 +166,9 @@ final class BuilderGateway {
 		?DiviDesignStore $divi_design = null,
 		?DiviDesignOperations $divi_design_ops = null,
 		?DiviPresetStore $divi_presets = null,
-		?DiviPresetOperations $divi_preset_ops = null
+		?DiviPresetOperations $divi_preset_ops = null,
+		?DiviDynamicCatalog $divi_dynamic = null,
+		?DiviLoopSchema $divi_loops = null
 	) {
 		$this->registry         = $registry ?? new BuilderRegistry();
 		$this->backup           = $backup ?? new BuilderBackup();
@@ -165,6 +183,8 @@ final class BuilderGateway {
 		$this->divi_design_ops  = $divi_design_ops;
 		$this->divi_presets     = $divi_presets;
 		$this->divi_preset_ops  = $divi_preset_ops;
+		$this->divi_dynamic     = $divi_dynamic;
+		$this->divi_loops       = $divi_loops;
 	}
 
 	/**
@@ -685,6 +705,51 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lista las fuentes de contenido dinámico de Divi 5 de la lista cerrada, con su esquema de ajustes.
+	 *
+	 * Con `post_id` (la página o su copia de trabajo; se usa el original) sólo lo que aplica a ella.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `post_id?`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_dynamic_sources( array $input ) {
+		$catalog = $this->divi_dynamic ?? new DiviDynamicCatalog();
+		$out     = array();
+		$post_id = null;
+
+		if ( array_key_exists( 'post_id', $input ) ) {
+			$post = $this->resolve_page_or_copy( array( 'id' => $input['post_id'] ) );
+
+			if ( is_wp_error( $post ) ) {
+				return $post;
+			}
+
+			$post_id          = WorkingCopy::original_id_for( (int) $post->ID );
+			$out['post_id']   = $post_id;
+			$out['post_type'] = $post->post_type;
+		}
+
+		$sources = $catalog->listing( $post_id );
+
+		if ( is_wp_error( $sources ) ) {
+			return $sources;
+		}
+
+		$loop_sources = $catalog->loop_listing( $post_id );
+
+		if ( is_wp_error( $loop_sources ) ) {
+			return $loop_sources;
+		}
+
+		$out['sources']      = $sources;
+		$out['loop_sources'] = $loop_sources;
+		$out['targets']      = DiviDynamicCatalog::targets();
+
+		return $out;
+	}
+
+	/**
 	 * Lista los componentes de Elementor 4 (sin el árbol).
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
@@ -780,6 +845,126 @@ final class BuilderGateway {
 				'content'     => $input['content'] ?? null,
 				'design'      => $input['design'] ?? null,
 				'preset'      => $input['preset'] ?? null,
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Asigna (o quita) un token de contenido dinámico de Divi 5 en un campo de un módulo, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::edit_divi_module()} (ruta, huella, copia, bloqueo, respaldo) con un permiso más:
+	 * `$allowed` (`PermissionPolicy::can_write_divi_dynamic()` sobre el original) se vuelve a comprobar aquí y el
+	 * validador con contexto dinámico (`with_dynamic`) se obtiene SÓLO después; sin `$allowed` se deniega. Quitar el
+	 * token (`source` null) deja el campo vacío y no necesita el contexto, pero pide el mismo permiso.
+	 *
+	 * @param array<string, mixed> $input   Parámetros de la herramienta: `id`, `path`, `fingerprint`, `field`, `source`, `draft`.
+	 * @param callable|null        $allowed fn( int ): bool. Permiso de escribir dinámico sobre esa página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_dynamic( array $input, ?callable $allowed = null ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( null === $allowed || ! $allowed( (int) $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		if ( ! array_key_exists( 'source', $input ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_dynamic_invalid',
+				__( 'source: es obligatorio: un objeto {name, settings?} o null para quitar el token.', 'nexo-mcp' ),
+				array( 'path' => 'source' )
+			);
+		}
+
+		$validator = $this->divi_validator();
+
+		if ( null !== $input['source'] ) {
+			$validator = $validator->with_dynamic( $this->divi_dynamic ?? new DiviDynamicCatalog(), WorkingCopy::original_id_for( (int) $post->ID ) );
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$validator,
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_loops ?? new DiviLoopSchema()
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'dynamic'     => array(
+					'field'  => isset( $input['field'] ) && is_string( $input['field'] ) ? $input['field'] : '',
+					'source' => $input['source'],
+				),
+				'draft'       => $input['draft'] ?? false,
+			)
+		);
+	}
+
+	/**
+	 * Activa (o quita) el bucle de consulta de un módulo de Divi 5, en la copia de trabajo.
+	 *
+	 * Mismo camino que {@see self::set_divi_dynamic()} y mismo permiso (`$allowed` = `PermissionPolicy::can_write_divi_dynamic()`
+	 * sobre el original, vuelto a comprobar aquí ANTES de tocar el esquema; sin `$allowed` se deniega). El bucle sólo se
+	 * escribe con el esquema cerrado de {@see DiviLoopSchema} (S7); `loop` es obligatorio y `null` lo quita.
+	 *
+	 * @param array<string, mixed> $input   Parámetros de la herramienta: `id`, `path`, `fingerprint`, `loop`, `draft`.
+	 * @param callable|null        $allowed fn( int ): bool. Permiso de escribir dinámico sobre esa página.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_loop( array $input, ?callable $allowed = null ) {
+		$post = $this->resolve_page_or_copy( $input );
+
+		if ( is_wp_error( $post ) ) {
+			return $post;
+		}
+
+		if ( null === $allowed || ! $allowed( (int) $post->ID ) ) {
+			return $this->forbidden();
+		}
+
+		if ( ! array_key_exists( 'loop', $input ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_loop_invalid',
+				__( 'loop: es obligatorio: un objeto {post_type, per_page, order_by, order, offset?, exclude_current?, terms?} o null para quitar el bucle.', 'nexo-mcp' ),
+				array( 'path' => 'loop' )
+			);
+		}
+
+		$editor = new Divi5ModuleEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$this->divi_validator(),
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_loops ?? new DiviLoopSchema()
+		);
+
+		return $editor->edit(
+			$post,
+			array(
+				'path'        => isset( $input['path'] ) && is_string( $input['path'] ) ? $input['path'] : '',
+				'fingerprint' => isset( $input['fingerprint'] ) && is_string( $input['fingerprint'] ) ? $input['fingerprint'] : '',
+				'loop'        => $input['loop'],
 				'draft'       => $input['draft'] ?? false,
 			)
 		);

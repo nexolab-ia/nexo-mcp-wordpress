@@ -60,6 +60,18 @@
 #    modulePreset crudo en attrs, attrs con manejador de eventos). Se guardan crudos et_divi_builder_global_presets_d5,
 #    el historial, los ajustes y el bloqueo al empezar y se devuelven al final (también si la corrida se corta);
 #    el interruptor divi_presets_tools_enabled y la capacidad se devuelven; se borra la página y su et-cache.
+# 7h. Contenido dinámico y bucles de Divi 5 (D5/D6; sólo con Divi 5 activo, con SKIP si falta): con el interruptor
+#    divi_dynamic_tools_enabled encendido sólo durante el bloque y la capacidad nexo_mcp_divi_dynamic:
+#    list-divi-dynamic-sources, set-divi-dynamic post_title en un título (la copia lleva el token canónico, el original no
+#    cambia; publicada, un visitante anónimo ve el título de la página y ningún `$variable(`), set-divi-loop en una
+#    columna con loop_post_title en el título hijo (entradas de prueba: 4 publicadas, una privada, una con contraseña y un
+#    borrador): el anónimo ve exactamente las publicadas sin contraseña (3 con per_page 3 en orden de fecha, la página 2 por
+#    ?loop-nx…=2, todas con per_page 24); un valor del bucle editado a mano después (tipo any, desplazamiento 5000) se
+#    renderiza vacío (guarda de render); rechazos sin escribir (meta personalizado, post_meta_key, categoría que no
+#    coincide, ajustes con HTML, edit-divi-module con un token, loop_* fuera de un bucle, interruptor apagado, bucle any,
+#    attachment, per_page 25, meta_query, bucle anidado) y quitar el token y el bucle. Se guardan crudos los ajustes, el
+#    bloqueo y los roles al empezar y se devuelven al final (también si la corrida se corta); las entradas de prueba y las
+#    páginas (con su et-cache) se borran (force).
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -368,6 +380,84 @@ $p = $crudo( "et_divi_builder_global_presets_d5" ); $hist = $crudo( "nexo_mcp_di
 echo "presets=" . ( null === $p ? "sin" : md5( $p ) ) . " historial=" . ( null === $hist ? "sin" : md5( $hist ) ) . " ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
 	exit 0
 fi
+# Subcomandos y función del bloque de contenido dinámico y bucles de Divi 5 (D5/D6): foto cruda de lo que se toca (ajustes,
+# bloqueo y roles: la capacidad nexo_mcp_divi_dynamic vive en los roles) y ayudantes de las entradas de prueba.
+#   --divi-dinamico-foto / -huella / -restaurar    como los de D3 y D4
+#   --divi-dinamico-fixtures <sufijo>   crea 7 entradas (4 publicadas, privada, con contraseña, borrador); imprime {nombre: id}
+#   --divi-dinamico-barrer <sufijo>     borra (force) las entradas con el marcador
+#   --divi-dinamico-visibles            cantidad de entradas publicadas sin contraseña del sitio
+#   --divi-dinamico-reemplazar <id> <de> <a>   cambia texto en post_content crudo (sin filtros); imprime las ocurrencias
+divi_dinamico_opciones='array( "nexo_mcp_settings", "nexo_mcp_lock_0", $GLOBALS["wpdb"]->prefix . "user_roles" )'
+restaurar_divi_dinamico() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_dinamico_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+foreach ( $foto as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+if ( class_exists( "ET_Core_PageResource" ) ) { ET_Core_PageResource::remove_static_resources( "all", "all", true ); }
+delete_option( "nexo_prueba_divi_dinamico_foto" );
+echo "restaurado";'
+}
+if [ "${1:-}" = "--divi-dinamico-foto" ]; then
+	php_wp '
+global $wpdb;
+$foto = array();
+foreach ( '"$divi_dinamico_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$foto[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+update_option( "nexo_prueba_divi_dinamico_foto", $foto, false );
+echo "foto de " . count( $foto ) . " opciones";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-dinamico-huella" ]; then
+	php_wpr '
+global $wpdb;
+$crudo = static function ( $n ) use ( $wpdb ) { return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $n ) ); };
+$set = $crudo( "nexo_mcp_settings" ); $roles = $crudo( $wpdb->prefix . "user_roles" );
+echo "ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " roles=" . ( null === $roles ? "sin" : md5( $roles ) ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-dinamico-restaurar" ]; then restaurar_divi_dinamico; exit 0; fi
+if [ "${1:-}" = "--divi-dinamico-fixtures" ]; then
+	php_wp '
+$sufijo = (string) getenv( "NEXO_A1" ); $ahora = time(); $ids = array();
+// Nombre, estado, minutos de antigüedad, contraseña: la de contraseña es la más nueva de las publicadas.
+$plan = array( array( "Alpha", "publish", 40, "" ), array( "Beta", "publish", 30, "" ), array( "Gamma", "publish", 20, "" ), array( "Delta", "publish", 10, "" ), array( "PRIVATE", "private", 5, "" ), array( "PASSWORD", "publish", 2, "clave" ), array( "DRAFT", "draft", 1, "" ) );
+foreach ( $plan as $p ) {
+	$t = $ahora - $p[2] * 60;
+	$ids[ $p[0] ] = wp_insert_post( array( "post_type" => "post", "post_status" => $p[1], "post_title" => "ZZD6 " . $p[0] . " divi5-mcp-" . $sufijo, "post_content" => "Cuerpo " . $p[0], "post_password" => $p[3], "post_date" => get_date_from_gmt( gmdate( "Y-m-d H:i:s", $t ) ), "post_date_gmt" => gmdate( "Y-m-d H:i:s", $t ) ), true );
+}
+echo wp_json_encode( $ids );' "$2"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-dinamico-barrer" ]; then
+	php_wp '
+$borradas = array();
+foreach ( get_posts( array( "post_type" => "post", "post_status" => array( "publish", "private", "draft", "pending", "future", "trash" ), "numberposts" => -1, "s" => "divi5-mcp-" . getenv( "NEXO_A1" ), "fields" => "ids" ) ) as $id ) { wp_delete_post( (int) $id, true ); $borradas[] = $id; }
+echo implode( " ", $borradas );' "$2"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-dinamico-visibles" ]; then
+	php_wpr 'echo count( get_posts( array( "post_type" => "post", "post_status" => "publish", "has_password" => false, "numberposts" => -1, "fields" => "ids" ) ) );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-dinamico-reemplazar" ]; then
+	php_wp '
+global $wpdb;
+$id = (int) getenv( "NEXO_A1" ); $de = (string) getenv( "NEXO_A2" ); $a = (string) getenv( "NEXO_A3" );
+$c = (string) $wpdb->get_var( $wpdb->prepare( "SELECT post_content FROM {$wpdb->posts} WHERE ID = %d", $id ) );
+$n = "" === $de ? 0 : substr_count( $c, $de );
+if ( $n > 0 ) { $wpdb->update( $wpdb->posts, array( "post_content" => str_replace( $de, $a, $c ) ), array( "ID" => $id ) ); clean_post_cache( $id ); }
+echo $n;' "$2" "$3" "$4"
+	exit 0
+fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -470,6 +560,8 @@ divi_diseno_foto_tomada=""
 divi_diseno_cap_agregada=""
 divi_presets_foto_tomada=""
 divi_presets_cap_agregada=""
+divi_dinamico_foto_tomada=""
+divi_dinamico_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -596,6 +688,13 @@ cleanup() {
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_presets" );' >/dev/null
 		echo "Capacidad nexo_mcp_divi_presets quitada."
 		divi_presets_cap_agregada=""
+	fi
+	# Divi 5, contenido dinámico y bucles: entradas de prueba, opciones crudas (ajustes, bloqueo, roles) y capacidad.
+	if [ -n "$divi_dinamico_foto_tomada" ]; then
+		[ -z "$suffix" ] || echo "Entradas de prueba de Divi dinámico borradas: $(tools/prueba_adaptadores.sh --divi-dinamico-barrer "$suffix")"
+		echo "Contenido dinámico de Divi: $(restaurar_divi_dinamico)"
+		divi_dinamico_foto_tomada=""
+		divi_dinamico_cap_agregada=""
 	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
@@ -2227,7 +2326,7 @@ def crear_color():
     assert len(g["colors"]) == st["colores0"] + 1 and g["history_count"] == st["historial0"] + 1
 
 def pagina_con_color():
-    ref = '$variable({"type":"color","value":{"name":"' + st["color"] + '","settings":{}}})$'
+    ref = "var(--" + st["color"] + ")"
     texto = {"type": "divi/text", "attrs": {"content": {"innerContent": valor(f"<p>Color global {suffix}</p>")}, "module": {"decoration": {"background": valor({"color": ref})}}}}
     seccion = {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [texto]}]}]}
     _, d = cli.ok("create-divi-page", {"title": titulo, "sections": [seccion]})
@@ -2575,6 +2674,289 @@ PY
 		php_wp 'get_role( "administrator" )->remove_cap( "nexo_mcp_divi_presets" );' >/dev/null
 		divi_presets_cap_agregada=""
 	fi
+fi
+echo
+echo "### Contenido dinámico y bucles de Divi 5 (D5/D6: list-divi-dynamic-sources, set-divi-dynamic, set-divi-loop)"
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba del contenido dinámico y los bucles de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto cruda de lo que se toca (la limpieza la devuelve también si la corrida se corta).
+	tools/prueba_adaptadores.sh --divi-dinamico-foto
+	divi_dinamico_foto_tomada=1
+	divi_dinamico_huella_inicial="$(tools/prueba_adaptadores.sh --divi-dinamico-huella)"
+	echo "Huella cruda inicial: $divi_dinamico_huella_inicial"
+	# La capacidad nexo_mcp_divi_dynamic la da el instalador al subir de versión; si falta se concede (los roles se devuelven crudos).
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_dynamic" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_dynamic" );' >/dev/null
+		divi_dinamico_cap_agregada=1
+		echo "Capacidad nexo_mcp_divi_dynamic concedida al administrador (los roles se devuelven crudos al final)."
+	fi
+	# Interruptor apagado por omisión: sólo durante el bloque (se enciende antes de conectar para que la lista de herramientas lo vea).
+	tools/prueba_adaptadores.sh --ajuste divi_dynamic_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import html as htmllib, importlib.util, json, pathlib, re, subprocess, sys, time, urllib.parse, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+BASE = "http://localhost:8080"
+TOKEN_TITULO = '$variable({"type":"content","value":{"name":"post_title","settings":{"enable_html":"off"}}})$'
+TOKEN_LOOP = '$variable({"type":"content","value":{"name":"loop_post_title","settings":{"enable_html":"off"}}})$'
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=180).stdout.strip()
+
+def huella():
+    return script("--divi-dinamico-huella")
+
+def anonimo(url):
+    """GET sin cookies ni cabeceras de sesión: lo que ve un visitante."""
+    with urllib.request.urlopen(url, timeout=30) as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def titulos(html):
+    """Texto de cada título de módulo (h1-h6 con la clase et_pb_module_header)."""
+    return [htmllib.unescape(re.sub(r"<[^>]+>", "", t)).strip() for t in re.findall(r"<h[1-6][^>]*et_pb_module_header[^>]*>(.*?)</h[1-6]>", html, re.S)]
+
+def pagina_en(i, extra=""):
+    return anonimo(f"{BASE}/?page_id={i}{extra}")
+
+def valor(v):
+    return {"desktop": {"value": v}}
+
+def estructura(i):
+    _, d = cli.ok("get-page-structure", {"id": i})
+    assert d["builder"] == "divi5", d.get("builder")
+    return {n["id"]: n for n in d["nodes"]}
+
+def huella_nodo(i, ruta):
+    return estructura(i)[ruta]["attributes"]["fingerprint"]
+
+def crear_pagina(titulo, texto):
+    seccion = {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [{"type": "divi/heading", "attrs": {"title": {"innerContent": valor(texto)}}}]}]}]}
+    _, d = cli.ok("create-divi-page", {"title": titulo, "sections": [seccion]})
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    assert script("--estado", d["id"]) == "publish"
+    return d["id"]
+
+def publicar(copia, original):
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (original, copia), m
+    time.sleep(1.2)  # Divi regenera su CSS y sus cachés con la marca de un segundo: la primera visita llega después
+
+def fx(nombre):
+    return f"ZZD6 {nombre} divi5-mcp-{suffix}"
+
+st = {}
+HEADING = "0.0.0.0.0"
+COLUMNA = "0.0.0.0"
+T_DIN = f"Prueba dinamico divi5-mcp-{suffix}"
+T_BUC = f"Prueba bucle divi5-mcp-{suffix}"
+
+def preparar():
+    st["fx"] = json.loads(script("--divi-dinamico-fixtures", suffix))
+    assert set(st["fx"]) == {"Alpha", "Beta", "Gamma", "Delta", "PRIVATE", "PASSWORD", "DRAFT"} and all(isinstance(v, int) and v > 0 for v in st["fx"].values()), st["fx"]
+    assert script("--estado", st["fx"]["PRIVATE"]) == "private" and script("--estado", st["fx"]["DRAFT"]) == "draft"
+    st["din"] = crear_pagina(T_DIN, f"PLAIN_{suffix}")
+    st["buc"] = crear_pagina(T_BUC, f"PLANTILLA_{suffix}")
+    st["din0"], st["buc0"] = script("--contenido", st["din"]), script("--contenido", st["buc"])
+    st["paginas"] = int(script("--contar-paginas"))
+    assert f"PLAIN_{suffix}" in pagina_en(st["din"]) and "$variable(" not in st["din0"]
+    st["huella0"] = huella()
+
+def listar():
+    _, d = cli.ok("list-divi-dynamic-sources", {})
+    nombres = [s["name"] for s in d["sources"]]
+    assert {"post_title", "post_excerpt", "post_date", "post_author", "post_link", "post_link_url", "post_featured_image", "site_title", "site_tagline", "site_logo", "home_url", "current_date"} <= set(nombres), nombres
+    assert not [n for n in nombres if n.startswith("loop_") or n == "post_meta_key" or n.startswith("custom_meta__")], nombres
+    assert "title.innerContent" in json.dumps(d["targets"]["divi/heading"]), d["targets"].get("divi/heading")
+    assert {"loop_post_title", "loop_post_link", "loop_post_featured_image"} <= {s["name"] for s in d["loop_sources"]}, d["loop_sources"]
+    assert all(s["category"] in ("text", "url", "image") for s in d["sources"] + d["loop_sources"])
+    _, e = cli.ok("list-divi-dynamic-sources", {"post_id": st["din"]})
+    assert e["post_id"] == st["din"] and e["post_type"] == "page", {k: e.get(k) for k in ("post_id", "post_type")}
+    assert "post_categories" not in {s["name"] for s in e["sources"]}, "una página no tiene categorías"
+    assert "product_price" not in {s["name"] for s in e["sources"]}, "una página no es un producto"
+
+def asignar_titulo():
+    p = st["din"]
+    _, d = cli.ok("set-divi-dynamic", {"id": p, "path": HEADING, "fingerprint": huella_nodo(p, HEADING), "field": "title.innerContent", "source": {"name": "post_title"}})
+    assert d["draft_of"] == p and d["id"] != p and d["path"] == HEADING and d["field"] == "title.innerContent", d
+    assert d["token"] == TOKEN_TITULO, d["token"]
+    st["copia_din"] = d["id"]
+    assert script("--contenido", p) == st["din0"], "el original cambió"
+    assert int(script("--contar-paginas")) == st["paginas"] + 1, "debía nacer una sola copia"
+    assert "post_title" in script("--contenido", d["id"]) and f"PLAIN_{suffix}" not in script("--contenido", d["id"])
+    assert f"PLAIN_{suffix}" in pagina_en(p), "el visitante aún debía ver el original"
+    publicar(d["id"], p)
+    st["paginas"] = int(script("--contar-paginas"))
+    html = pagina_en(p)
+    assert titulos(html) == [T_DIN], titulos(html)
+    assert "$variable(" not in html and f"PLAIN_{suffix}" not in html, "quedó el token o el texto viejo"
+    st["din1"] = script("--contenido", p)
+    assert "post_title" in st["din1"] and "$variable(" in st["din1"], "el token no quedó guardado"
+
+def sin_escribir(nombre, pagina, llamar, esperado, huella_comparar=True):
+    def fn():
+        antes, paginas, contenido = huella(), script("--contar-paginas"), script("--contenido", pagina)
+        es_error, texto, _ = llamar()
+        assert es_error, "debía rechazarse"
+        for e in ([esperado] if isinstance(esperado, str) else esperado):
+            assert e in texto, f"falta «{e}» en: {texto[:400]!r}"
+        assert huella() == antes, "cambió lo guardado (ajustes, bloqueo o roles)"
+        assert script("--contar-paginas") == paginas, "cambió la cantidad de páginas (¿copia?)"
+        assert script("--contenido", pagina) == contenido, "cambió el original"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+def dinamico(pagina, fuente, campo="title.innerContent", ruta=HEADING):
+    return lambda: cli.call("set-divi-dynamic", {"id": pagina, "path": ruta, "fingerprint": huella_nodo(pagina, ruta), "field": campo, "source": fuente})
+
+def interruptor_apagado():
+    p = st["din"]
+    fp = huella_nodo(p, HEADING)
+    script("--ajuste", "divi_dynamic_tools_enabled", "false")
+    try:
+        antes, paginas = huella(), script("--contar-paginas")
+        es_error, texto, _ = cli.call("set-divi-dynamic", {"id": p, "path": HEADING, "fingerprint": fp, "field": "title.innerContent", "source": {"name": "site_title"}})
+        assert es_error, "con el interruptor apagado debía rechazarse"
+        assert huella() == antes and script("--contar-paginas") == paginas and script("--contenido", p) == st["din1"], "cambió algo"
+        es_error, texto, _ = cli.call("set-divi-loop", {"id": p, "path": COLUMNA, "fingerprint": huella_nodo(p, COLUMNA), "loop": {"post_type": "post", "per_page": 3, "order_by": "date", "order": "desc"}})
+        assert es_error and script("--contenido", p) == st["din1"], "set-divi-loop con el interruptor apagado debía rechazarse"
+        _, listado = cli.ok("list-divi-dynamic-sources", {})  # leer el catálogo no pide el interruptor
+        assert listado["sources"]
+    finally:
+        script("--ajuste", "divi_dynamic_tools_enabled", "true")
+
+def preparar_bucle():
+    p = st["buc"]
+    _, d = cli.ok("set-divi-loop", {"id": p, "path": COLUMNA, "fingerprint": huella_nodo(p, COLUMNA), "loop": {"post_type": "post", "per_page": 3, "order_by": "date", "order": "desc"}})
+    assert d["draft_of"] == p and d["id"] != p and d["path"] == COLUMNA and d["loop"]["per_page"] == 3, d
+    assert re.fullmatch(r"loop-nx[0-9a-z]{8}", d["loop"]["loop_id"]), d["loop"]
+    st["loop_id"], st["copia_buc"] = d["loop"]["loop_id"], d["id"]
+    assert script("--contenido", p) == st["buc0"], "el original cambió"
+    crudo = script("--contenido", d["id"])
+    assert '"queryType":"post_types"' in crudo and '"ignoreStickysPost":"on"' in crudo and st["loop_id"] in crudo and "metaQuery" not in crudo, crudo[:600]
+    c = st["copia_buc"]
+    _, t = cli.ok("set-divi-dynamic", {"id": c, "path": HEADING, "fingerprint": huella_nodo(c, HEADING), "field": "title.innerContent", "source": {"name": "loop_post_title"}})
+    assert t["token"] == TOKEN_LOOP and t["id"] == c, t
+    publicar(c, p)
+    st["paginas"] = int(script("--contar-paginas"))
+
+def visitante_ve_tres():
+    html = pagina_en(st["buc"])
+    esperado = [fx("Delta"), fx("Gamma"), fx("Beta")]
+    assert titulos(html) == esperado, titulos(html)
+    for oculto in ("PRIVATE", "PASSWORD", "DRAFT"):
+        assert fx(oculto) not in html, f"el visitante ve {oculto}"
+    assert "Protegido" not in html and "$variable(" not in html and f"PLANTILLA_{suffix}" not in html
+    # Paginación por URL del bucle: la página 2 sigue con las más antiguas.
+    pagina2 = titulos(pagina_en(st["buc"], f"&{st['loop_id']}=2"))
+    assert pagina2 and pagina2[0] == fx("Alpha") and fx("Delta") not in pagina2, pagina2
+
+def visitante_ve_todas():
+    p = st["buc"]
+    _, d = cli.ok("set-divi-loop", {"id": p, "path": COLUMNA, "fingerprint": huella_nodo(p, COLUMNA), "loop": {"post_type": "post", "per_page": 24, "order_by": "date", "order": "desc"}})
+    assert d["loop"]["loop_id"] == st["loop_id"] and d["loop"]["per_page"] == 24, d["loop"]  # actualizar conserva el loopId
+    publicar(d["id"], p)
+    visibles = int(script("--divi-dinamico-visibles"))
+    html = pagina_en(p)
+    lista = titulos(html)
+    assert len(lista) == visibles and visibles >= 4, (len(lista), visibles)
+    for nombre in ("Alpha", "Beta", "Gamma", "Delta"):
+        assert lista.count(fx(nombre)) == 1, (nombre, lista)
+    for oculto in ("PRIVATE", "PASSWORD", "DRAFT"):
+        assert fx(oculto) not in html, f"el visitante ve {oculto}"
+    assert "Protegido" not in html
+
+def guarda_de_render():
+    p = st["buc"]
+    base = len(titulos(pagina_en(p)))
+    assert base >= 4
+    for de, a, nombre in (('"subTypes":[{"value":"post"', '"subTypes":[{"value":"any"', "tipo any"), ('"postOffset":"0"', '"postOffset":"5000"', "desplazamiento 5000")):
+        assert script("--divi-dinamico-reemplazar", p, de, a) == "1", nombre
+        try:
+            html = pagina_en(p)
+            assert titulos(html) == [], f"{nombre}: el valor editado a mano se renderizó: {titulos(html)}"
+            for oculto in ("PRIVATE", "PASSWORD", "DRAFT"):
+                assert fx(oculto) not in html, f"{nombre}: el visitante ve {oculto}"
+        finally:
+            assert script("--divi-dinamico-reemplazar", p, a, de) == "1", f"{nombre}: no se pudo devolver"
+        assert len(titulos(pagina_en(p))) == base, f"{nombre}: el bucle no volvió a lo escrito"
+
+def bucle(pagina, loop, ruta=COLUMNA):
+    return lambda: cli.call("set-divi-loop", {"id": pagina, "path": ruta, "fingerprint": huella_nodo(pagina, ruta), "loop": loop})
+
+def quitar():
+    # El token primero (con el bucle puesto sigue «en uso»), luego el bucle; también el token de la página dinámica.
+    p = st["buc"]
+    es_error, texto, _ = bucle(p, None)()
+    assert es_error and "loop_" in texto, f"quitar el bucle con tokens dentro debía rechazarse: {texto[:300]}"
+    _, d = cli.ok("set-divi-dynamic", {"id": p, "path": HEADING, "fingerprint": huella_nodo(p, HEADING), "field": "title.innerContent", "source": None})
+    assert d["removed"] is True and d["draft_of"] == p, d
+    c = d["id"]
+    _, e = cli.ok("set-divi-loop", {"id": c, "path": COLUMNA, "fingerprint": huella_nodo(c, COLUMNA), "loop": None})
+    assert e["removed"] is True and e["loop"] is None, e
+    crudo = script("--contenido", c)
+    assert "loop-nx" not in crudo and "$variable(" not in crudo and "queryType" not in crudo, crudo[:500]
+    publicar(c, p)
+    html = pagina_en(p)
+    assert "$variable(" not in html and not [t for t in titulos(html) if t.startswith("ZZD6")], titulos(html)
+    q = st["din"]
+    _, r = cli.ok("set-divi-dynamic", {"id": q, "path": HEADING, "fingerprint": huella_nodo(q, HEADING), "field": "title.innerContent", "source": None})
+    assert r["removed"] is True
+    publicar(r["id"], q)
+    assert "$variable(" not in script("--contenido", q) and T_DIN not in titulos(pagina_en(q))
+
+comprobar("fixtures: 4 entradas publicadas, una privada, una con contraseña y un borrador, y dos páginas Divi 5 publicadas", preparar)
+if "huella0" in st:
+    comprobar("list-divi-dynamic-sources: lista cerrada sin meta ni loop_*, destinos del título y fuentes por elemento; con post_id sólo lo que aplica a la página", listar)
+    comprobar("set-divi-dynamic post_title en un título: la copia lleva el token canónico, el original no cambia y publicada el visitante anónimo ve el título de la página", asignar_titulo)
+if "din1" in st:
+    d = st["din"]
+    sin_escribir("meta personalizado ajeno (custom_meta__edit_last) → nexo_mcp_divi_dynamic_denied", d, dinamico(d, {"name": "custom_meta__edit_last"}), "lista cerrada")
+    sin_escribir("post_meta_key con una clave protegida → nexo_mcp_divi_dynamic_denied", d, dinamico(d, {"name": "post_meta_key", "settings": {"meta_key": "_edit_last"}}), "lista cerrada")
+    sin_escribir("categoría que no coincide: post_link_url (url) en un título (texto) → nexo_mcp_divi_dynamic_denied", d, dinamico(d, {"name": "post_link_url"}), "categoría")
+    sin_escribir("enable_html: on → nexo_mcp_divi_dynamic_invalid", d, dinamico(d, {"name": "post_title", "settings": {"enable_html": "on"}}), "enable_html")
+    sin_escribir("loop_post_title fuera de un bucle → nexo_mcp_divi_dynamic_denied", d, dinamico(d, {"name": "loop_post_title"}), "bucle")
+    sin_escribir("el token no entra por edit-divi-module (nexo_mcp_divi_dynamic_denied)", d, lambda: cli.call("edit-divi-module", {"id": d, "path": HEADING, "fingerprint": huella_nodo(d, HEADING), "content": {"title": {"innerContent": valor(TOKEN_TITULO)}}}), "dinámico")
+    comprobar("con el interruptor divi_dynamic_tools_enabled apagado set-dynamic y set-divi-loop se rechazan sin escribir y la lista sigue disponible", interruptor_apagado)
+if "huella0" in st:
+    comprobar("set-divi-loop en una columna (3 por fecha) + loop_post_title en el título hijo: la copia lleva el bucle del conector y se publica", preparar_bucle)
+if "loop_id" in st and int(script("--contar-paginas")) == st["paginas"]:
+    comprobar("visitante anónimo: exactamente las 3 entradas publicadas más nuevas sin contraseña, en orden, y la página 2 por ?loop-nx…=2", visitante_ve_tres)
+    comprobar("per_page 24: el visitante ve exactamente las publicadas sin contraseña (ni privada, ni protegida, ni borrador)", visitante_ve_todas)
+    comprobar("guarda de render: un valor editado a mano después (tipo any, desplazamiento 5000) se renderiza vacío y al devolverlo vuelve", guarda_de_render)
+    b = st["buc"]
+    sin_escribir("bucle de tipo any → nexo_mcp_divi_loop_invalid", b, bucle(b, {"post_type": "any", "per_page": 3, "order_by": "date", "order": "desc"}), "loop.post_type")
+    sin_escribir("bucle de tipo attachment → nexo_mcp_divi_loop_invalid", b, bucle(b, {"post_type": "attachment", "per_page": 3, "order_by": "date", "order": "desc"}), "loop.post_type")
+    sin_escribir("per_page 25 (tope 24)", b, bucle(b, {"post_type": "post", "per_page": 25, "order_by": "date", "order": "desc"}), "per_page")
+    sin_escribir("meta_query en el bucle", b, bucle(b, {"post_type": "post", "per_page": 3, "order_by": "date", "order": "desc", "meta_query": [{"key": "_x", "value": "y"}]}), "meta_query")
+    sin_escribir("bucle anidado (la sección con una columna que ya tiene bucle) → nexo_mcp_divi_loop_nested", b, bucle(b, {"post_type": "post", "per_page": 3, "order_by": "date", "order": "desc"}, "0.0"), "anid")
+    comprobar("quitar: el bucle no se quita con tokens loop_* dentro; set-divi-dynamic source null y luego loop null los quitan, y el token de la página dinámica también", quitar)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones del contenido dinámico y los bucles de Divi 5 (D5/D6) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba del contenido dinámico y los bucles de Divi 5 (D5/D6) tuvo comprobaciones fallidas"
+	echo "Entradas de prueba de Divi dinámico borradas: $(tools/prueba_adaptadores.sh --divi-dinamico-barrer "$suffix")"
+	echo "Contenido dinámico de Divi: $(restaurar_divi_dinamico)"
+	divi_dinamico_foto_tomada=""
+	divi_dinamico_cap_agregada=""
+	check_eq "Divi D5/D6: lo guardado quedó byte a byte como al empezar (ajustes, roles, bloqueo)" "$divi_dinamico_huella_inicial" "$(tools/prueba_adaptadores.sh --divi-dinamico-huella)"
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
 fi
 if [ -n "$divi_tema_previo" ]; then
 	if wp theme activate "$divi_tema_previo" >/dev/null; then echo "Tema restaurado: $divi_tema_previo"; divi_tema_previo=""

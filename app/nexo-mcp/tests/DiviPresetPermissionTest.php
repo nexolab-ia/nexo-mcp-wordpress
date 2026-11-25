@@ -197,7 +197,8 @@ final class DiviPresetPermissionTest extends NexoTestCase {
 
 	public function test_el_interruptor_va_al_final_de_la_lista_de_interruptores(): void {
 		$switches = ( new \ReflectionClassConstant( ScopeMap::class, 'MODULE_SWITCH' ) )->getValue();
-		$this->assertSame( self::SCOPE, array_key_last( $switches ) );
-		$this->assertSame( self::SWITCH, end( $switches ) );
+		$keys = array_keys( $switches );
+		$this->assertSame( self::SCOPE, $keys[ array_search( 'mcp:divi_design', $keys, true ) + 1 ], 'va justo tras el diseño global; D5 se agrega después' );
+		$this->assertSame( self::SWITCH, $switches[ self::SCOPE ] );
 	}
 }

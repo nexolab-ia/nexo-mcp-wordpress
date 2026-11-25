@@ -91,6 +91,14 @@ final class Capabilities {
 	public const DIVI_PRESETS = 'nexo_mcp_divi_presets';
 
 	/**
+	 * Poner contenido dinámico y bucles de consulta en páginas de Divi 5.
+	 *
+	 * Va aparte de BUILDERS y de BUILDERS_DYNAMIC (Elementor): un dato dinámico o un bucle muestra
+	 * datos del sitio a cualquier visitante. Además lo enciende aparte el interruptor `divi_dynamic_tools_enabled`.
+	 */
+	public const DIVI_DYNAMIC = 'nexo_mcp_divi_dynamic';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {
