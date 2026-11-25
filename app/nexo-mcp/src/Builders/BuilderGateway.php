@@ -1118,6 +1118,20 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Crea un layout del Theme Builder de Divi 5 (encabezado, cuerpo o pie), publicado y sin asignar.
+	 *
+	 * Exige el permiso del Theme Builder (el inyectado o `PermissionPolicy::can_write_divi_theme_builder()`) ANTES de mirar la
+	 * entrada. Ver {@see Divi5LayoutCreator}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `type`, `title`, `sections`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_divi_layout( array $input ) {
+		return ( new Divi5LayoutCreator( $this->divi_validator(), $this->layout_allowed_callable(), null, null, null, null, null, $this->divi_presets_lock() ) )->create( $input );
+	}
+
+	/**
 	 * Reemplaza, inserta o borra un nodo de una página de Divi 5, en la copia de trabajo.
 	 *
 	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5SectionEditor}.

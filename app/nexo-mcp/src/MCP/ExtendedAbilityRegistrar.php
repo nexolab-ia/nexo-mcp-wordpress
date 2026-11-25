@@ -85,6 +85,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-loop',
 		'nexo-mcp/set-divi-conditions',
 		'nexo-mcp/create-divi-page',
+		'nexo-mcp/create-divi-layout',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -864,6 +865,16 @@ final class ExtendedAbilityRegistrar {
 			fn( array $input ) => $this->builders->create_divi_page( $input ),
 			// Como create-elementor-page: contenido nuevo, sin post al que atar la capacidad. Nunca publica.
 			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
+		);
+		$this->ability(
+			'create-divi-layout',
+			'Crear un layout del Theme Builder de Divi 5 (publicado, sin asignar)',
+			$this->divi_layout_description(),
+			'write',
+			$this->divi_layout_schema(),
+			fn( array $input ) => $this->builders->create_divi_layout( $input ),
+			// Sin id de página: un layout se muestra en todo el sitio. Permiso de sitio del Theme Builder (no el de constructores).
+			fn() => $this->policy->can_write_divi_theme_builder()
 		);
 		$this->ability(
 			'edit-divi-section',
@@ -2155,6 +2166,63 @@ final class ExtendedAbilityRegistrar {
 				),
 			),
 			'required'             => array( 'title', 'sections' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de create-divi-layout.
+	 */
+	private function divi_layout_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea un layout del Theme Builder de Divi 5 (encabezado, cuerpo o pie) con módulos reales, PUBLICADO y SIN ASIGNAR a ninguna plantilla (inerte hasta enlazarlo). Requiere Divi 5 activo (nexo_mcp_divi5_required) y el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: un layout se muestra en todo el sitio, así que NO basta el permiso de constructores ni el edit_post de una página (nexo_mcp_divi_layout_denied, se comprueba antes que la entrada).',
+				'',
+				'EFECTO EN TODO EL SITIO: crear no cambia el sitio, pero asignar el layout a una plantilla sí (afecta a todas las páginas que esa plantilla cubra). Un layout se crea en publish a propósito: uno en borrador, privado o pendiente lo ve igualmente el público. Un layout sin asignar lo marca Divi como sin uso y lo manda a la papelera a los 7 días: asígnalo antes. Un encabezado o pie reemplaza al del tema (se pierden su menú, buscador y carrito). Un cuerpo sin divi/post-content REEMPLAZA el contenido de las páginas a las que se asigne (se pierden el texto de la página y, en WooCommerce, el carrito y el pago): se crea igual, pero la respuesta lo avisa.',
+				'',
+				'ENTRADA: type (header | body | footer), title y sections: la lista de secciones (sólo divi/section en la raíz; el divi/placeholder que envuelve el contenido lo pone el plugin).',
+				$this->divi_tree_help(),
+				'EN UN LAYOUT además se admiten, siempre como hijos de una columna: divi/post-content (el contenido de la página o entrada que muestra la plantilla; sin atributos; imprescindible en un cuerpo), divi/post-title (título de la entrada: interruptores on/off en title.advanced.showTitle, meta.advanced.showMeta|showAuthor|showDate|showCategories|showCommentsCount, image.advanced.enabled y meta.advanced.dateFormat, un formato de fecha de PHP de hasta 30 caracteres) y divi/menu (menu.advanced.menuId: el id del menú, como TEXTO, de un menú que existe en el sitio —uno inexistente se rechaza porque Divi lo cambiaría en silencio por el primero—, logo.innerContent {src, alt, linkUrl, linkTarget}, cartIcon.advanced.show y searchIcon.advanced.show en on/off). Una página no los admite.',
+				'',
+				'SALIDA: id, type, post_type (et_header_layout, et_body_layout o et_footer_layout), status (publish), assigned (false), nodes (lista plana de {path, type, fingerprint} con la ruta de cada nodo; úsala con nexo-mcp-edit-divi-section y nexo-mcp-edit-divi-module, que aceptan el id del layout con este mismo permiso) y warnings (el de sin asignar y, en un cuerpo sin divi/post-content, el de que reemplazaría el contenido). Al crear se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\')): Divi no hace nada, sin avisar, si el usuario de la conexión no tiene edit_posts; los plugins de caché de página se vacían con et_theme_builder_clear_wp_cache.',
+				'',
+				'ERRORES (no crean nada; si falla el guardado el layout a medias se elimina): nexo_mcp_divi_layout_denied, nexo_mcp_divi_layout_type_invalid, nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-divi-layout.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_layout_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'type'     => array(
+					'type'        => 'string',
+					'enum'        => array( 'header', 'body', 'footer' ),
+					'description' => 'Qué layout es: encabezado, cuerpo o pie.',
+				),
+				'title'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'sections' => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Secciones: lista de nodos {type: "divi/section", attrs?, children?}. Ver la descripción de la herramienta (en un layout, además divi/post-content, divi/post-title y divi/menu dentro de una columna).',
+					'items'       => array(
+						'type'                 => 'object',
+						'additionalProperties' => true,
+					),
+				),
+			),
+			'required'             => array( 'type', 'title', 'sections' ),
 			'additionalProperties' => false,
 		);
 	}
