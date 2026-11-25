@@ -44,85 +44,91 @@ $site_host          = (string) wp_parse_url( $oauth_site_url, PHP_URL_HOST );
  * `risk` dice en qué estado es riesgosa: `on` al encenderla, `off` al apagarla.
  */
 $sensitive_options = array(
-	'read_only'                   => array(
+	'read_only'                     => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'lectura', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres apagar el modo sólo lectura?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear y modificar contenido de este sitio desde ahora, sin volver a pedirte permiso.', 'nexo-mcp' ),
 	),
-	'drafts_only'                 => array(
+	'drafts_only'                   => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'borradores', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres dejar de limitar la IA a borradores?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá modificar páginas y entradas ya publicadas desde ahora, y tus visitantes verán esos cambios de inmediato.', 'nexo-mcp' ),
 	),
-	'publishing_enabled'          => array(
+	'publishing_enabled'            => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'publicar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar la publicación remota?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá publicar, despublicar y enviar contenido a la papelera desde ahora, sin volver a pedirte permiso.', 'nexo-mcp' ),
 	),
-	'maintenance_tools_enabled'   => array(
+	'maintenance_tools_enabled'     => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'plugins', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar el mantenimiento de plugins?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá instalar, actualizar, activar y desactivar plugins y temas desde ahora. Un plugin defectuoso puede dejar el sitio fuera de servicio.', 'nexo-mcp' ),
 	),
-	'design_system_tools_enabled' => array(
+	'design_system_tools_enabled'   => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'diseño', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar los cambios al sistema de diseño?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá cambiar las clases, variables, colores y tipografía globales de Elementor de todo el sitio, y tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer el último.', 'nexo-mcp' ),
 	),
-	'builders_dynamic_enabled'    => array(
+	'builders_dynamic_enabled'      => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'dinámicos', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres permitir datos dinámicos en las páginas?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá asociar a textos e imágenes de las páginas datos del sitio (título, fecha, imagen destacada…) que se muestran a todos los visitantes. Sólo una lista cerrada de tags sin datos sensibles; el cambio va a la copia de trabajo.', 'nexo-mcp' ),
 	),
-	'builders_components_enabled' => array(
+	'builders_components_enabled'   => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'componentes', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres permitir crear componentes de Elementor?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear componentes reutilizables de Elementor 4 (siempre en borrador). Un componente es parte del sitio, no de una sola página: al publicarlo y usarlo en varias páginas, un cambio se ve en todas.', 'nexo-mcp' ),
 	),
-	'divi_design_tools_enabled'   => array(
+	'divi_design_tools_enabled'     => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'divi', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar los cambios al diseño global de Divi?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá cambiar la paleta de colores, las variables, las fuentes y la tipografía globales de Divi 5 de todo el sitio, y tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer.', 'nexo-mcp' ),
 	),
-	'divi_presets_tools_enabled'  => array(
+	'divi_presets_tools_enabled'    => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'presets', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar los cambios a los presets de Divi?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear, cambiar y borrar los presets de módulos y de grupos de opciones de Divi 5, y fijar el predeterminado de cada módulo. Un preset afecta a todos los módulos que lo usan, y el predeterminado a todos los que no tienen otro: tus visitantes verán esos cambios de inmediato. Cada cambio guarda un respaldo y se puede deshacer.', 'nexo-mcp' ),
 	),
-	'divi_dynamic_tools_enabled'  => array(
+	'divi_dynamic_tools_enabled'    => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'dinámico', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar el contenido dinámico de Divi?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá poner en las páginas de Divi 5 contenido dinámico (título, extracto, fecha y autor de las entradas, datos del sitio, WooCommerce básico y campos de texto de ACF) y bucles de consulta que listan contenido del sitio. Cualquier visitante verá esos datos publicados en la página, y un bucle puede mostrar muchas entradas. Los cambios se escriben en la copia de trabajo de la página, que revisas antes de publicar.', 'nexo-mcp' ),
 	),
-	'extension_deletion_enabled'  => array(
+	'divi_conditions_tools_enabled' => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'condiciones', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres activar las condiciones de visualización de Divi?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá poner condiciones de visualización en los módulos de las páginas de Divi 5 (por ejemplo, mostrar u ocultar un bloque según el rol, el inicio de sesión, la fecha o el dispositivo del visitante). Una condición mal puesta puede ocultar contenido a todos tus visitantes o mostrar a todos lo que querías reservar. Los cambios se escriben en la copia de trabajo de la página, que revisas antes de publicar.', 'nexo-mcp' ),
+	),
+	'extension_deletion_enabled'    => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres permitir que la IA borre plugins y temas?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá borrar plugins y temas desactivados de este sitio. Si un plugin trae desinstalador, también se borran sus datos, y eso no se puede deshacer.', 'nexo-mcp' ),
 	),
-	'working_copy_default'        => array(
+	'working_copy_default'          => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'directo', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres que la IA edite lo publicado directamente?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'Los cambios a páginas y entradas publicadas dejarán de pasar por una copia de trabajo y tus visitantes los verán de inmediato.', 'nexo-mcp' ),
 	),
-	'enforce_connection_scopes'   => array(
+	'enforce_connection_scopes'     => array(
 		'risk'          => 'off',
 		'confirm-word'  => __( 'alcances', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres dejar de respetar los alcances de cada conexión?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'Cada conexión podrá usar todo lo que permitan los módulos encendidos, aunque al autorizarla le hayas concedido menos permisos.', 'nexo-mcp' ),
 	),
-	'destructive_enabled'         => array(
+	'destructive_enabled'           => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'eliminar', 'nexo-mcp' ),
 		'confirm-title' => __( '¿Seguro que quieres activar las acciones destructivas?', 'nexo-mcp' ),
@@ -1012,6 +1018,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'divi_dynamic_tools_enabled' ); ?>
 							<?php checked( ! empty( $settings['divi_dynamic_tools_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Condiciones de visualización de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Pone condiciones para mostrar u ocultar módulos de Divi 5 (copia de trabajo, con respaldo): decide qué ve cada visitante.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[divi_conditions_tools_enabled]"
+							value="1"
+							<?php $print_sensitive( 'divi_conditions_tools_enabled' ); ?>
+							<?php checked( ! empty( $settings['divi_conditions_tools_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

@@ -33,52 +33,54 @@ final class Settings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'server_enabled'              => true,
-			'wordpress_tools_enabled'     => true,
-			'woocommerce_tools_enabled'   => true,
-			'content_tools_enabled'       => true,
-			'seo_tools_enabled'           => true,
-			'appearance_tools_enabled'    => true,
-			'maintenance_tools_enabled'   => false,
+			'server_enabled'                => true,
+			'wordpress_tools_enabled'       => true,
+			'woocommerce_tools_enabled'     => true,
+			'content_tools_enabled'         => true,
+			'seo_tools_enabled'             => true,
+			'appearance_tools_enabled'      => true,
+			'maintenance_tools_enabled'     => false,
 			// Llave aparte del mantenimiento: borrar un plugin corre su
 			// desinstalador y eso no se deshace (ADR-029).
-			'extension_deletion_enabled'  => false,
-			'builders_tools_enabled'      => true,
+			'extension_deletion_enabled'    => false,
+			'builders_tools_enabled'        => true,
 			// Cambia clases, variables, colores y tipografía de todo el sitio en vivo:
 			// apagado hasta que el dueño lo enciende (con respaldo y deshacer).
-			'design_system_tools_enabled' => false,
+			'design_system_tools_enabled'   => false,
 			// Asignar datos dinámicos (tags de Elementor Pro) a elementos: apagado hasta que el dueño lo enciende.
-			'builders_dynamic_enabled'    => false,
+			'builders_dynamic_enabled'      => false,
 			// Crear componentes de Elementor 4 (Pro): apagado hasta que el dueño lo enciende.
-			'builders_components_enabled' => false,
+			'builders_components_enabled'   => false,
 			// Cambia paleta, variables y tipografía globales de Divi 5 de todo el sitio en vivo: apagado hasta que el dueño lo enciende.
-			'divi_design_tools_enabled'   => false,
+			'divi_design_tools_enabled'     => false,
 			// Cambia los presets de módulos de Divi 5 (afectan a todo el sitio en vivo): apagado hasta que el dueño lo enciende.
-			'divi_presets_tools_enabled'  => false,
+			'divi_presets_tools_enabled'    => false,
 			// Pone contenido dinámico y bucles de consulta en páginas de Divi 5 (muestra datos del sitio a cualquier visitante): apagado hasta que el dueño lo enciende.
-			'divi_dynamic_tools_enabled'  => false,
-			'publishing_enabled'          => true,
-			'destructive_enabled'         => false,
-			'read_only'                   => true,
+			'divi_dynamic_tools_enabled'    => false,
+			// Pone condiciones de visualización en módulos de Divi 5 (decide qué ve cada visitante): apagado hasta que el dueño lo enciende.
+			'divi_conditions_tools_enabled' => false,
+			'publishing_enabled'            => true,
+			'destructive_enabled'           => false,
+			'read_only'                     => true,
 			// Con esto en true no se puede editar nada que ya esté publicado,
 			// que es justo lo primero que intenta hacer cualquiera al conectar.
-			'drafts_only'                 => false,
+			'drafts_only'                   => false,
 			// Toda edición a contenido publicado va primero a una copia de
 			// trabajo (borrador enlazado); el original cambia al publicarla.
-			'working_copy_default'        => true,
+			'working_copy_default'          => true,
 			// Encendida por defecto: sin purgar, el conector informa éxito y el
 			// visitante sigue viendo lo anterior. No hay error que perseguir y el
 			// dueño concluye que la herramienta no sirve. La purga es selectiva,
 			// así que no rehace el sitio entero por cambiar un párrafo.
-			'cache_purge_enabled'         => true,
+			'cache_purge_enabled'           => true,
 			// Alcances por conexión: un token OAuth sólo ejerce los scopes que se
 			// le concedieron. Los interruptores del panel siguen siendo el techo.
-			'enforce_connection_scopes'   => true,
-			'audit_retention_days'        => 90,
+			'enforce_connection_scopes'     => true,
+			'audit_retention_days'          => 90,
 			// Dirección pública del conector cuando el sitio se publica detrás de
 			// un túnel o un proxy. Vacía significa que no hay ninguno: el conector
 			// sólo se reconoce por la dirección configurada del sitio.
-			'proxy_resource'              => '',
+			'proxy_resource'                => '',
 		);
 	}
 
