@@ -203,6 +203,71 @@ final class DiviLayoutContentAdminTest extends NexoTestCase {
 		$this->assertSame( 'nexo_mcp_revision_not_found', $missing->get_error_code() );
 	}
 
+	public function test_a_layout_copy_is_published_into_the_layout_with_the_theme_builder_permission(): void {
+		$copy     = $this->layout_copy();
+		$original = \WP_Test_State::$posts[200]->post_content;
+		$edited   = \WP_Test_State::$posts[ $copy ]->post_content;
+		$this->assertNotSame( $original, $edited );
+
+		$tools = $this->tools( array( self::SWITCH => true ) );
+
+		$this->assertTrue( $tools['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => 'publish' ) ) );
+
+		$result = $tools['set-content-status']['execute_callback']( array( 'id' => $copy, 'status' => 'publish' ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 200, $result['id'] );
+		$this->assertSame( $copy, $result['merged_from'] );
+		$this->assertSame( $edited, \WP_Test_State::$posts[200]->post_content, 'el layout vivo recibe la copia' );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[200]->post_status );
+		$this->assertSame( 'et_body_layout', \WP_Test_State::$posts[200]->post_type );
+		$this->assertArrayNotHasKey( $copy, \WP_Test_State::$posts, 'la copia se borra' );
+		$this->assertSame( 0, WorkingCopy::copy_of( \WP_Test_State::$posts[200] ) );
+	}
+
+	public function test_a_layout_copy_is_discarded_with_the_theme_builder_permission_and_the_layout_is_untouched(): void {
+		$copy     = $this->layout_copy();
+		$original = \WP_Test_State::$posts[200]->post_content;
+
+		$tools = $this->tools( array( self::SWITCH => true ) );
+
+		$this->assertTrue( $tools['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => 'trash' ) ) );
+
+		$result = $tools['set-content-status']['execute_callback']( array( 'id' => $copy, 'status' => 'trash' ) );
+
+		$this->assertNotInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $original, \WP_Test_State::$posts[200]->post_content );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[200]->post_status );
+		$this->assertSame( 0, WorkingCopy::copy_of( \WP_Test_State::$posts[200] ) );
+		$this->assertTrue( ! isset( \WP_Test_State::$posts[ $copy ] ) || 'trash' === \WP_Test_State::$posts[ $copy ]->post_status );
+	}
+
+	public function test_a_layout_copy_status_without_each_piece_of_the_permission_is_denied_and_changes_nothing(): void {
+		$copy  = $this->layout_copy();
+		$state = $this->snapshot();
+
+		foreach ( array( 'publish', 'trash' ) as $status ) {
+			// Sin el Theme Builder: las dos capas.
+			$tools = $this->tools( array( self::SWITCH => false ) );
+
+			$this->assertNotTrue( $tools['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => $status ) ), "$status: permiso" );
+
+			$result = $tools['set-content-status']['execute_callback']( array( 'id' => $copy, 'status' => $status ) );
+
+			$this->assertInstanceOf( \WP_Error::class, $result, $status );
+			$this->assertSame( 'nexo_mcp_divi_layout_denied', $result->get_error_code(), $status );
+			$this->assertSame( $state, $this->snapshot(), "$status: nada cambia" );
+
+			// Sin el módulo de publicación (sólo la capa de permiso, como en las páginas).
+			$this->assertNotTrue( $this->tools( array( self::SWITCH => true, 'publishing_enabled' => false ) )['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => $status ) ), "$status: sin publicar" );
+		}
+
+		// Publicar exige además poder publicar entradas.
+		\WP_Test_State::$caps['publish_posts'] = false;
+		$this->assertNotTrue( $this->tools( array( self::SWITCH => true ) )['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => 'publish' ) ) );
+		$this->assertTrue( $this->tools( array( self::SWITCH => true ) )['set-content-status']['permission_callback']( array( 'id' => $copy, 'status' => 'trash' ) ) );
+	}
+
 	public function test_the_layout_itself_still_cannot_change_status_through_set_content_status(): void {
 		$state = $this->snapshot();
 		$tools = $this->tools( array( self::SWITCH => true ) );

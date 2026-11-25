@@ -1413,7 +1413,7 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'set-content-status',
 			'Cambiar estado de contenido',
-			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50.',
+			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50. La copia de trabajo de un layout del Theme Builder (encabezado, cuerpo o pie) también se publica (se fusiona en el layout vivo, que ve todo el sitio) o se descarta (trash) por aquí, pero pide además el permiso del Theme Builder (scope mcp:divi_theme_builder): nexo_mcp_divi_layout_denied sin él. El layout vivo en sí no cambia de estado por esta herramienta.',
 			'write',
 			$this->status_schema(),
 			fn( array $input ) => isset( $input['ids'] )
@@ -2044,6 +2044,9 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
 				'',
+				'EN UN LAYOUT además se editan divi/post-title y divi/menu (menu.advanced.menuId: el id, como texto, de un menú que existe; uno inexistente se rechaza) y divi/post-content (sin contenido que editar).',
+				$this->divi_layout_note(),
+				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
 				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
@@ -2171,6 +2174,13 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Nota de las herramientas de edición sobre los layouts del Theme Builder.
+	 */
+	private function divi_layout_note(): string {
+		return 'LAYOUTS DEL THEME BUILDER: id puede ser el de un layout de encabezado, cuerpo o pie (o su copia de trabajo); entonces se pide el permiso del Theme Builder (scope mcp:divi_theme_builder con su interruptor y un administrador con el permiso theme_builder de Divi) y NO el de una página: sin él, nexo_mcp_divi_layout_denied. Los demás tipos internos de Divi (plantillas, biblioteca) se rechazan siempre (nexo_mcp_divi_post_type_denied). El cambio va a la copia de trabajo del layout (el layout vivo, que ve todo el sitio, no cambia): revísala con nexo-mcp-get-working-copy-diff y publícala o descártala con nexo-mcp-set-content-status (también con el permiso del Theme Builder).';
+	}
+
+	/**
 	 * Descripción de create-divi-layout.
 	 */
 	private function divi_layout_description(): string {
@@ -2243,7 +2253,10 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete) y dropped_conditions (sólo con replace o delete, si el subárbol reemplazado o borrado tenía módulos con condiciones de visualización: lista de {path, type, summary}, con el path del módulo antes del cambio y summary el resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]}, sin valores crudos; la escritura se hace igual: replace no puede conservarlas porque los árboles no las admiten, así que vuelve a ponerlas con nexo-mcp-set-divi-conditions). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
+				'EN UN LAYOUT (ver abajo) replace y delete avisan de lo que se pierde también con dropped_post_content (lista de {path, type: divi/post-content} del subárbol reemplazado o borrado, con el path antes del cambio) y, si un CUERPO se queda sin ningún divi/post-content, con warnings (un cuerpo sin él REEMPLAZA el contenido de las páginas a las que se asigne); la escritura se hace igual. En un layout además se admiten divi/post-content, divi/post-title y divi/menu como hijos de una columna (ver nexo-mcp-create-divi-layout).',
+				$this->divi_layout_note(),
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_layout_denied, nexo_mcp_divi_post_type_denied, nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
 			)
 		);
 	}
@@ -2462,6 +2475,14 @@ final class ExtendedAbilityRegistrar {
 	 * @param string   $status   Estado pedido.
 	 */
 	private function can_set_copy_status( \WP_Post $copy, int $original, string $status ): bool {
+		// La copia de un layout del Theme Builder cambia lo que ve todo el sitio al publicarla: el permiso del Theme Builder
+		// (no el `edit_post` de una página), el módulo de publicación y poder publicar.
+		if ( DiviLayoutGuard::is_layout( $copy ) ) {
+			return $this->policy->can_write_divi_theme_builder()
+				&& $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'read' )
+				&& ( 'publish' !== $status || current_user_can( 'publish_posts' ) );
+		}
+
 		$target = get_post( $original ) instanceof \WP_Post ? $original : (int) $copy->ID;
 
 		if ( ! $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'edit_post', $target ) ) {

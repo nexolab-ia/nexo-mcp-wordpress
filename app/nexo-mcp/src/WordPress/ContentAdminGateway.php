@@ -535,8 +535,18 @@ final class ContentAdminGateway {
 
 		$post = get_post( $post_id );
 
-		if ( ! $post instanceof \WP_Post || ! in_array( $post->post_type, array( 'page', 'post' ), true ) ) {
+		// Una copia de trabajo de un layout del Theme Builder también se publica o se descarta por aquí (L4 (a)): no hay pantalla
+		// de wp-admin para ella. El layout vivo no: su estado lo cambian el Theme Builder o Divi, no esta herramienta.
+		$layout_copy = $post instanceof \WP_Post && DiviLayoutGuard::is_layout( $post ) && WorkingCopy::original_of( $post ) > 0;
+
+		if ( ! $post instanceof \WP_Post || ( ! $layout_copy && ! in_array( $post->post_type, array( 'page', 'post' ), true ) ) ) {
 			return new \WP_Error( 'nexo_mcp_content_not_found', __( 'No se encontró el contenido.', 'nexo-mcp' ) );
+		}
+
+		$guard = $this->layout_guard( $post );
+
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
 		}
 
 		if ( WorkingCopy::original_of( $post ) > 0 ) {
