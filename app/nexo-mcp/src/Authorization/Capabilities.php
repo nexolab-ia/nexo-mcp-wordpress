@@ -99,6 +99,14 @@ final class Capabilities {
 	public const DIVI_DYNAMIC = 'nexo_mcp_divi_dynamic';
 
 	/**
+	 * Poner condiciones de visualización en módulos de Divi 5.
+	 *
+	 * Va aparte de BUILDERS y de DIVI_DYNAMIC: una condición decide qué ve cada visitante (ocultar o mostrar
+	 * contenido). Además lo enciende aparte el interruptor `divi_conditions_tools_enabled`.
+	 */
+	public const DIVI_CONDITIONS = 'nexo_mcp_divi_conditions';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {

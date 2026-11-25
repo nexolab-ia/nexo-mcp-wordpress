@@ -20,6 +20,22 @@ namespace NexoDev\NexoMCP\Builders;
 final class Divi5Adapter implements BuilderAdapter {
 
 	/**
+	 * Esquema que resume las condiciones de visualización al leer (S7).
+	 *
+	 * @var DiviConditionsSchema
+	 */
+	private DiviConditionsSchema $conditions;
+
+	/**
+	 * Construye el adaptador.
+	 *
+	 * @param DiviConditionsSchema|null $conditions Esquema para resumir las condiciones leídas (las pruebas inyectan sus fuentes).
+	 */
+	public function __construct( ?DiviConditionsSchema $conditions = null ) {
+		$this->conditions = $conditions ?? new DiviConditionsSchema();
+	}
+
+	/**
 	 * Identificador estable del constructor.
 	 */
 	public function slug(): string {
@@ -52,7 +68,7 @@ final class Divi5Adapter implements BuilderAdapter {
 	/**
 	 * Entrega el árbol aplanado: el `id` es el `path`.
 	 *
-	 * `fingerprint`, `label`, `link` e `image` viajan en `attributes`.
+	 * `fingerprint`, `label`, `link`, `image`, `preset` y `conditions` (resumen, nunca valores crudos) viajan en `attributes`.
 	 *
 	 * @param \WP_Post $post Contenido leído.
 	 *
@@ -61,20 +77,20 @@ final class Divi5Adapter implements BuilderAdapter {
 	public function read_nodes( \WP_Post $post ): array {
 		$nodes = array();
 
-		$this->flatten( Divi5Tree::build( (string) $post->post_content ), $nodes );
+		$this->flatten( Divi5Tree::build( (string) $post->post_content, $this->conditions ), $nodes );
 
 		return $nodes;
 	}
 
 	/**
-	 * Entrega el árbol anidado, con `path`, `fingerprint` y `children`.
+	 * Entrega el árbol anidado, con `path`, `fingerprint` y `children` (y `conditions`, el resumen, en los módulos que las llevan).
 	 *
 	 * @param \WP_Post $post Contenido leído.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function read_tree( \WP_Post $post ): array {
-		return Divi5Tree::build( (string) $post->post_content );
+		return Divi5Tree::build( (string) $post->post_content, $this->conditions );
 	}
 
 	/**
@@ -141,7 +157,7 @@ final class Divi5Adapter implements BuilderAdapter {
 		foreach ( $tree as $node ) {
 			$attributes = array( 'fingerprint' => (string) $node['fingerprint'] );
 
-			foreach ( array( 'label', 'link', 'image', 'preset' ) as $key ) {
+			foreach ( array( 'label', 'link', 'image', 'preset', 'conditions' ) as $key ) {
 				if ( isset( $node[ $key ] ) ) {
 					$attributes[ $key ] = $node[ $key ];
 				}

@@ -64,18 +64,26 @@ final class Divi5SectionEditor {
 	private $presets_lock;
 
 	/**
+	 * Esquema que resume las condiciones que se pierden (S7).
+	 *
+	 * @var DiviConditionsSchema
+	 */
+	private DiviConditionsSchema $conditions;
+
+	/**
 	 * Construye el editor.
 	 *
-	 * @param Settings          $settings     Configuración.
-	 * @param Divi5Adapter      $adapter      Adaptador de Divi 5.
-	 * @param BuilderBackup     $backup       Respaldos.
-	 * @param WorkingCopy       $copies       Copias de trabajo.
-	 * @param DiviTreeValidator $validator    Validador del subárbol.
-	 * @param callable          $lock_check   fn( \WP_Post ): true|\WP_Error.
-	 * @param callable|null     $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
-	 * @param callable|null     $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
-	 * @param callable|null     $version      fn(): string. Por omisión, la versión de Divi instalada.
-	 * @param callable|null     $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
+	 * @param Settings                  $settings     Configuración.
+	 * @param Divi5Adapter              $adapter      Adaptador de Divi 5.
+	 * @param BuilderBackup             $backup       Respaldos.
+	 * @param WorkingCopy               $copies       Copias de trabajo.
+	 * @param DiviTreeValidator         $validator    Validador del subárbol.
+	 * @param callable                  $lock_check   fn( \WP_Post ): true|\WP_Error.
+	 * @param callable|null             $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
+	 * @param callable|null             $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
+	 * @param callable|null             $version      fn(): string. Por omisión, la versión de Divi instalada.
+	 * @param callable|null             $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
+	 * @param DiviConditionsSchema|null $conditions Esquema que resume las condiciones del subárbol reemplazado o borrado.
 	 */
 	public function __construct(
 		Settings $settings,
@@ -87,11 +95,13 @@ final class Divi5SectionEditor {
 		?callable $divi5_active = null,
 		?callable $saver = null,
 		?callable $version = null,
-		?callable $presets_lock = null
+		?callable $presets_lock = null,
+		?DiviConditionsSchema $conditions = null
 	) {
 		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
 		$this->validator    = $validator;
 		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
+		$this->conditions   = $conditions ?? new DiviConditionsSchema();
 		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 	}
 
@@ -170,6 +180,10 @@ final class Divi5SectionEditor {
 
 		$out['nodes'] = $nodes;
 
+		if ( array() !== $prepared['dropped'] ) {
+			$out['dropped_conditions'] = $prepared['dropped'];
+		}
+
 		return $out;
 	}
 
@@ -179,7 +193,7 @@ final class Divi5SectionEditor {
 	 * @param \WP_Post             $source Contenido sobre el que se trabaja.
 	 * @param array<string, mixed> $input  Parámetros.
 	 *
-	 * @return array{content: string, operation: string, path: string, parent: string, index: int, added: int}|\WP_Error
+	 * @return array{content: string, operation: string, path: string, parent: string, index: int, added: int, dropped: array<int, array<string, mixed>>}|\WP_Error
 	 */
 	private function prepare( \WP_Post $source, array $input ) {
 		$operation   = isset( $input['operation'] ) && is_string( $input['operation'] ) ? $input['operation'] : '';
@@ -282,7 +296,46 @@ final class Divi5SectionEditor {
 			'parent'    => $parent,
 			'index'     => $index,
 			'added'     => count( $new ),
+			'dropped'   => $replaces ? $this->dropped( $located, $path ) : array(),
 		);
+	}
+
+	/**
+	 * Condiciones de visualización del nodo y de sus descendientes, que replace/delete pierden (S7): `{path, type, summary}` en orden de documento.
+	 *
+	 * Replace no puede conservarlas: el árbol nuevo no las admite (S9), así que todas se pierden; se avisa en vez de callar.
+	 *
+	 * @param array<string, mixed> $block Bloque que se reemplaza o borra.
+	 * @param string               $path  Su ruta.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function dropped( array $block, string $path ): array {
+		$schema = $this->conditions;
+		$out    = array();
+		$all    = array_merge(
+			array(
+				array(
+					'path'  => $path,
+					'block' => $block,
+				),
+			),
+			Divi5Tree::descendants( $block, $path )
+		);
+
+		foreach ( $all as $item ) {
+			$stored = Divi5Tree::conditions_of( $item['block'] );
+
+			if ( null !== $stored ) {
+				$out[] = array(
+					'path'    => $item['path'],
+					'type'    => (string) ( $item['block']['blockName'] ?? '' ),
+					'summary' => $schema->summary( $stored ),
+				);
+			}
+		}
+
+		return $out;
 	}
 
 	/**

@@ -42,6 +42,13 @@ use NexoDev\NexoMCP\WordPress\WorkingCopy;
  * bucle nuevo (o ninguno) no admite (`nexo_mcp_divi_loop_in_use`). Con `dynamic`, las fuentes `loop_*` valen sólo si el
  * módulo o un ancestro tiene un bucle del conector válido AHORA ({@see DiviLoopSchema::valid_stored()}; el más interno manda).
  *
+ * `conditions` (sólo lo pasa `set-divi-conditions`; `{match, conditions}` de {@see DiviConditionsSchema::validate()}) pone o
+ * quita las condiciones de visualización de un módulo que las admite ({@see DiviConditionsSchema::MODULES}): escribe
+ * `module.decoration.conditions.desktop.value` con SÓLO lo que arma {@see DiviConditionsSchema::stored()} (conserva los
+ * `id` de lo que no cambió) y ninguna otra cosa del bloque; la lista vacía quita la clave y poda los padres vacíos. Una
+ * lista que no es del conector ({@see DiviConditionsSchema::summary()}, `ours` falso) sólo se reemplaza o quita con
+ * `replace_foreign: true` (`nexo_mcp_divi_conditions_foreign`, con el resumen en `data`).
+ *
  * El parche validado sólo trae rutas `<ruta>.desktop.value`; se fusiona en profundidad
  * con los atributos del bloque, de modo que tablet, teléfono, hover y todo lo no tocado
  * queda igual. El contenido que ya pasó el validador se guarda con los filtros kses
@@ -79,18 +86,26 @@ final class Divi5ModuleEditor {
 	private DiviLoopSchema $loops;
 
 	/**
+	 * Esquema de las condiciones de visualización.
+	 *
+	 * @var DiviConditionsSchema
+	 */
+	private DiviConditionsSchema $conditions;
+
+	/**
 	 * Construye el editor.
 	 *
-	 * @param Settings            $settings     Configuración.
-	 * @param Divi5Adapter        $adapter      Adaptador de Divi 5.
-	 * @param BuilderBackup       $backup       Respaldos.
-	 * @param WorkingCopy         $copies       Copias de trabajo.
-	 * @param DiviTreeValidator   $validator    Validador del parche.
-	 * @param callable            $lock_check   fn( \WP_Post ): true|\WP_Error.
-	 * @param callable|null       $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
-	 * @param callable|null       $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
-	 * @param callable|null       $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
-	 * @param DiviLoopSchema|null $loops      Esquema del bucle de consulta (las pruebas inyectan tipos y términos).
+	 * @param Settings                  $settings     Configuración.
+	 * @param Divi5Adapter              $adapter      Adaptador de Divi 5.
+	 * @param BuilderBackup             $backup       Respaldos.
+	 * @param WorkingCopy               $copies       Copias de trabajo.
+	 * @param DiviTreeValidator         $validator    Validador del parche.
+	 * @param callable                  $lock_check   fn( \WP_Post ): true|\WP_Error.
+	 * @param callable|null             $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
+	 * @param callable|null             $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
+	 * @param callable|null             $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
+	 * @param DiviLoopSchema|null       $loops      Esquema del bucle de consulta (las pruebas inyectan tipos y términos).
+	 * @param DiviConditionsSchema|null $conditions Esquema de las condiciones de visualización (las pruebas inyectan roles, tipos y WooCommerce).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -102,19 +117,21 @@ final class Divi5ModuleEditor {
 		?callable $divi5_active = null,
 		?callable $saver = null,
 		?callable $presets_lock = null,
-		?DiviLoopSchema $loops = null
+		?DiviLoopSchema $loops = null,
+		?DiviConditionsSchema $conditions = null
 	) {
 		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
 		$this->validator    = $validator;
 		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 		$this->loops        = $loops ?? new DiviLoopSchema();
+		$this->conditions   = $conditions ?? new DiviConditionsSchema();
 	}
 
 	/**
 	 * Edita el módulo.
 	 *
 	 * @param \WP_Post             $post  Contenido indicado (el original o su copia).
-	 * @param array<string, mixed> $input Parámetros: `path`, `fingerprint`, `content`, `design`, `preset`, `dynamic` (`{field, source}`), `loop` (parámetros del bucle o null), `draft`.
+	 * @param array<string, mixed> $input Parámetros: `path`, `fingerprint`, `content`, `design`, `preset`, `dynamic` (`{field, source}`), `loop` (parámetros del bucle o null), `conditions` (`{match, conditions}`), `replace_foreign`, `draft`.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
@@ -212,6 +229,12 @@ final class Divi5ModuleEditor {
 
 		if ( array_key_exists( 'loop', $input ) ) {
 			return $this->prepare_loop( $blocks, $path, $block, $type, $input['loop'] );
+		}
+
+		if ( array_key_exists( 'conditions', $input ) ) {
+			$replace_foreign = isset( $input['replace_foreign'] ) && true === $input['replace_foreign'];
+
+			return $this->prepare_conditions( $blocks, $path, $block, $type, $input['conditions'], $replace_foreign );
 		}
 
 		if ( ! in_array( $type, DiviModuleCatalog::CONTENT_MODULES, true ) ) {
@@ -451,6 +474,156 @@ final class Divi5ModuleEditor {
 			'path'    => $path,
 			'extra'   => $extra,
 		);
+	}
+
+	/**
+	 * Pone o quita las condiciones de visualización de un módulo: el bloque nuevo ya serializado.
+	 *
+	 * @param array<int, array<string, mixed>> $blocks          Bloques de la página.
+	 * @param string                           $path            Ruta del módulo.
+	 * @param array<string, mixed>             $block           Bloque del módulo.
+	 * @param string                           $type            Nombre del bloque.
+	 * @param mixed                            $conditions      `{match, conditions}` del cliente.
+	 * @param bool                             $replace_foreign Si se confirma reemplazar o quitar una lista que no es del conector.
+	 *
+	 * @return array{content: string, path: string, extra: array<string, mixed>}|\WP_Error
+	 */
+	private function prepare_conditions( array $blocks, string $path, array $block, string $type, $conditions, bool $replace_foreign ) {
+		if ( ! in_array( $type, DiviConditionsSchema::MODULES, true ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_module_denied',
+				sprintf(
+					/* translators: 1: nombre del bloque, 2: módulos. */
+					__( '«%1$s» no admite condiciones de visualización. Admiten: %2$s.', 'nexo-mcp' ),
+					$type,
+					implode( ', ', DiviConditionsSchema::MODULES )
+				)
+			);
+		}
+
+		$params = $this->conditions->validate( $conditions );
+
+		if ( $params instanceof \WP_Error ) {
+			return $params;
+		}
+
+		$attrs    = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$existing = $attrs['module']['decoration']['conditions']['desktop']['value'] ?? null;
+		$replaced = null;
+
+		if ( null !== $existing && array() !== $existing ) {
+			$summary = $this->conditions->summary( $existing );
+
+			if ( ! $summary['ours'] ) {
+				if ( ! $replace_foreign ) {
+					return new \WP_Error(
+						'nexo_mcp_divi_conditions_foreign',
+						__( 'conditions: este módulo ya tiene condiciones que no son de este conector (por ejemplo hechas en el Visual Builder); reemplazarlas o quitarlas las pierde. Revisa el resumen en data.summary y, si quieres hacerlo, repite con replace_foreign: true. No se escribe nada.', 'nexo-mcp' ),
+						array(
+							'path'    => 'conditions',
+							'summary' => $summary,
+						)
+					);
+				}
+
+				$replaced = $summary;
+			}
+		}
+
+		$original = DiviTreeValidator::token_strings( $attrs, '' );
+		$removes  = array() === $params['conditions'];
+		$extra    = array(
+			'match'      => null,
+			'conditions' => array(),
+			'removed'    => true,
+		);
+
+		if ( $removes ) {
+			$attrs = self::without_conditions( $attrs );
+		} else {
+			$stored = $this->conditions->stored( $params, $existing );
+			$cursor = &$attrs;
+
+			foreach ( array( 'module', 'decoration', 'conditions', 'desktop' ) as $step ) {
+				$cursor[ $step ] = is_array( $cursor[ $step ] ?? null ) ? $cursor[ $step ] : array();
+				$cursor          = &$cursor[ $step ];
+			}
+
+			$cursor['value'] = $stored;
+			unset( $cursor );
+
+			$extra = array(
+				'match'      => $params['match'],
+				'conditions' => $stored,
+			);
+		}
+
+		if ( null !== $replaced ) {
+			$extra['replaced'] = $replaced;
+		}
+
+		// Defensa en profundidad: el bloque no gana ningún token (ni se tocan los que tenía).
+		$stray = DiviTreeValidator::stray_token_path( $attrs, '', $original );
+
+		if ( null !== $stray ) {
+			return $this->stray( $stray );
+		}
+
+		$block['attrs'] = $attrs;
+		$replaced_tree  = Divi5Tree::replace_block( $blocks, $path, $block );
+
+		if ( null === $replaced_tree ) {
+			return new \WP_Error(
+				'nexo_mcp_builder_node_missing',
+				__( 'El módulo indicado no existe en esta página.', 'nexo-mcp' )
+			);
+		}
+
+		return array(
+			'content' => serialize_blocks( $replaced_tree ),
+			'path'    => $path,
+			'extra'   => $extra,
+		);
+	}
+
+	/**
+	 * Quita `module.decoration.conditions.desktop.value` y poda los padres que quedan vacíos (`desktop`, `conditions`,
+	 * `decoration`, `module`); lo demás (otros puntos de ruptura, otra decoración) no se toca.
+	 *
+	 * @param array<string, mixed> $attrs Atributos del bloque.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function without_conditions( array $attrs ): array {
+		$desktop = $attrs['module']['decoration']['conditions']['desktop'] ?? null;
+
+		if ( ! is_array( $desktop ) ) {
+			return $attrs;
+		}
+
+		unset( $desktop['value'] );
+
+		$levels = array( 'module', 'decoration', 'conditions', 'desktop' );
+		$inner  = $desktop;
+
+		for ( $i = count( $levels ) - 1; $i >= 0; $i-- ) {
+			$holder = &$attrs;
+
+			foreach ( array_slice( $levels, 0, $i ) as $step ) {
+				$holder = &$holder[ $step ];
+			}
+
+			if ( array() === $inner ) {
+				unset( $holder[ $levels[ $i ] ] );
+			} else {
+				$holder[ $levels[ $i ] ] = $inner;
+			}
+
+			$inner = $holder;
+			unset( $holder );
+		}
+
+		return $attrs;
 	}
 
 	/**

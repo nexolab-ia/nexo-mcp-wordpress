@@ -310,7 +310,8 @@ Reglas que siempre se cumplen:
     página no se toca. `module.advanced.loop` tampoco se puede escribir. Desde 1.10.0
     el único camino que escribe un token (de la lista cerrada) o un bucle es el del
     permiso propio de abajo (`set-divi-dynamic` y `set-divi-loop`); `create-divi-page`,
-    `edit-divi-section` y `edit-divi-module` siguen rechazándolos.
+    `edit-divi-section` y `edit-divi-module` siguen rechazándolos (y, desde 1.11.0,
+    también `module.decoration.conditions`: sólo `set-divi-conditions` lo escribe).
   - **Copia de trabajo**: igual que en Elementor, una página publicada se edita en su
     copia (el original no cambia hasta publicarla con `set-content-status`),
     con respaldo y bloqueo; nunca publica. El kses del núcleo corrompe los
@@ -486,6 +487,84 @@ Reglas que siempre se cumplen:
   - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D5/D6: el visitante
     anónimo ve exactamente las entradas publicadas sin contraseña, y un bucle editado a mano
     se renderiza vacío; sin Divi 5 se saltea).
+- **Condiciones de visualización de Divi 5 (permiso propio)**: mostrar u ocultar un módulo
+  según el visitante cambia lo que ve el público, así que tienen su scope OAuth
+  `mcp:divi_conditions` (capacidad `nexo_mcp_divi_conditions`, administrador; el instalador
+  la da al subir a 1.11.0) y su interruptor `divi_conditions_tools_enabled`, **apagado por
+  defecto** (toggle sensible con confirmación, palabra «condiciones»; habilitar los
+  constructores, el contenido dinámico o el resto de Divi no lo habilita, ni al revés).
+  Escribir exige además el permiso de constructores y `edit_post` sobre la página original
+  (aunque llegue el id de la copia) y no funciona en «Solo revisar». Sin Divi 5 activo:
+  `nexo_mcp_divi5_required`.
+  - **No es control de acceso**: es presentación. Un módulo oculto no sale en el HTML, pero
+    su texto sigue en `post_content`: lo ven quienes editan (REST con `context=edit`,
+    revisiones, copias de trabajo, exportaciones, el propio MCP) y **el buscador del sitio
+    y `/wp/v2/search` lo encuentran** aunque el módulo esté oculto para quien busca. Nunca lo
+    presentes como «privado» ni «restringido»; si necesitas confidencialidad, no pongas el
+    contenido en la página. Ocultar un contenedor (sección, fila, columna) oculta todo lo que lleva dentro.
+  - `list-divi-conditions {post_id?}`: el catálogo (`types` con reglas, ajustes y valores
+    permitidos, `roles`, `post_types`, `woocommerce`, `modules`, `max_conditions`). Se lee con
+    el permiso de constructores y **no** pide el interruptor.
+  - `set-divi-conditions {id, path, fingerprint, match, conditions, replace_foreign?, draft?}`
+    **reemplaza el conjunto entero** de condiciones de un módulo (sección, fila, columna,
+    texto, título, botón, imagen, divisor, blurb, icono, video, lista de iconos o su ítem; no
+    `divi/placeholder`: `nexo_mcp_divi_module_denied`), en la copia de trabajo, con `path` y
+    `fingerprint` como `edit-divi-module`. `match` (`all` | `any`) es **obligatorio siempre,
+    también al quitar** (`conditions: []`; sin él, el esquema de entrada de la herramienta
+    rechaza la llamada y, por la vía PHP, responde `nexo_mcp_divi_conditions_invalid` con
+    `data.path` `match`) y se traduce a un único operador (AND/OR) para todas, así que no
+    hay listas mixtas, cuyo resultado en Divi depende del orden. De 0 a 5 condiciones
+    `{type, rule, …}`; el `id` de cada una es un UUID v4 que se conserva si la condición no cambia.
+    Lo que se guarda (`module.decoration.conditions.desktop.value`) lo arma el plugin; nunca
+    la cadena del cliente.
+  - **Catálogo cerrado**: `logged_in` (`logged_in`/`logged_out`), `user_role` (roles que
+    existan; rol exacto, no capacidad), `date_time` (`before`, `after`, `on_date`, `on_days`,
+    con `date` real `Y-m-d`, `time`/`from_time`/`until_time` `HH:MM`, `all_day`, `weekdays`;
+    sin repeticiones; zona horaria del sitio), `post_type` (tipos públicos), `categories` y
+    `tags` (ids de `category`/`post_tag`), `posts` (ids de contenido publicado de un tipo
+    público), `browser` y `operating_system` (por User-Agent), `url_parameter` (nombre
+    `[A-Za-z0-9_-]` ≤ 40, valor ≤ 100) y, con WooCommerce activo, `cart_contents`,
+    `product_stock` y `product_purchase`. Textos ≤ 100, hasta 20 valores por lista; roles, tipos,
+    términos, contenidos y productos deben existir. Con `match: any` no se admiten dos
+    condiciones del mismo tipo (Divi descartaría la segunda), salvo fecha/hora y parámetro de URL.
+  - **Fuera del catálogo** (el `enum` de `type` del esquema de entrada lo frena por MCP; por la vía
+    PHP, `nexo_mcp_divi_conditions_invalid` con `data.path`):
+    `customField` (lee cualquier meta, también protegida: el resultado visible sería un
+    oráculo de datos privados), `pageVisit`/`postVisit` (los contadores sólo se activan desde el
+    Visual Builder: por API no registrarían visitas), `numberOfViews` y `cookie` (los controla el
+    visitante), `author`, archivos (`categoryPage`, `tagPage`, `dateArchive`), `searchResults`
+    y repeticiones de fecha. **Dispositivo no es una condición** (S8): «oculto en teléfono,
+    tableta o escritorio» es otro atributo de Divi (`disabledOn`) que este conector aún no
+    escribe; las condiciones sólo ven navegador y sistema operativo por User-Agent, que el
+    visitante puede falsificar, igual que el parámetro de URL y las cookies.
+  - **Las hechas en el Visual Builder se conservan**: `get-page-structure` las resume en
+    `attributes.conditions` de cada módulo (`ours`, `match`, `total` y por condición `type`,
+    `operator`, `enabled`, `supported`, `summary`; de las ajenas sólo nombres, ids numéricos y
+    valores de listas cerradas, nunca textos libres). `set-divi-conditions` sobre una lista
+    que no es del conector responde `nexo_mcp_divi_conditions_foreign` con el resumen en
+    `data.summary` y no escribe; se repite con `replace_foreign: true` (la salida trae
+    `replaced`). `edit-divi-module` (contenido, diseño y presets) las conserva byte a byte;
+    `edit-divi-section` `replace` y `delete` las pierden y lo avisan con `dropped_conditions`
+    (`[{path, type, summary}]`, en orden de documento, con la ruta anterior; la escritura se
+    hace igual, y `insert` no trae la clave). `create-divi-page`, `edit-divi-section` y
+    `edit-divi-module` no las escriben: las rechazan con `nexo_mcp_divi_attr_denied`.
+    El resumen nunca lanza, sea lo que sea lo que haya guardado un tercero.
+  - **Fallan abiertas** (Divi las evalúa en el servidor, por petición): un nombre de condición que Divi no
+    conoce, ajustes mal formados, `enableCondition: off`, valores de tablet o teléfono (sólo se
+    lee `desktop`) o un filtro global `et_is_display_conditions_functionality_enabled` en
+    `false` **muestran** el módulo. Con una **caché de página completa** (plugin de caché, CDN) el
+    resultado del primer visitante se sirve a todos: excluye de la caché las páginas con condiciones por
+    sesión, rol, parámetro de URL o carrito. Un módulo oculto se renderiza igual antes de descartarse
+    (coste de bucles, shortcodes o embebidos).
+  - Errores: `nexo_mcp_divi_conditions_invalid` (con `data.path`), `nexo_mcp_divi_conditions_foreign`
+    (con `data.summary`), `nexo_mcp_divi_module_denied`, `nexo_mcp_builder_forbidden`
+    y los de `edit-divi-module` (`nexo_mcp_divi_node_changed`…).
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D7: el visitante anónimo no
+    ve el módulo con `logged_in`, con `user_role` ni con `url_parameter`; `?param=valor` muestra el
+    último y el administrador con sesión ve los dos primeros; el texto oculto sigue siendo buscable;
+    las exclusiones, la lista ajena, `dropped_conditions` y que el estado quede como estaba se comprueban
+    por la herramienta; las condiciones de WooCommerce se probaron sólo con pruebas unitarias, sin
+    productos en vivo; sin Divi 5 se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -691,7 +770,7 @@ de Divi 5 (D4) igual (SKIP sin Divi 5): enciende `divi_presets_tools_enabled` (y
 devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. La de contenido
 dinámico y bucles de Divi 5 (D5/D6) igual (SKIP sin Divi 5): enciende `divi_dynamic_tools_enabled` (y la capacidad, si falta) sólo durante la
 sección, crea entradas de prueba (publicadas, privada, con contraseña y borrador) que borra al final, comprueba como visitante anónimo lo que se ve
-y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. La de condiciones de visualización de Divi 5 (D7) igual (SKIP sin Divi 5): enciende `divi_conditions_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea una página de prueba que borra al final, comprueba como visitante anónimo qué módulos se ven y devuelve crudos los ajustes y los roles, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el

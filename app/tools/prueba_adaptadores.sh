@@ -72,6 +72,20 @@
 #    attachment, per_page 25, meta_query, bucle anidado) y quitar el token y el bucle. Se guardan crudos los ajustes, el
 #    bloqueo y los roles al empezar y se devuelven al final (también si la corrida se corta); las entradas de prueba y las
 #    páginas (con su et-cache) se borran (force).
+# 7i. Condiciones de visualización de Divi 5 (D7; sólo con Divi 5 activo, con SKIP si falta): con el interruptor
+#    divi_conditions_tools_enabled encendido sólo durante el bloque y la capacidad nexo_mcp_divi_conditions:
+#    list-divi-conditions (catálogo cerrado, sin customField; se lee también con el interruptor apagado) y una página
+#    publicada con cuatro títulos: set-divi-conditions logged_in en uno, url_parameter en otro y user_role administrator
+#    en un tercero (copia de trabajo; el original no cambia); publicada, el visitante anónimo no ve ni el de sesión ni el
+#    de rol ni el del parámetro, con ?promo=si ve el del parámetro, y con la sesión del administrador ve el de sesión y el
+#    de rol; el texto de un módulo oculto sigue siendo buscable en el sitio (no es control de acceso); get-page-structure
+#    resume las condiciones (attributes.conditions) y los demás módulos no traen la clave; rechazos sin escribir ni crear
+#    copia (customField y match faltante, que frena el esquema de entrada; fecha inexistente, interruptor
+#    apagado, edit-divi-module con module.decoration.conditions → nexo_mcp_divi_attr_denied); una lista ajena (hecha a mano) exige replace_foreign
+#    (nexo_mcp_divi_conditions_foreign) y se reemplaza con él; quitar con conditions [] vuelve a mostrar el módulo; y
+#    edit-divi-section delete devuelve dropped_conditions. Sin WooCommerce de pruebas (no se crean productos). Se guardan
+#    crudos los ajustes, la versión, el bloqueo y los roles al empezar y se devuelven al final (también si la corrida se
+#    corta); las páginas (con su et-cache) se borran (force).
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -458,6 +472,62 @@ if ( $n > 0 ) { $wpdb->update( $wpdb->posts, array( "post_content" => str_replac
 echo $n;' "$2" "$3" "$4"
 	exit 0
 fi
+# Subcomandos y función del bloque de condiciones de visualización de Divi 5 (D7): foto cruda de lo que se toca (ajustes,
+# versión, bloqueo y roles: la capacidad nexo_mcp_divi_conditions vive en los roles; la versión cambia si la corrida
+# dispara la actualización del plugin, que concede la capacidad).
+#   --divi-condiciones-foto / -huella / -restaurar    como los de D5/D6
+#   --divi-condiciones-como-admin <id> [consulta]     HTML de la página como el administrador con sesión (la cookie se
+#                                                     crea y se destruye en la misma llamada)
+#   --divi-condiciones-buscar <texto>                 HTML de la búsqueda del sitio como visitante anónimo
+divi_condiciones_opciones='array( "nexo_mcp_settings", "nexo_mcp_version", "nexo_mcp_lock_0", $GLOBALS["wpdb"]->prefix . "user_roles" )'
+restaurar_divi_condiciones() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_condiciones_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+foreach ( $foto as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+if ( class_exists( "ET_Core_PageResource" ) ) { ET_Core_PageResource::remove_static_resources( "all", "all", true ); }
+delete_option( "nexo_prueba_divi_condiciones_foto" );
+echo "restaurado";'
+}
+if [ "${1:-}" = "--divi-condiciones-foto" ]; then
+	php_wp '
+global $wpdb;
+$foto = array();
+foreach ( '"$divi_condiciones_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$foto[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+update_option( "nexo_prueba_divi_condiciones_foto", $foto, false );
+echo "foto de " . count( $foto ) . " opciones";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-condiciones-huella" ]; then
+	php_wpr '
+global $wpdb;
+$crudo = static function ( $n ) use ( $wpdb ) { return $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $n ) ); };
+$set = $crudo( "nexo_mcp_settings" ); $roles = $crudo( $wpdb->prefix . "user_roles" ); $ver = $crudo( "nexo_mcp_version" );
+echo "ajustes=" . ( null === $set ? "sin" : md5( $set ) ) . " roles=" . ( null === $roles ? "sin" : md5( $roles ) ) . " version=" . ( null === $ver ? "sin" : $ver ) . " bloqueo=" . ( null === $crudo( "nexo_mcp_lock_0" ) ? "no" : "si" );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-condiciones-restaurar" ]; then restaurar_divi_condiciones; exit 0; fi
+if [ "${1:-}" = "--divi-condiciones-como-admin" ]; then
+	cookie="$(php_wpr '$u = get_user_by( "login", "admin" ); $vence = time() + 600; $t = WP_Session_Tokens::get_instance( $u->ID )->create( $vence ); update_option( "nexo_prueba_divi_condiciones_token", $t, false ); echo LOGGED_IN_COOKIE . "=" . rawurlencode( wp_generate_auth_cookie( $u->ID, $vence, "logged_in", $t ) );')" || exit 1
+	[ -n "$cookie" ] || exit 1
+	curl -sL --max-time 60 -H "Cookie: $cookie" "http://localhost:8080/?page_id=$2${3:-}"
+	php_wp '$u = get_user_by( "login", "admin" ); $t = (string) get_option( "nexo_prueba_divi_condiciones_token", "" ); if ( "" !== $t ) { WP_Session_Tokens::get_instance( $u->ID )->destroy( $t ); } delete_option( "nexo_prueba_divi_condiciones_token" );' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-condiciones-buscar" ]; then
+	curl -sL --max-time 60 --get --data-urlencode "s=$2" "http://localhost:8080/"
+	exit 0
+fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -562,6 +632,8 @@ divi_presets_foto_tomada=""
 divi_presets_cap_agregada=""
 divi_dinamico_foto_tomada=""
 divi_dinamico_cap_agregada=""
+divi_condiciones_foto_tomada=""
+divi_condiciones_cap_agregada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -695,6 +767,13 @@ cleanup() {
 		echo "Contenido dinámico de Divi: $(restaurar_divi_dinamico)"
 		divi_dinamico_foto_tomada=""
 		divi_dinamico_cap_agregada=""
+	fi
+	# Divi 5, condiciones de visualización: opciones crudas (ajustes, versión, bloqueo, roles) y la sesión de prueba.
+	if [ -n "$divi_condiciones_foto_tomada" ]; then
+		php_wp 'delete_option( "nexo_prueba_divi_condiciones_token" );' >/dev/null
+		echo "Condiciones de Divi: $(restaurar_divi_condiciones)"
+		divi_condiciones_foto_tomada=""
+		divi_condiciones_cap_agregada=""
 	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
@@ -2963,6 +3042,264 @@ if [ -n "$divi_tema_previo" ]; then
 	else falla "no se pudo restaurar el tema $divi_tema_previo"; fi
 fi
 echo
+echo "### Condiciones de visualización de Divi 5 (D7: list-divi-conditions, set-divi-conditions, get-page-structure, dropped_conditions)"
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba de las condiciones de visualización de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto cruda de lo que se toca (la limpieza la devuelve también si la corrida se corta).
+	tools/prueba_adaptadores.sh --divi-condiciones-foto
+	divi_condiciones_foto_tomada=1
+	divi_condiciones_huella_inicial="$(tools/prueba_adaptadores.sh --divi-condiciones-huella)"
+	echo "Huella cruda inicial: $divi_condiciones_huella_inicial"
+	# La capacidad nexo_mcp_divi_conditions la da el instalador al subir de versión; si falta se concede (los roles se devuelven crudos).
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_conditions" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_conditions" );' >/dev/null
+		divi_condiciones_cap_agregada=1
+		echo "Capacidad nexo_mcp_divi_conditions concedida al administrador (los roles se devuelven crudos al final)."
+	fi
+	# Interruptor apagado por omisión: sólo durante el bloque (se enciende antes de conectar para que la lista de herramientas lo vea).
+	tools/prueba_adaptadores.sh --ajuste divi_conditions_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import html as htmllib, importlib.util, json, pathlib, re, subprocess, sys, time, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+BASE = "http://localhost:8080"
+MARCAS = {k: f"{k}MK{suffix}" for k in ("LOGIN", "PARAM", "SIEMPRE", "ROL")}
+RUTAS = {"LOGIN": "0.0.0.0.0", "PARAM": "0.0.0.0.1", "SIEMPRE": "0.0.0.0.2", "ROL": "0.0.0.0.3"}
+TITULO = f"Prueba condiciones divi5-mcp-{suffix}"
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=180).stdout.strip()
+
+def huella():
+    return script("--divi-condiciones-huella")
+
+def anonimo(url):
+    """GET sin cookies ni cabeceras de sesión: lo que ve un visitante."""
+    with urllib.request.urlopen(url, timeout=30) as r:
+        assert r.status == 200, r.status
+        return r.read().decode("utf-8", "replace")
+
+def titulos(html):
+    """Texto de cada título de módulo (h1-h6 con la clase et_pb_module_header)."""
+    return [htmllib.unescape(re.sub(r"<[^>]+>", "", t)).strip() for t in re.findall(r"<h[1-6][^>]*et_pb_module_header[^>]*>(.*?)</h[1-6]>", html, re.S)]
+
+def como_anonimo(i, extra=""):
+    return titulos(anonimo(f"{BASE}/?page_id={i}{extra}"))
+
+def como_admin(i, extra=""):
+    return titulos(script("--divi-condiciones-como-admin", i, extra))
+
+def valor(v):
+    return {"desktop": {"value": v}}
+
+def estructura(i):
+    _, d = cli.ok("get-page-structure", {"id": i})
+    assert d["builder"] == "divi5", d.get("builder")
+    return {n["id"]: n for n in d["nodes"]}
+
+def huella_nodo(i, ruta):
+    return estructura(i)[ruta]["attributes"]["fingerprint"]
+
+def poner(pagina, modulo, condiciones, **extra):
+    ruta = RUTAS[modulo]
+    return cli.call("set-divi-conditions", {"id": pagina, "path": ruta, "fingerprint": huella_nodo(pagina, ruta), "match": "all", "conditions": condiciones, **extra})
+
+def publicar(copia, original):
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (original, copia), m
+    time.sleep(1.2)  # Divi regenera su CSS y sus cachés con la marca de un segundo: la primera visita llega después
+
+st = {}
+LOGUEADO = {"type": "logged_in", "rule": "logged_in"}
+PARAMETRO = {"type": "url_parameter", "name": "promo", "rule": "equals", "value": "si"}
+ROL = {"type": "user_role", "rule": "is", "roles": ["administrator"]}
+
+def preparar():
+    cabeza = lambda k: {"type": "divi/heading", "attrs": {"title": {"innerContent": valor(MARCAS[k])}}}
+    seccion = {"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": [cabeza(k) for k in ("LOGIN", "PARAM", "SIEMPRE", "ROL")]}]}]}
+    _, d = cli.ok("create-divi-page", {"title": TITULO, "sections": [seccion]})
+    st["p"] = d["id"]
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    assert script("--estado", d["id"]) == "publish"
+    st["base"] = script("--contenido", d["id"])
+    st["paginas"] = int(script("--contar-paginas"))
+    assert "conditions" not in st["base"] and "conditionName" not in st["base"]
+    assert como_anonimo(d["id"]) == [MARCAS[k] for k in ("LOGIN", "PARAM", "SIEMPRE", "ROL")], como_anonimo(d["id"])
+    for k, r in RUTAS.items():
+        assert "conditions" not in estructura(d["id"])[r]["attributes"], k
+    st["huella0"] = huella()
+
+def listar():
+    _, d = cli.ok("list-divi-conditions", {})
+    tipos = {t["type"]: t for t in d["types"]}
+    esperados = {"logged_in", "user_role", "date_time", "post_type", "categories", "tags", "posts", "browser", "operating_system", "url_parameter", "cart_contents", "product_stock", "product_purchase"}
+    assert set(tipos) == esperados, sorted(set(tipos) ^ esperados)
+    assert not [t for t in tipos if t.lower() in ("customfield", "cookie", "pagevisit", "numberofviews", "device")], list(tipos)
+    assert d["max_conditions"] == 5 and "divi/text" in d["modules"] and "divi/placeholder" not in d["modules"], (d["max_conditions"], d["modules"])
+    assert "administrator" in [r["slug"] for r in d["roles"]] and "page" in [t["name"] for t in d["post_types"]], d["roles"]
+    for t in ("cart_contents", "product_stock", "product_purchase"):
+        assert tipos[t]["available"] is bool(d["woocommerce"]), (t, tipos[t]["available"], d["woocommerce"])
+    assert set(tipos["logged_in"]["rules"]) == {"logged_in", "logged_out"}, tipos["logged_in"]["rules"]
+    _, e = cli.ok("list-divi-conditions", {"post_id": st["p"]})
+    assert e["post_id"] == st["p"] and e["post_type"] == "page", {k: e.get(k) for k in ("post_id", "post_type")}
+
+def sin_escribir(nombre, llamar, esperado):
+    def fn():
+        antes, paginas, contenido = huella(), script("--contar-paginas"), script("--contenido", st["p"])
+        es_error, texto, _ = llamar()
+        assert es_error, "debía rechazarse"
+        for e in ([esperado] if isinstance(esperado, str) else esperado):
+            assert e in texto, f"falta «{e}» en: {texto[:500]!r}"
+        assert huella() == antes, "cambió lo guardado (ajustes, versión, bloqueo o roles)"
+        assert script("--contar-paginas") == paginas, "cambió la cantidad de páginas (¿copia?)"
+        assert script("--contenido", st["p"]) == contenido, "cambió el original"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+def interruptor_apagado():
+    p = st["p"]
+    script("--ajuste", "divi_conditions_tools_enabled", "false")
+    try:
+        antes, paginas = huella(), script("--contar-paginas")
+        es_error, texto, _ = poner(p, "SIEMPRE", [LOGUEADO])
+        assert es_error, f"con el interruptor apagado debía rechazarse: {texto[:300]}"
+        assert huella() == antes and script("--contar-paginas") == paginas and script("--contenido", p) == st["base"], "cambió algo"
+        _, listado = cli.ok("list-divi-conditions", {})  # leer el catálogo no pide el interruptor
+        assert listado["types"]
+    finally:
+        script("--ajuste", "divi_conditions_tools_enabled", "true")
+
+def poner_las_tres():
+    p = st["p"]
+    for modulo, cond in (("LOGIN", LOGUEADO), ("PARAM", PARAMETRO), ("ROL", ROL)):
+        _, d = cli.ok("set-divi-conditions", {"id": p, "path": RUTAS[modulo], "fingerprint": huella_nodo(p, RUTAS[modulo]), "match": "all", "conditions": [cond]})
+        assert d["draft_of"] == p and d["id"] != p and d["path"] == RUTAS[modulo] and d["match"] == "all" and len(d["conditions"]) == 1, d
+        st["copia"] = d["id"]
+        assert script("--contenido", p) == st["base"], f"{modulo}: el original cambió"
+    assert int(script("--contar-paginas")) == st["paginas"] + 1, "debía nacer una sola copia"
+    crudo = script("--contenido", st["copia"])
+    for nombre in ('"conditionName":"loggedInStatus"', '"conditionName":"urlParameter"', '"conditionName":"userRole"', '"enableCondition":"on"', '"operator":"AND"'):
+        assert nombre in crudo, f"falta {nombre} en la copia"
+    assert crudo.count('"conditionName"') == 3, "sólo las tres condiciones pedidas"
+    assert como_anonimo(p) == [MARCAS[k] for k in ("LOGIN", "PARAM", "SIEMPRE", "ROL")], "el visitante aún debía ver el original sin condiciones"
+
+def resumen_de_lectura():
+    n = estructura(st["copia"])
+    c = n[RUTAS["LOGIN"]]["attributes"]["conditions"]
+    assert c["ours"] is True and c["match"] == "all" and c["total"] == 1, c
+    assert c["conditions"][0]["type"] == "loggedInStatus" and c["conditions"][0]["supported"] is True and c["conditions"][0]["enabled"] is True, c
+    assert n[RUTAS["PARAM"]]["attributes"]["conditions"]["conditions"][0]["type"] == "urlParameter"
+    assert n[RUTAS["ROL"]]["attributes"]["conditions"]["conditions"][0]["type"] == "userRole"
+    assert "conditions" not in n[RUTAS["SIEMPRE"]]["attributes"], "el módulo sin condiciones no trae la clave"
+    assert "conditionName" not in json.dumps(n), "la lectura no debe devolver el valor crudo"
+
+def publicar_y_ver():
+    p = st["p"]
+    publicar(st["copia"], p)
+    st["paginas"] = int(script("--contar-paginas"))
+    anon = como_anonimo(p)
+    assert anon == [MARCAS["SIEMPRE"]], f"anónimo: {anon}"
+    assert como_anonimo(p, "&promo=si") == [MARCAS["PARAM"], MARCAS["SIEMPRE"]], como_anonimo(p, "&promo=si")
+    assert como_anonimo(p, "&promo=no") == [MARCAS["SIEMPRE"]], "otro valor del parámetro no debía mostrarlo"
+    html = anonimo(f"{BASE}/?page_id={p}")
+    for k in ("LOGIN", "PARAM", "ROL"):
+        assert MARCAS[k] not in html, f"el HTML del anónimo trae el texto de {k}"
+    admin = como_admin(p)
+    assert admin == [MARCAS["LOGIN"], MARCAS["SIEMPRE"], MARCAS["ROL"]], f"administrador: {admin}"
+    assert como_admin(p, "&promo=si") == [MARCAS[k] for k in ("LOGIN", "PARAM", "SIEMPRE", "ROL")], como_admin(p, "&promo=si")
+    st["c1"] = script("--contenido", p)
+
+def texto_oculto_buscable():
+    # No es control de acceso: el texto de un módulo oculto sigue en post_content y el buscador del sitio lo encuentra.
+    # El enlace de la página también sale en menús y widgets: se compara contra una búsqueda que no encuentra nada.
+    enlace = f"prueba-condiciones-divi5-mcp-{suffix}"
+    con_texto = script("--divi-condiciones-buscar", MARCAS["LOGIN"]).count(enlace)
+    sin_texto = script("--divi-condiciones-buscar", f"NOEXISTE{suffix}").count(enlace)
+    assert con_texto > sin_texto, f"la búsqueda no devolvió la página por el texto de un módulo oculto ({con_texto} vs {sin_texto})"
+    assert MARCAS["LOGIN"] not in anonimo(f"{BASE}/?page_id={st['p']}"), "pero el HTML de la página no lo muestra"
+
+def foraneas():
+    p = st["p"]
+    # Una lista que no es del conector (como la del Visual Builder): se cambia el nombre de la condición a mano.
+    assert script("--divi-dinamico-reemplazar", p, '"conditionName":"loggedInStatus"', '"conditionName":"customField"') == "1"
+    st["c2"] = script("--contenido", p)
+    n = estructura(p)[RUTAS["LOGIN"]]["attributes"]["conditions"]
+    assert n["ours"] is False and n["conditions"][0]["type"] == "customField" and n["conditions"][0]["supported"] is False, n
+    antes, paginas = huella(), script("--contar-paginas")
+    es_error, texto, datos = poner(p, "LOGIN", [LOGUEADO])
+    assert es_error and "ya tiene condiciones que no son de este conector" in texto and "replace_foreign" in texto, texto[:500]
+    assert huella() == antes and script("--contar-paginas") == paginas and script("--contenido", p) == st["c2"], "se escribió sin confirmar"
+    _, d = cli.ok("set-divi-conditions", {"id": p, "path": RUTAS["LOGIN"], "fingerprint": huella_nodo(p, RUTAS["LOGIN"]), "match": "all", "conditions": [LOGUEADO], "replace_foreign": True})
+    assert d["draft_of"] == p and d["replaced"]["conditions"][0]["type"] == "customField", d
+    crudo = script("--contenido", d["id"])
+    assert '"conditionName":"loggedInStatus"' in crudo and "customField" not in crudo, "la lista ajena no se reemplazó"
+    publicar(d["id"], p)
+    assert como_anonimo(p) == [MARCAS["SIEMPRE"]] and MARCAS["LOGIN"] in como_admin(p)
+
+def quitar():
+    p = st["p"]
+    _, d = cli.ok("set-divi-conditions", {"id": p, "path": RUTAS["LOGIN"], "fingerprint": huella_nodo(p, RUTAS["LOGIN"]), "match": "all", "conditions": []})
+    assert d["removed"] is True and d["draft_of"] == p, d
+    publicar(d["id"], p)
+    assert como_anonimo(p) == [MARCAS["LOGIN"], MARCAS["SIEMPRE"]], como_anonimo(p)
+    assert "conditions" not in estructura(p)[RUTAS["LOGIN"]]["attributes"]
+
+def dropped():
+    p = st["p"]
+    ruta = RUTAS["PARAM"]
+    _, d = cli.ok("edit-divi-section", {"id": p, "operation": "delete", "path": ruta, "fingerprint": huella_nodo(p, ruta)})
+    assert d["draft_of"] == p, d
+    assert len(d["dropped_conditions"]) == 1, d["dropped_conditions"]
+    x = d["dropped_conditions"][0]
+    assert x["path"] == ruta and x["type"] == "divi/heading" and x["summary"]["ours"] is True and x["summary"]["conditions"][0]["type"] == "urlParameter", x
+    assert "promo" in x["summary"]["conditions"][0]["summary"], x
+    assert MARCAS["PARAM"] not in script("--contenido", d["id"]), "la escritura se hizo igual"
+
+comprobar("página Divi 5 publicada con cuatro títulos y sin condiciones: el visitante los ve todos y la lectura no trae conditions", preparar)
+if "huella0" in st:
+    comprobar("list-divi-conditions: catálogo cerrado de 13 tipos sin customField, cookie, visitas ni dispositivo; módulos, roles, tipos y WooCommerce", listar)
+    p = st["p"]
+    sin_escribir("customField (fuera del catálogo; lo rechaza el esquema de entrada de la herramienta)", lambda: poner(p, "SIEMPRE", [{"type": "customField", "rule": "is"}]), "input[conditions][0][type]")
+    sin_escribir("fecha inexistente (2020-02-31) → nexo_mcp_divi_conditions_invalid", lambda: poner(p, "SIEMPRE", [{"type": "date_time", "rule": "after", "date": "2020-02-31"}]), "conditions.0.date")
+    sin_escribir("match ausente (también obligatorio al quitar; lo rechaza el esquema de entrada)", lambda: cli.call("set-divi-conditions", {"id": p, "path": RUTAS["SIEMPRE"], "fingerprint": huella_nodo(p, RUTAS["SIEMPRE"]), "conditions": []}), "match es una propiedad obligatoria")
+    sin_escribir("edit-divi-module con module.decoration.conditions → nexo_mcp_divi_attr_denied", lambda: cli.call("edit-divi-module", {"id": p, "path": RUTAS["SIEMPRE"], "fingerprint": huella_nodo(p, RUTAS["SIEMPRE"]), "design": {"module": {"decoration": {"conditions": valor([{"id": "11111111-1111-4111-8111-111111111111", "conditionName": "loggedInStatus", "conditionSettings": {"enableCondition": "on", "displayRule": "loggedIn"}, "operator": "AND"}])}}}}), "no está en la lista admitida")
+    comprobar("con el interruptor divi_conditions_tools_enabled apagado set-divi-conditions se rechaza sin escribir y list-divi-conditions sigue disponible", interruptor_apagado)
+    comprobar("set-divi-conditions logged_in, url_parameter y user_role en tres títulos: una sola copia, el original no cambia y la copia lleva sólo las tres condiciones del esquema", poner_las_tres)
+if "copia" in st:
+    comprobar("get-page-structure resume las condiciones (attributes.conditions) sin el valor crudo y los demás módulos no traen la clave", resumen_de_lectura)
+    comprobar("publicada: el anónimo no ve los de sesión, parámetro ni rol; con ?promo=si ve el del parámetro; el administrador con sesión ve el de sesión y el de rol", publicar_y_ver)
+if "c1" in st:
+    comprobar("no es control de acceso: la búsqueda del sitio encuentra la página por el texto de un módulo oculto (y el HTML no lo muestra)", texto_oculto_buscable)
+    comprobar("lista ajena (customField hecha a mano): lectura ours=false, sin replace_foreign → nexo_mcp_divi_conditions_foreign sin escribir, con replace_foreign se reemplaza (replaced)", foraneas)
+    comprobar("conditions [] quita las condiciones: removed y el anónimo vuelve a ver el módulo", quitar)
+    comprobar("edit-divi-section delete de un módulo con condiciones devuelve dropped_conditions (ruta, tipo y resumen) y borra igual", dropped)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de las condiciones de visualización de Divi 5 (D7) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de las condiciones de visualización de Divi 5 (D7) tuvo comprobaciones fallidas"
+	echo "Condiciones de Divi: $(restaurar_divi_condiciones)"
+	divi_condiciones_foto_tomada=""
+	divi_condiciones_cap_agregada=""
+	check_eq "Divi D7: lo guardado quedó byte a byte como al empezar (ajustes, versión, roles, bloqueo)" "$divi_condiciones_huella_inicial" "$(tools/prueba_adaptadores.sh --divi-condiciones-huella)"
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+fi
+
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
 # Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page
 # con campos distintos (ninguna edición puede perderse) y 5 edit-elementor-section que insertan

@@ -180,6 +180,22 @@ final class PermissionPolicy {
 	}
 
 	/**
+	 * Comprueba si esta solicitud puede escribir condiciones de visualización de Divi 5 en una página.
+	 *
+	 * Como `can_write_divi_dynamic`: módulo de constructores y `edit_post` sobre el original (aunque llegue
+	 * el id de su copia de trabajo) Y la capacidad `nexo_mcp_divi_conditions` con su interruptor
+	 * `divi_conditions_tools_enabled` (y su scope en el token). No depende del interruptor dinámico.
+	 *
+	 * @param int $post_id Página (o su copia de trabajo).
+	 */
+	public function can_write_divi_conditions( int $post_id ): bool {
+		$original = WorkingCopy::original_id_for( $post_id );
+
+		return $this->can_module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', $original )
+			&& $this->can_module_write( 'divi_conditions_tools_enabled', Capabilities::DIVI_CONDITIONS, 'edit_post', $original );
+	}
+
+	/**
 	 * Comprueba una acción destructiva separada.
 	 *
 	 * @param string $wordpress_capability Capacidad nativa.
