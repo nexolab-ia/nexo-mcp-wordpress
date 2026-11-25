@@ -226,4 +226,42 @@ final class DiviDynamicLoopSourcesTest extends NexoTestCase {
 		$this->assertTrue( DiviDynamicCatalog::loop_allows( 'loop_product_sku', 'product' ) );
 		$this->assertFalse( DiviDynamicCatalog::loop_allows( 'loop_user_email', 'post' ) );
 	}
+
+	public function test_a_page_source_inside_a_loop_validates_against_the_pages_taxonomies_not_the_loops(): void {
+		// La página es una entrada (category, post_tag); el bucle es de páginas (sin taxonomías) o de productos (product_cat).
+		$catalog = new DiviDynamicCatalog(
+			static fn(): bool => true,
+			static fn(): array => array(
+				'post_categories' => array( 'type' => 'text' ),
+				'loop_post_terms' => array( 'type' => 'text' ),
+			),
+			static fn(): array => array(),
+			static fn(): string => 'post',
+			static fn( string $type ): array => array( 'post' => array( 'category', 'post_tag' ), 'product' => array( 'product_cat' ), 'page' => array() )[ $type ] ?? array()
+		);
+
+		foreach ( array( null, 'page', 'product', 'post' ) as $loop_type ) {
+			$ok = $catalog->validate_token( $this->token( 'post_categories', '{"category_type":"category"}' ), 'text', self::PAGE, $loop_type );
+			$this->assertIsString( $ok, (string) $loop_type );
+			$this->assertStringContainsString( '"category_type":"category"', $ok );
+
+			$bad = $catalog->validate_token( $this->token( 'post_categories', '{"category_type":"product_cat"}' ), 'text', self::PAGE, $loop_type );
+			$this->assertError( 'nexo_mcp_divi_dynamic_invalid', $bad, 'category_type' );
+		}
+
+		// El elemento del bucle sigue usando las taxonomías del tipo del bucle.
+		$this->assertIsString( $catalog->validate_token( $this->token( 'loop_post_terms', '{"taxonomy_type":"product_cat"}' ), 'text', self::PAGE, 'product' ) );
+		$this->assertError( 'nexo_mcp_divi_dynamic_invalid', $catalog->validate_token( $this->token( 'loop_post_terms', '{"taxonomy_type":"category"}' ), 'text', self::PAGE, 'product' ), 'taxonomy_type' );
+	}
+
+	public function test_loop_token_names_decodes_the_token_before_reading_the_name(): void {
+		$escaped = '$variable({"type":"content","value":{"name":"\\u006coop_user_email","settings":{}}})$';
+
+		$this->assertSame( array( 'loop_user_email' ), DiviDynamicCatalog::loop_token_names( $escaped ) );
+		$this->assertSame( array( 'loop_user_email', 'loop_post_title' ), DiviDynamicCatalog::loop_token_names( 'a' . $escaped . 'b' . $this->token( 'loop_post_title' ) . $escaped ) );
+		$this->assertSame( array(), DiviDynamicCatalog::loop_token_names( '$variable({"type":"content","value":{"name":"\\u0070ost_title","settings":{}}})$' ) );
+		// Un nombre en mayúsculas o un token mal formado que menciona un loop_* se sigue contando (falla cerrado).
+		$this->assertSame( array( 'LOOP_USER_EMAIL' ), DiviDynamicCatalog::loop_token_names( $this->token( 'LOOP_USER_EMAIL' ) ) );
+		$this->assertSame( array( 'loop_user_email' ), DiviDynamicCatalog::loop_token_names( '$variable({"name":"loop_user_email"})$' ) );
+	}
 }

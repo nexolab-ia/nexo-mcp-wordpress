@@ -438,11 +438,41 @@ final class DiviDynamicCatalog {
 	 * @return array<int, string>
 	 */
 	public static function loop_token_names( string $value ): array {
-		if ( ! DiviTreeValidator::has_dynamic_token( $value ) || false === preg_match_all( '/loop_[a-z0-9_]+/i', $value, $match ) ) {
+		if ( ! DiviTreeValidator::has_dynamic_token( $value ) ) {
 			return array();
 		}
 
-		return array_values( array_unique( $match[0] ) );
+		$found = array();
+		$rest  = $value;
+
+		// Cada token se decodifica con el mismo análisis que usa la validación (así `"\u006coop_user_email"` es `loop_user_email`).
+		if ( false !== preg_match_all( '/\$variable\(\{.*?\}\)\$/s', $value, $tokens ) ) {
+			foreach ( $tokens[0] as $token ) {
+				$parsed = self::parse( $token );
+				$names  = null !== $parsed ? array( $parsed[0] ) : self::raw_loop_names( $token );
+				$rest   = str_replace( $token, '', $rest );
+
+				foreach ( $names as $name ) {
+					if ( 0 === stripos( $name, 'loop_' ) ) {
+						$found[] = $name;
+					}
+				}
+			}
+		}
+
+		// Lo que quede (formas codificadas o rotas que igualmente cuentan como token): se lee el texto, sin decodificar.
+		return array_values( array_unique( array_merge( $found, self::raw_loop_names( $rest ) ) ) );
+	}
+
+	/**
+	 * Nombres `loop_<algo>` que aparecen literalmente en un texto.
+	 *
+	 * @param string $text Texto.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function raw_loop_names( string $text ): array {
+		return false !== preg_match_all( '/loop_[a-z0-9_]+/i', $text, $match ) ? $match[0] : array();
 	}
 
 	/**
@@ -626,7 +656,7 @@ final class DiviDynamicCatalog {
 			return $this->denied( $reason );
 		}
 
-		$clean = $this->normalize_settings( $name, $source['category'], $this->schema( $source['settings'], $post_id, $loop_type ), $settings );
+		$clean = $this->normalize_settings( $name, $source['category'], $this->schema( $source['settings'], $post_id, isset( self::LOOP_SOURCES[ $name ] ) ? $loop_type : null ), $settings );
 
 		if ( $clean instanceof \WP_Error ) {
 			return $clean;

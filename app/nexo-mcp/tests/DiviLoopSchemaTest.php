@@ -249,8 +249,21 @@ final class DiviLoopSchemaTest extends NexoTestCase {
 	}
 
 	public function test_terms_are_capped_and_duplicates_are_collapsed(): void {
-		$many = $this->schema()->validate( $this->loop( array( 'terms' => array( 'category' => range( 100, 121 ) ) ) ) );
-		$this->assertInstanceOf( \WP_Error::class, $many );
+		// Términos que SÍ existen (100-130): lo que frena es el tope, no la existencia.
+		$schema = new DiviLoopSchema(
+			static fn( string $type ): ?array => array( 'public' => true, 'label' => 'Entradas' ),
+			static fn( string $type ): array => array( 'category' ),
+			static fn( int $id, string $taxonomy ): ?string => $id >= 100 && $id <= 130 ? 'Cat ' . $id : null
+		);
+
+		$twenty = $schema->validate( $this->loop( array( 'terms' => array( 'category' => range( 100, 119 ) ) ) ) );
+		$this->assertIsArray( $twenty );
+		$this->assertCount( 20, $twenty['terms']['category'] );
+
+		$this->assertInvalid( $schema->validate( $this->loop( array( 'terms' => array( 'category' => range( 100, 120 ) ) ) ) ), 'loop.terms.category', 'hasta 20 términos' );
+		$this->assertInvalid( $schema->validate( $this->loop( array( 'terms' => array( 'category' => range( 100, 130 ) ) ) ) ), 'loop.terms.category', 'hasta 20 términos' );
+		// Los repetidos no cuentan: 21 entradas con un duplicado son 20 ids.
+		$this->assertIsArray( $schema->validate( $this->loop( array( 'terms' => array( 'category' => array_merge( range( 100, 119 ), array( 100 ) ) ) ) ) ) );
 
 		$params = $this->schema()->validate( $this->loop( array( 'terms' => array( 'category' => array( 3, 3, 4 ) ) ) ) );
 		$this->assertIsArray( $params );
