@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.10.0
+Stable tag: 1.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.11.0 =
+* Nuevo: condiciones de visualización de Divi 5 con scope propio `mcp:divi_conditions` (capacidad `nexo_mcp_divi_conditions` que el instalador da al administrador al actualizar a 1.11.0; interruptor `divi_conditions_tools_enabled` apagado por defecto): `list-divi-conditions` (catálogo; se lee con el permiso de constructores y no pide el interruptor) y `set-divi-conditions` (reemplaza el conjunto entero de condiciones de un módulo, en la copia de trabajo; `match` all|any es obligatorio también al quitar con `conditions: []`). Escribir exige además el permiso de constructores y `edit_post` sobre la página.
+* Catálogo cerrado: sesión, rol, fecha y hora (antes, después, fecha o días concretos), tipo de contenido, categorías y etiquetas, contenidos concretos, navegador, sistema operativo, parámetro de URL y, con WooCommerce, carrito, stock y compras; hasta 5 por módulo y un solo operador (AND/OR) para todas. Fuera: `customField`, `cookie`, visitas (`pageVisit`, `numberOfViews`), autor, archivos y el dispositivo (`disabledOn`, que es otra opción de Divi y queda para una tarea aparte). Errores: `nexo_mcp_divi_conditions_invalid` (con `data.path`), `nexo_mcp_divi_conditions_foreign` (lista del Visual Builder; se repite con `replace_foreign: true`) y `nexo_mcp_divi_module_denied`.
+* Las condiciones hechas en el Visual Builder se conservan: `get-page-structure` las resume en `attributes.conditions` (sin textos libres), `edit-divi-module` y los presets no las tocan y `edit-divi-section` replace/delete devuelve `dropped_conditions` con lo que se pierde en vez de perderlo en silencio. `create-divi-page`, `edit-divi-section` y `edit-divi-module` siguen sin escribirlas (`nexo_mcp_divi_attr_denied`).
+* Importante: las condiciones son presentación, no control de acceso. El texto de un módulo oculto sigue en la página (lo ven quienes la editan) y el buscador del sitio lo encuentra. Fallan abiertas (si Divi no entiende una condición, muestra el módulo), navegador, sistema y parámetro de URL los controla el visitante, y una caché de página completa sirve a todos el resultado del primer visitante.
+* El resumen de condiciones que lee `get-page-structure` tolera valores malformados guardados por terceros: nunca rompe la lectura (la condición sale como no soportada).
 
 = 1.10.0 =
 * Nuevo: contenido dinámico y bucles de consulta de Divi 5 con scope propio `mcp:divi_dynamic` (capacidad `nexo_mcp_divi_dynamic` que el instalador da al administrador al actualizar a 1.10.0; interruptor `divi_dynamic_tools_enabled` apagado por defecto): `list-divi-dynamic-sources` (se lee con el permiso de constructores y no pide el interruptor), `set-divi-dynamic` (pone o quita un token en un campo de un módulo, en la copia de trabajo) y `set-divi-loop` (activa, cambia o quita el bucle de un módulo). Escribir exige además el permiso de constructores y `edit_post` sobre la página.

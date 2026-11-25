@@ -260,6 +260,20 @@ final class DiviConditionsPermissionTest extends NexoTestCase {
 		}
 	}
 
+	public function test_the_released_version_is_newer_than_1_10_0_so_installed_sites_reach_the_grant(): void {
+		$plugin = (string) file_get_contents( dirname( __DIR__ ) . '/nexo-mcp.php' );
+		$readme = (string) file_get_contents( dirname( __DIR__ ) . '/readme.txt' );
+
+		$this->assertSame( 1, preg_match( '/^ \* Version:\s+(\S+)$/m', $plugin, $header ) );
+		$this->assertSame( 1, preg_match( "/define\( 'NEXO_MCP_VERSION', '([^']+)' \)/", $plugin, $constant ) );
+		$this->assertSame( 1, preg_match( '/^Stable tag:\s+(\S+)$/m', $readme, $stable ) );
+
+		$this->assertSame( $header[1], $constant[1], 'cabecera y constante coinciden' );
+		$this->assertSame( $header[1], $stable[1], 'cabecera y Stable tag coinciden' );
+		$this->assertTrue( version_compare( $header[1], '1.10.0', '>' ), 'maybe_upgrade sólo concede la capacidad si la versión cambia respecto a la instalada (1.10.0)' );
+		$this->assertStringContainsString( '= ' . $header[1] . ' =', $readme, 'el changelog documenta esta versión' );
+	}
+
 	private function input_tag( string $html ): string {
 		$start = (int) strpos( $html, 'name="nexo_mcp_settings[' . self::SWITCH . ']"' );
 		$from  = (int) strrpos( substr( $html, 0, $start ), '<input' );
