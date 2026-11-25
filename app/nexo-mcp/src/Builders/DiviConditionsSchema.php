@@ -507,6 +507,22 @@ final class DiviConditionsSchema {
 	}
 
 	/**
+	 * Las tablas cerradas del esquema (para el catálogo de {@see DiviConditionsCatalog}): reglas de entrada por tipo,
+	 * claves por tipo y listas de navegadores, sistemas y días.
+	 *
+	 * @return array{rules: array<string, array<string, string>>, keys: array<string, array<int, string>>, browsers: array<int, string>, systems: array<int, string>, weekdays: array<int, string>}
+	 */
+	public static function definition(): array {
+		return array(
+			'rules'    => self::RULES,
+			'keys'     => self::KEYS,
+			'browsers' => self::BROWSERS,
+			'systems'  => self::SYSTEMS,
+			'weekdays' => self::WEEKDAYS,
+		);
+	}
+
+	/**
 	 * `id` de condición nuevo.
 	 */
 	public function new_id(): string {
