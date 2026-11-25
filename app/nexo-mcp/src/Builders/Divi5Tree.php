@@ -38,16 +38,35 @@ final class Divi5Tree {
 	/**
 	 * Parsea el contenido y devuelve el árbol de nodos.
 	 *
-	 * @param string $content `post_content`.
+	 * Con `$conditions` (sólo las lecturas para el cliente), cada nodo cuyo bloque lleva
+	 * `module.decoration.conditions` añade `conditions`: el resumen de {@see DiviConditionsSchema::summary()}
+	 * (nunca los valores crudos). Sin él la salida es la de siempre.
+	 *
+	 * @param string                    $content    `post_content`.
+	 * @param DiviConditionsSchema|null $conditions Esquema que resume las condiciones; null no las resume.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
-	public static function build( string $content ): array {
+	public static function build( string $content, ?DiviConditionsSchema $conditions = null ): array {
 		if ( '' === trim( $content ) ) {
 			return array();
 		}
 
-		return self::nodes( parse_blocks( $content ), '' );
+		return self::nodes( parse_blocks( $content ), '', $conditions );
+	}
+
+	/**
+	 * Lista de condiciones de visualización guardada en un bloque (`module.decoration.conditions.desktop.value`), o null si no tiene.
+	 *
+	 * @param array<string, mixed> $block Bloque de `parse_blocks()`.
+	 *
+	 * @return array<mixed>|null
+	 */
+	public static function conditions_of( array $block ): ?array {
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$value = self::value_at( $attrs, array( 'module', 'decoration', 'conditions', 'desktop', 'value' ) );
+
+		return is_array( $value ) && array() !== $value ? $value : null;
 	}
 
 	/**
@@ -508,11 +527,12 @@ final class Divi5Tree {
 	 * Construye los nodos de un nivel.
 	 *
 	 * @param array<int, array<string, mixed>> $blocks Bloques del nivel.
-	 * @param string                           $prefix Ruta del padre.
+	 * @param string                           $prefix     Ruta del padre.
+	 * @param DiviConditionsSchema|null        $conditions Esquema que resume las condiciones, o null.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
-	private static function nodes( array $blocks, string $prefix ): array {
+	private static function nodes( array $blocks, string $prefix, ?DiviConditionsSchema $conditions = null ): array {
 		$out   = array();
 		$index = 0;
 
@@ -553,6 +573,12 @@ final class Divi5Tree {
 				);
 			}
 
+			$stored = null !== $conditions ? self::conditions_of( $block ) : null;
+
+			if ( null !== $conditions && null !== $stored ) {
+				$node['conditions'] = $conditions->summary( $stored );
+			}
+
 			$preset = self::preset_refs( $attrs );
 
 			if ( array() !== $preset ) {
@@ -562,7 +588,7 @@ final class Divi5Tree {
 			$inner = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
 
 			if ( array() !== $inner ) {
-				$node['children'] = self::nodes( $inner, $path );
+				$node['children'] = self::nodes( $inner, $path, $conditions );
 			}
 
 			$out[] = $node;

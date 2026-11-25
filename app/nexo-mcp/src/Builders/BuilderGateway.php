@@ -1048,11 +1048,18 @@ final class BuilderGateway {
 			);
 		}
 
-		$set = array( 'conditions' => $input['conditions'] );
-
-		if ( array_key_exists( 'match', $input ) ) {
-			$set['match'] = $input['match'];
+		if ( ! array_key_exists( 'match', $input ) ) {
+			return new \WP_Error(
+				DiviConditionsSchema::CODE,
+				__( 'match: es obligatorio (all o any), también al quitar con conditions vacío.', 'nexo-mcp' ),
+				array( 'path' => 'match' )
+			);
 		}
+
+		$set = array(
+			'conditions' => $input['conditions'],
+			'match'      => $input['match'],
+		);
 
 		$editor = new Divi5ModuleEditor(
 			$this->settings,
@@ -1117,7 +1124,8 @@ final class BuilderGateway {
 			null,
 			null,
 			null,
-			$this->divi_presets_lock()
+			$this->divi_presets_lock(),
+			$this->divi_conditions
 		);
 
 		return $editor->edit(

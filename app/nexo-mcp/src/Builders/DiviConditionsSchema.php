@@ -45,6 +45,8 @@ final class DiviConditionsSchema {
 
 	public const MAX_ROLES = 10;
 
+	public const MAX_POST_TYPES = 10;
+
 	/**
 	 * `id` de condición: UUID v4 en minúsculas.
 	 */
@@ -658,7 +660,7 @@ final class DiviConditionsSchema {
 				return $roles instanceof \WP_Error ? $roles : array( 'roles' => $roles );
 
 			case 'post_type':
-				$types = $this->check_list( $at . '.post_types', $condition['post_types'] ?? null, self::MAX_ROLES, fn( $v ) => is_string( $v ) && 1 === preg_match( '/^[a-z0-9_\-]{1,20}\z/', $v ) && $this->is_public_type( $v ), __( 'tipos de contenido públicos del sitio', 'nexo-mcp' ) );
+				$types = $this->check_list( $at . '.post_types', $condition['post_types'] ?? null, self::MAX_POST_TYPES, fn( $v ) => is_string( $v ) && 1 === preg_match( '/^[a-z0-9_\-]{1,20}\z/', $v ) && $this->is_public_type( $v ), __( 'tipos de contenido públicos del sitio', 'nexo-mcp' ) );
 
 				return $types instanceof \WP_Error ? $types : array( 'post_types' => $types );
 

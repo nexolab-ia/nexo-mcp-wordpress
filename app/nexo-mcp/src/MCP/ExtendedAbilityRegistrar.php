@@ -289,7 +289,7 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-page-structure',
 			'Obtener estructura de la página',
-			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo.',
+			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->builders->get_structure( $input ),
@@ -1818,9 +1818,9 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'DESTINO: igual que nexo-mcp-edit-divi-module (draft_of, preview_url; draft: true si el sitio apagó la copia por defecto; se respalda antes de guardar; puedes pasar el id del original o el de su copia).',
 				'',
-				'ENTRADA: id, path y fingerprint del módulo (nexo-mcp-get-page-structure), match y conditions. Módulos que las admiten: divi/section, divi/row, divi/column, divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list y divi/icon-list-item (no divi/placeholder: nexo_mcp_divi_module_denied). match: all (se cumplen todas) o any (basta una); el mismo operador vale para todas (no hay listas mixtas). conditions: de 0 a 5 objetos {type, rule, …ajustes}, el conjunto ENTERO (reemplaza al que había; conserva el id de las que no cambian). Los tipos, reglas, ajustes y valores permitidos (roles, tipos de contenido, navegadores…) están en nexo-mcp-list-divi-conditions: sesión (logged_in), rol (user_role), fecha y hora (date_time: before, after, on_date, on_days; sin repeticiones), tipo de contenido (post_type), categorías y etiquetas (categories, tags), contenidos concretos (posts), navegador (browser), sistema operativo (operating_system), parámetro de URL (url_parameter) y, con WooCommerce activo, cart_contents, product_stock y product_purchase. Con match any no se admiten dos condiciones del mismo tipo (Divi descartaría la segunda), salvo fecha/hora y parámetro de URL. NO hay customField, cookie, número de visitas, páginas visitadas, autor, archivos ni dispositivo (eso es otra opción de Divi): cualquier otra cosa da nexo_mcp_divi_conditions_invalid con data.path. Lo que se guarda en module.decoration.conditions.desktop.value es sólo lo que arma el plugin (nunca la cadena del cliente).',
+				'ENTRADA: id, path y fingerprint del módulo (nexo-mcp-get-page-structure), match y conditions. Módulos que las admiten: divi/section, divi/row, divi/column, divi/text, divi/heading, divi/button, divi/image, divi/divider, divi/blurb, divi/icon, divi/video, divi/icon-list y divi/icon-list-item (no divi/placeholder: nexo_mcp_divi_module_denied). match: all (se cumplen todas) o any (basta una); el mismo operador vale para todas (no hay listas mixtas). conditions: de 0 a 5 objetos {type, rule, …ajustes}, el conjunto ENTERO (reemplaza al que había; conserva el id de las que no cambian). Los tipos, reglas, ajustes y valores permitidos (roles, tipos de contenido, navegadores…) están en nexo-mcp-list-divi-conditions: sesión (logged_in), rol (user_role), fecha y hora (date_time: before, after, on_date, on_days; sin repeticiones), tipo de contenido (post_type), categorías y etiquetas (categories, tags), contenidos concretos (posts), navegador (browser), sistema operativo (operating_system), parámetro de URL (url_parameter) y, con WooCommerce activo, cart_contents, product_stock y product_purchase. Con match any no se admiten dos condiciones del mismo tipo (Divi descartaría la segunda), salvo fecha/hora y parámetro de URL. NO hay customField, cookie, número de visitas, páginas visitadas, autor, archivos ni dispositivo (eso es otra opción de Divi): cualquier otra cosa da nexo_mcp_divi_conditions_invalid con data.path. Lo que se guarda en module.decoration.conditions.desktop.value es sólo lo que arma el plugin (nunca la cadena del cliente). match es obligatorio siempre, también con conditions: [] (si falta: nexo_mcp_divi_conditions_invalid con data.path match).',
 				'',
-				'LAS HECHAS EN EL VISUAL BUILDER: si el módulo ya tiene condiciones que no son de este conector, reemplazarlas o quitarlas las pierde: responde nexo_mcp_divi_conditions_foreign con un resumen en data.summary y no escribe nada; repite con replace_foreign: true para confirmar (la salida trae replaced con el resumen de lo que había). Las propias se reemplazan sin confirmar. edit-divi-module, create-divi-page y edit-divi-section no las tocan (y las rechazan como atributo: nexo_mcp_divi_attr_denied).',
+				'LAS HECHAS EN EL VISUAL BUILDER: si el módulo ya tiene condiciones que no son de este conector, reemplazarlas o quitarlas las pierde: responde nexo_mcp_divi_conditions_foreign con un resumen en data.summary y no escribe nada; repite con replace_foreign: true para confirmar (la salida trae replaced con el resumen de lo que había). Las propias se reemplazan sin confirmar. edit-divi-module (contenido, diseño y presets) las conserva tal cual; edit-divi-section replace o delete las pierde y lo avisa con dropped_conditions; ninguna de las tres las escribe (las rechazan como atributo: nexo_mcp_divi_attr_denied). nexo-mcp-get-page-structure las resume en attributes.conditions de cada módulo.',
 				'',
 				'QUITAR: conditions: [] borra module.decoration.conditions.desktop.value (y deja el módulo sin condiciones); la salida trae removed: true.',
 				'',
@@ -1837,6 +1837,7 @@ final class ExtendedAbilityRegistrar {
 	 * @return array<string, mixed>
 	 */
 	private function divi_conditions_set_schema(): array {
+		$def      = DiviConditionsSchema::definition();
 		$strings  = static fn( string $description, int $max ): array => array(
 			'type'        => 'array',
 			'minItems'    => 1,
@@ -1883,7 +1884,7 @@ final class ExtendedAbilityRegistrar {
 				'match'           => array(
 					'type'        => 'string',
 					'enum'        => array( 'all', 'any' ),
-					'description' => 'all: se cumplen todas las condiciones; any: basta una. Con conditions vacío no importa.',
+					'description' => 'Obligatorio. all: se cumplen todas las condiciones; any: basta una. Con conditions vacío (quitar) no cambia nada, pero se pide igual.',
 				),
 				'conditions'      => array(
 					'type'        => 'array',
@@ -1903,8 +1904,8 @@ final class ExtendedAbilityRegistrar {
 								'maxLength'   => 30,
 								'description' => 'Regla del tipo (logged_in | logged_out, is | is_not, before | after | on_date | on_days, equals…).',
 							),
-							'roles'      => $strings( 'user_role: slugs de rol que existan (1 a 10).', DiviConditionsSchema::MAX_ROLES ),
-							'post_types' => $strings( 'post_type: tipos de contenido públicos (1 a 10).', DiviConditionsSchema::MAX_ROLES ),
+							'roles'      => $strings( 'user_role: slugs de rol que existan (1 a ' . DiviConditionsSchema::MAX_ROLES . ').', DiviConditionsSchema::MAX_ROLES ),
+							'post_types' => $strings( 'post_type: tipos de contenido públicos (1 a ' . DiviConditionsSchema::MAX_POST_TYPES . ').', DiviConditionsSchema::MAX_POST_TYPES ),
 							'terms'      => $integers( 'categories o tags: ids de término que existan (1 a 20).' ),
 							'post_type'  => array(
 								'type'        => 'string',
@@ -1913,9 +1914,9 @@ final class ExtendedAbilityRegistrar {
 								'description' => 'posts: UN tipo de contenido público (no attachment).',
 							),
 							'posts'      => $integers( 'posts: ids de contenido publicado de ese tipo (1 a 20).' ),
-							'browsers'   => $strings( 'browser: chrome | firefox | safari | edge | ie | opera | maxthon | ucbrowser.', 8 ),
-							'systems'    => $strings( 'operating_system: windows | macos | linux | android | iphone | ipad | ipod | appletv | playstation | xbox | nintendo | webos.', 12 ),
-							'weekdays'   => $strings( 'date_time con on_days: sunday … saturday.', 7 ),
+							'browsers'   => $strings( 'browser: ' . implode( ' | ', $def['browsers'] ) . '.', count( $def['browsers'] ) ),
+							'systems'    => $strings( 'operating_system: ' . implode( ' | ', $def['systems'] ) . '.', count( $def['systems'] ) ),
+							'weekdays'   => $strings( 'date_time con on_days: ' . implode( ' | ', $def['weekdays'] ) . '.', count( $def['weekdays'] ) ),
 							'products'   => $integers( 'WooCommerce: ids de productos que existan (1 a 20); sólo con las reglas que nombran productos.' ),
 							'name'       => array(
 								'type'        => 'string',
@@ -2116,7 +2117,7 @@ final class ExtendedAbilityRegistrar {
 				'ENTRADA: id, operation (replace | insert | delete), path y fingerprint del nodo de referencia (se leen con nexo-mcp-get-page-structure o con la salida de nexo-mcp-create-divi-page), position (sólo con insert: before, after o inside; inside agrega al final de los hijos del nodo) y sections: el subárbol nuevo (lista de nodos; no se pasa con delete). Los nodos nuevos se validan contra el tipo real del padre: en una sección sólo caben filas, en una fila columnas, en una columna módulos de contenido, en un divi/icon-list sólo divi/icon-list-item. Los nodos fuera del subárbol reemplazado quedan byte a byte igual. Borrar el único elemento de la raíz (la última sección) se rechaza.',
 				$this->divi_tree_help(),
 				'',
-				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
+				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete) y dropped_conditions (sólo con replace o delete, si el subárbol reemplazado o borrado tenía módulos con condiciones de visualización: lista de {path, type, summary}, con el path del módulo antes del cambio y summary el resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]}, sin valores crudos; la escritura se hace igual: replace no puede conservarlas porque los árboles no las admiten, así que vuelve a ponerlas con nexo-mcp-set-divi-conditions). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
 				'',
 				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
 			)
