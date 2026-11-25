@@ -369,6 +369,102 @@ final class DiviSetConditionsToolTest extends NexoTestCase {
 		}
 	}
 
+	// T5 (S7): lectura resumida, dropped_conditions y avisos de la revisión de T4.
+
+	public function test_get_page_structure_summarizes_the_conditions_and_edit_divi_section_reports_dropped_ones(): void {
+		$page = Divi5ConditionsReadTest::with_conditions( Divi5DynamicEditorTest::page(), '0.0.0.0.0', Divi5ConditionsReadTest::foreign() );
+		\WP_Test_State::$posts[100]->post_content = $page;
+		$tools = $this->tools();
+
+		$read = $tools['nexo-mcp/get-page-structure']['execute_callback']( array( 'id' => 100 ) );
+		$this->assertIsArray( $read );
+		$by = array_column( $read['nodes'], null, 'id' );
+		$this->assertFalse( $by['0.0.0.0.0']['attributes']['conditions']['ours'] );
+		$this->assertSame( 'customField', $by['0.0.0.0.0']['attributes']['conditions']['conditions'][0]['type'] );
+		$this->assertArrayNotHasKey( 'conditions', $by['0.0.0.0.1']['attributes'] );
+		$this->assertStringNotContainsString( Divi5ConditionsReadTest::SECRET, (string) wp_json_encode( $read ) );
+
+		$tree   = array( 'type' => 'divi/text', 'attrs' => array( 'content' => array( 'innerContent' => array( 'desktop' => array( 'value' => '<p>X</p>' ) ) ) ) );
+		$result = $tools['nexo-mcp/edit-divi-section']['execute_callback']( array( 'id' => 100, 'operation' => 'replace', 'path' => '0.0.0.0.0', 'fingerprint' => $this->fingerprint( $page, '0.0.0.0.0' ), 'sections' => array( $tree ) ) );
+		$this->assertIsArray( $result );
+		$this->assertSame( array( '0.0.0.0.0' ), array_column( $result['dropped_conditions'], 'path' ) );
+		$this->assertStringNotContainsString( Divi5ConditionsReadTest::SECRET, (string) wp_json_encode( $result ) );
+	}
+
+	public function test_descriptions_document_the_summary_and_dropped_conditions(): void {
+		$tools = $this->tools();
+
+		$this->assertStringContainsString( 'attributes.conditions', $tools['nexo-mcp/get-page-structure']['description'] );
+		$this->assertStringContainsString( 'dropped_conditions', $tools['nexo-mcp/edit-divi-section']['description'] );
+		$this->assertStringContainsString( 'dropped_conditions', $tools[ self::SET ]['description'] );
+		$this->assertStringContainsString( 'match es obligatorio', $tools[ self::SET ]['description'] );
+	}
+
+	public function test_several_conditions_with_match_any_are_stored_with_one_or_operator(): void {
+		$result = $this->tool()['execute_callback'](
+			$this->input(
+				array(
+					'match'      => 'any',
+					'conditions' => array(
+						array( 'type' => 'logged_in', 'rule' => 'logged_out' ),
+						array( 'type' => 'user_role', 'rule' => 'is', 'roles' => array( 'subscriber' ) ),
+						array( 'type' => 'post_type', 'rule' => 'is', 'post_types' => array( 'post' ) ),
+					),
+				)
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'any', $result['match'] );
+		$this->assertCount( 3, $result['conditions'] );
+		$this->assertSame( array( 'OR', 'OR', 'OR' ), array_column( $result['conditions'], 'operator' ) );
+		$this->assertCount( 3, array_unique( array_column( $result['conditions'], 'id' ) ), 'ids únicos aunque el generador repita' );
+	}
+
+	public function test_two_conditions_of_the_same_type_with_any_are_rejected_and_write_nothing(): void {
+		$before = $this->snapshot();
+		$result = $this->tool()['execute_callback'](
+			$this->input( array( 'match' => 'any', 'conditions' => array( array( 'type' => 'user_role', 'rule' => 'is', 'roles' => array( 'subscriber' ) ), array( 'type' => 'user_role', 'rule' => 'is_not', 'roles' => array( 'subscriber' ) ) ) ) )
+		);
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_conditions_invalid', $result->get_error_code() );
+		$this->assertSame( array( 'path' => 'conditions.1.type' ), $result->get_error_data() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
+
+	public function test_match_omitted_is_rejected_like_the_json_schema_requires_even_with_an_empty_list(): void {
+		foreach ( array( array( array( 'type' => 'logged_in', 'rule' => 'logged_in' ) ), array() ) as $conditions ) {
+			$input = $this->input( array( 'conditions' => $conditions ) );
+			unset( $input['match'] );
+			$before = $this->snapshot();
+
+			$result = $this->tool()['execute_callback']( $input );
+
+			$this->assertInstanceOf( \WP_Error::class, $result );
+			$this->assertSame( 'nexo_mcp_divi_conditions_invalid', $result->get_error_code() );
+			$this->assertSame( array( 'path' => 'match' ), $result->get_error_data() );
+			$this->assertSame( $before, $this->snapshot() );
+		}
+	}
+
+	public function test_the_json_schema_limits_come_from_the_schema_definitions(): void {
+		$props = $this->tool()['input_schema']['properties']['conditions']['items']['properties'];
+		$def   = DiviConditionsSchema::definition();
+
+		$this->assertSame( DiviConditionsSchema::MAX_POST_TYPES, $props['post_types']['maxItems'] );
+		$this->assertSame( DiviConditionsSchema::MAX_ROLES, $props['roles']['maxItems'] );
+		$this->assertSame( count( $def['browsers'] ), $props['browsers']['maxItems'] );
+		$this->assertSame( count( $def['systems'] ), $props['systems']['maxItems'] );
+		$this->assertSame( count( $def['weekdays'] ), $props['weekdays']['maxItems'] );
+
+		foreach ( array( 'browsers' => 'browsers', 'systems' => 'systems', 'weekdays' => 'weekdays' ) as $key => $list ) {
+			foreach ( $def[ $list ] as $value ) {
+				$this->assertStringContainsString( $value, $props[ $key ]['description'], $key );
+			}
+		}
+	}
+
 	// S9: sólo set-divi-conditions escribe condiciones (con el scope ENCENDIDO los demás siguen rechazándolas).
 
 	public function test_s9_edit_divi_module_rejects_the_conditions_attribute_with_the_scope_on(): void {
