@@ -33,6 +33,11 @@ use NexoDev\NexoMCP\Support\PostLock;
 final class Divi5LayoutCreator {
 
 	/**
+	 * Meta con la marca única que lleva el layout mientras se inserta, para encontrarlo si el insertador lanza.
+	 */
+	public const MARKER_META = '_nexo_mcp_layout_creating';
+
+	/**
 	 * Permiso del Theme Builder: fn(): bool.
 	 *
 	 * @var callable
@@ -89,6 +94,13 @@ final class Divi5LayoutCreator {
 	private $presets_lock;
 
 	/**
+	 * Búsqueda de lo creado por la marca: fn( string $meta_key, string $marker ): array<int, int>.
+	 *
+	 * @var callable
+	 */
+	private $finder;
+
+	/**
 	 * Construye el creador.
 	 *
 	 * @param DiviTreeValidator $validator    Validador (el de producción; se usa en modo layout).
@@ -99,6 +111,7 @@ final class Divi5LayoutCreator {
 	 * @param Divi5Adapter|null $adapter      Adaptador de Divi 5.
 	 * @param callable|null     $deleter      fn( int ): mixed. Por omisión, `wp_delete_post( $id, true )`.
 	 * @param callable|null     $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
+	 * @param callable|null     $finder       fn( string $meta_key, string $marker ): array<int, int>. Ids con esa marca; por omisión, `get_posts()`.
 	 */
 	public function __construct(
 		DiviTreeValidator $validator,
@@ -108,7 +121,8 @@ final class Divi5LayoutCreator {
 		?callable $inserter = null,
 		?Divi5Adapter $adapter = null,
 		?callable $deleter = null,
-		?callable $presets_lock = null
+		?callable $presets_lock = null,
+		?callable $finder = null
 	) {
 		$this->validator    = $validator;
 		$this->allowed      = $allowed;
@@ -120,6 +134,25 @@ final class Divi5LayoutCreator {
 		$this->adapter      = $adapter ?? new Divi5Adapter();
 		$this->deleter      = $deleter ?? static fn( int $id ) => wp_delete_post( $id, true );
 		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
+		$this->finder       = $finder ?? static function ( string $key, string $marker ): array {
+			if ( ! function_exists( 'get_posts' ) ) {
+				return array();
+			}
+
+			$ids = get_posts(
+				array(
+					'post_type'      => 'any',
+					'post_status'    => 'any',
+					'meta_key'       => $key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+					'meta_value'     => $marker, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+					'fields'         => 'ids',
+					'posts_per_page' => 5,
+					'no_found_rows'  => true,
+				)
+			);
+
+			return array_values( array_filter( array_map( 'intval', (array) $ids ), static fn( int $id ): bool => $id > 0 ) );
+		};
 	}
 
 	/**
@@ -203,18 +236,20 @@ final class Divi5LayoutCreator {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function save_layout( string $slot, string $title, string $content ) {
+		$marker   = bin2hex( random_bytes( 16 ) );
 		$data     = array(
 			'post_type'    => DiviLayoutGuard::LAYOUT_TYPES[ $slot ],
 			'post_status'  => 'publish',
 			'post_title'   => wp_slash( $title ),
 			'post_content' => wp_slash( $content ),
+			'meta_input'   => array( self::MARKER_META => $marker ),
 		);
 		$inserter = $this->inserter;
 
 		try {
 			$layout_id = Divi5ContentWriter::without_kses( static fn() => $inserter( $data ) );
 		} catch ( \Throwable $e ) {
-			return $this->failed( __( 'error interno al guardar.', 'nexo-mcp' ) );
+			return $this->rollback_found( $marker );
 		}
 
 		if ( is_wp_error( $layout_id ) ) {
@@ -234,7 +269,9 @@ final class Divi5LayoutCreator {
 			}
 
 			Divi5ContentWriter::mark( $post );
-			$this->adapter->flush( $post );
+			delete_post_meta( $layout_id, self::MARKER_META );
+			// Sin asignar a ninguna plantilla no se muestra en ninguna página: no hay CSS de todo el sitio que renovar.
+			$this->adapter->flush_unassigned( $post );
 		} catch ( \Throwable $e ) {
 			return $this->rollback( $layout_id, __( 'error interno al guardar.', 'nexo-mcp' ) );
 		}
@@ -277,15 +314,62 @@ final class Divi5LayoutCreator {
 	}
 
 	/**
+	 * El insertador lanzó: si llegó a crear el layout (se encuentra por su marca), se borra; si no se puede borrar o no se
+	 * puede comprobar, el error lo dice.
+	 *
+	 * @param string $marker Marca única de esta llamada.
+	 */
+	private function rollback_found( string $marker ): \WP_Error {
+		$reason = __( 'error interno al guardar.', 'nexo-mcp' );
+
+		try {
+			$ids = ( $this->finder )( self::MARKER_META, $marker );
+		} catch ( \Throwable $e ) {
+			$ids = null;
+		}
+
+		if ( null === $ids || array() === $ids ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_save_failed',
+				sprintf(
+					/* translators: %s: motivo. */
+					__( 'No se pudo crear el layout de Divi 5: %s Si WordPress llegó a crear el layout, puede haber quedado un layout publicado y sin asignar: búscalo entre los layouts del Theme Builder o en WordPress y bórralo si no lo reconoces.', 'nexo-mcp' ),
+					$reason
+				)
+			);
+		}
+
+		$stuck = array();
+
+		foreach ( $ids as $id ) {
+			if ( ! $this->delete_created( (int) $id ) ) {
+				$stuck[] = (int) $id;
+			}
+		}
+
+		if ( array() === $stuck ) {
+			return $this->failed( $reason, true );
+		}
+
+		return new \WP_Error(
+			'nexo_mcp_divi_save_failed',
+			sprintf(
+				/* translators: 1: motivo, 2: ids de los layouts. */
+				__( 'No se pudo crear el layout de Divi 5: %1$s El layout %2$s quedó creado y publicado, sin asignar, y no se pudo borrar: revísalo o bórralo desde WordPress.', 'nexo-mcp' ),
+				$reason,
+				implode( ', ', $stuck )
+			)
+		);
+	}
+
+	/**
 	 * Borra el layout creado y devuelve el error.
 	 *
 	 * @param int    $layout_id Layout creado por esta llamada.
 	 * @param string $reason    Motivo.
 	 */
 	private function rollback( int $layout_id, string $reason ): \WP_Error {
-		$deleted = ( $this->deleter )( $layout_id );
-
-		if ( ! $deleted && get_post( $layout_id ) instanceof \WP_Post ) {
+		if ( ! $this->delete_created( $layout_id ) ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_save_failed',
 				sprintf(
@@ -298,6 +382,19 @@ final class Divi5LayoutCreator {
 		}
 
 		return $this->failed( $reason, true );
+	}
+
+	/**
+	 * Borra un layout creado por esta llamada.
+	 *
+	 * @param int $layout_id Layout.
+	 *
+	 * @return bool False si sigue existiendo.
+	 */
+	private function delete_created( int $layout_id ): bool {
+		$deleted = ( $this->deleter )( $layout_id );
+
+		return (bool) $deleted || ! get_post( $layout_id ) instanceof \WP_Post;
 	}
 
 	/**

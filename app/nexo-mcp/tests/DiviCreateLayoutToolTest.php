@@ -279,13 +279,13 @@ final class DiviCreateLayoutToolTest extends NexoTestCase {
 		$this->assertSame( $before, $this->snapshot() );
 	}
 
-	public function test_it_clears_the_whole_static_css_and_the_cache_plugins_after_creating(): void {
+	public function test_creating_an_unassigned_layout_clears_only_its_own_css_and_not_the_whole_site(): void {
 		$result = $this->tool()['execute_callback']( $this->input() );
 
 		$this->assertIsArray( $result );
-		$this->assertContains( array( 'all', 'all' ), \WP_Layout_Stub_State::$css_calls );
 		$this->assertContains( array( (int) $result['id'], 'all' ), \WP_Layout_Stub_State::$css_calls );
-		$this->assertSame( array( 'all' ), \WP_Layout_Stub_State::$cache_calls );
+		$this->assertNotContains( array( 'all', 'all' ), \WP_Layout_Stub_State::$css_calls, 'un layout sin asignar no se ve en ninguna página' );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$cache_calls );
 	}
 
 	public function test_it_inserts_through_the_divi_function_when_it_exists_and_returns_its_id(): void {
@@ -343,6 +343,106 @@ final class DiviCreateLayoutToolTest extends NexoTestCase {
 		$this->assertCount( 1, $ids );
 		$this->assertStringContainsString( (string) $ids[0], $result->get_error_message(), 'dice qué layout quedó' );
 		$this->assertStringContainsString( 'publicado', $result->get_error_message() );
+	}
+
+	public function test_if_the_inserter_throws_after_creating_the_post_it_is_found_and_deleted(): void {
+		$seen    = array();
+		$creator = new Divi5LayoutCreator(
+			new DiviTreeValidator(),
+			static fn(): bool => true,
+			null,
+			null,
+			static function ( array $data ) use ( &$seen ) {
+				$seen = $data;
+				$id   = wp_insert_post( $data, true );
+				foreach ( (array) ( $data['meta_input'] ?? array() ) as $key => $value ) {
+					update_post_meta( (int) $id, $key, $value );
+				}
+
+				throw new \RuntimeException( 'falló después de crear' );
+			},
+			null,
+			null,
+			null,
+			static function ( string $key, string $value ): array {
+				$ids = array();
+				foreach ( \WP_Test_State::$meta as $post_id => $metas ) {
+					if ( ( $metas[ $key ] ?? null ) === $value ) {
+						$ids[] = (int) $post_id;
+					}
+				}
+
+				return $ids;
+			}
+		);
+		$before  = serialize( \WP_Test_State::$posts );
+
+		$result = $creator->create( $this->input() );
+
+		$this->assertNotEmpty( $seen['meta_input'] ?? array(), 'el layout lleva una marca única antes de insertar' );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_save_failed', $result->get_error_code() );
+		$this->assertStringContainsString( 'se eliminó', $result->get_error_message() );
+		$this->assertSame( $before, serialize( \WP_Test_State::$posts ), 'no queda ningún layout publicado a medias' );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+	}
+
+	public function test_if_the_inserter_throws_and_the_post_cannot_be_deleted_the_error_names_it(): void {
+		$creator = new Divi5LayoutCreator(
+			new DiviTreeValidator(),
+			static fn(): bool => true,
+			null,
+			null,
+			static function ( array $data ) {
+				$id = wp_insert_post( $data, true );
+				foreach ( (array) ( $data['meta_input'] ?? array() ) as $key => $value ) {
+					update_post_meta( (int) $id, $key, $value );
+				}
+
+				throw new \RuntimeException( 'falló después de crear' );
+			},
+			null,
+			static fn( int $id ) => false,
+			null,
+			static fn( string $key, string $value ): array => array_keys( \WP_Test_State::$posts )
+		);
+
+		$result = $creator->create( $this->input() );
+		$id     = array_keys( \WP_Test_State::$posts )[0];
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_save_failed', $result->get_error_code() );
+		$this->assertStringContainsString( (string) $id, $result->get_error_message(), 'dice qué layout quedó' );
+		$this->assertStringContainsString( 'publicado', $result->get_error_message() );
+	}
+
+	public function test_if_the_inserter_throws_and_nothing_is_found_the_error_warns_a_layout_may_remain(): void {
+		$creator = new Divi5LayoutCreator(
+			new DiviTreeValidator(),
+			static fn(): bool => true,
+			null,
+			null,
+			static function ( array $data ) {
+				throw new \RuntimeException( 'falló' );
+			},
+			null,
+			null,
+			null,
+			static fn( string $key, string $value ): array => array()
+		);
+
+		$result = $creator->create( $this->input() );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_save_failed', $result->get_error_code() );
+		$this->assertStringContainsString( 'puede haber quedado', $result->get_error_message() );
+	}
+
+	public function test_a_successful_create_leaves_no_marker_meta_behind(): void {
+		$result = $this->tool()['execute_callback']( $this->input() );
+
+		$this->assertIsArray( $result );
+		$this->assertArrayNotHasKey( '_nexo_mcp_layout_creating', \WP_Test_State::$meta[ (int) $result['id'] ] ?? array() );
 	}
 
 	public function test_preserve_create_divi_page_still_makes_a_draft_page_and_rejects_the_layout_modules(): void {
