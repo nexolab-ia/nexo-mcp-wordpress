@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Nexo MCP
  * Description:       Conecta WordPress y WooCommerce con clientes MCP (Claude, Cursor y otros) mediante herramientas explícitas, OAuth 2.1 y permisos seguros.
- * Version:           1.9.1
+ * Version:           1.10.0
  * Requires at least: 6.9
  * Requires PHP:      8.1
  * Author:            NexoDev
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'NEXO_MCP_VERSION', '1.9.1' );
+define( 'NEXO_MCP_VERSION', '1.10.0' );
 define( 'NEXO_MCP_FILE', __FILE__ );
 define( 'NEXO_MCP_PATH', plugin_dir_path( __FILE__ ) );
 

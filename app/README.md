@@ -307,7 +307,10 @@ Reglas que siempre se cumplen:
     (`data.path`) en árboles, parches, `attrs` de presets y variables globales de
     texto, enlace e imagen, antes y después de sanear y también ofuscado (mayúsculas,
     `\u0024`, `&#36;`, `&dollar;`, `%24`, `@ET-DC@`). Lo que ya está guardado en la
-    página no se toca. `module.advanced.loop` tampoco se puede escribir.
+    página no se toca. `module.advanced.loop` tampoco se puede escribir. Desde 1.10.0
+    el único camino que escribe un token (de la lista cerrada) o un bucle es el del
+    permiso propio de abajo (`set-divi-dynamic` y `set-divi-loop`); `create-divi-page`,
+    `edit-divi-section` y `edit-divi-module` siguen rechazándolos.
   - **Copia de trabajo**: igual que en Elementor, una página publicada se edita en su
     copia (el original no cambia hasta publicarla con `set-content-status`),
     con respaldo y bloqueo; nunca publica. El kses del núcleo corrompe los
@@ -404,6 +407,84 @@ Reglas que siempre se cumplen:
     de módulo en el mismo cambio (`links_removed`).
   - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D4; sin Divi 5
     se saltea).
+- **Contenido dinámico y bucles de Divi 5 (permiso propio)**: un token dinámico muestra
+  datos del sitio a los visitantes y un bucle de consulta muestra contenido de un tipo
+  público, así que tienen su scope OAuth `mcp:divi_dynamic` (capacidad
+  `nexo_mcp_divi_dynamic`, administrador; el instalador la da al subir a 1.10.0) y su
+  interruptor `divi_dynamic_tools_enabled`, **apagado por defecto** (toggle sensible con
+  confirmación; habilitar Elementor, los constructores o el resto de Divi no lo
+  habilita). Tres herramientas; escribir exige además el permiso de constructores y
+  `edit_post` sobre la página original (aunque llegue el id de la copia) y no
+  funciona en «Solo revisar». Sin Divi 5 activo: `nexo_mcp_divi5_required`.
+  - `list-divi-dynamic-sources {post_id?}`: lista cerrada (`sources`, con categoría
+    `text`/`url`/`image`, ajustes y dónde aplica), los campos de cada módulo que admiten
+    un token (`targets`) y las fuentes por elemento de un bucle (`loop_sources`). Con
+    `post_id` sólo lo que Divi registra para esa página. Se lee con el permiso de
+    constructores y **no** pide el interruptor.
+  - **Lista cerrada de fuentes**: entrada (título, extracto, fecha, autor, categorías y
+    etiquetas, enlace y su URL, imagen destacada), sitio (título, lema, URL, logo), fecha
+    actual, WooCommerce (título, precio, SKU y descripción corta; sólo en un producto) y
+    campos de texto, área de texto y número de ACF de los grupos que aplican a la página
+    (`custom_meta_<nombre>`, nunca claves `_…`). Quedan fuera el meta personalizado y
+    protegido, usuarios, autor (usuario, biografía, foto), comentarios, fechas de
+    modificación y todo lo demás. Cada fuente va sólo en un campo de su categoría (un
+    título, un enlace o una imagen) y sus ajustes son selects cerrados o textos cortos
+    (≤ 200, sin `< > [ ] $ \` ni control; se rechazan, no se sanean); `enable_html` es
+    siempre `off`. El nombre de autor `username` no se admite.
+  - `set-divi-dynamic {id, path, fingerprint, field, source: {name, settings?} | null}`
+    pone un token canónico en un campo de un módulo (`field`: `title.innerContent`,
+    `button.innerContent.linkUrl`…, de `targets`) en la copia de trabajo, con `path` y
+    `fingerprint` como `edit-divi-module`. `source: null` lo quita **sólo si el campo es
+    exactamente un token** (un campo con texto alrededor, p. ej. hecho en el Visual
+    Builder, responde `nexo_mcp_divi_dynamic_mixed` sin escribir; se edita con
+    `edit-divi-module`; si no hay token, `nexo_mcp_divi_dynamic_not_set`). Errores:
+    `nexo_mcp_divi_dynamic_denied` (fuera de la lista, otra categoría, no aplica a la
+    página o un `loop_*` fuera de un bucle), `nexo_mcp_divi_dynamic_invalid` (ajustes o
+    `field`), `nexo_mcp_divi_dynamic_unavailable` (Divi o ACF no responden) y los de
+    `edit-divi-module`. Los tokens que ya había y la edición no toca se conservan.
+  - `set-divi-loop {id, path, fingerprint, loop: {post_type, per_page, order_by, order, offset?,
+    exclude_current?, terms?} | null}` activa, cambia (se conserva su `loopId`) o quita
+    (`null`) el bucle de una sección, fila, columna, texto, título, botón, imagen,
+    separador, blurb, lista de iconos o su ítem (no `divi/icon` ni `divi/video`:
+    `nexo_mcp_divi_module_denied`). **Límites**: **un solo tipo de contenido público**
+    (no `any`, `attachment` ni no públicos), sólo **publicado y sin contraseña**,
+    `per_page` 1-24, `offset` 0-1000, orden por `date`/`title`/`id`, términos de
+    taxonomías públicas del tipo (≤ 5 taxonomías, ≤ 20 términos cada una), sin `metaQuery`,
+    búsqueda ni ids a mano, sin entradas fijas y **sin anidar** (un ancestro o
+    descendiente con bucle activo, también hecho en el Visual Builder, es
+    `nexo_mcp_divi_loop_nested`). Errores: `nexo_mcp_divi_loop_invalid` (con `data.path`),
+    `nexo_mcp_divi_loop_nested`, `nexo_mcp_divi_loop_not_set` (quitar sin bucle) y
+    `nexo_mcp_divi_loop_in_use` (quitar o cambiar el tipo con tokens `loop_*` dentro: se
+    quitan antes con `set-divi-dynamic`). Mostrar contenido de un tipo público al visitante es
+    el propósito: sale todo lo publicado sin contraseña hasta 24 por página, y el
+    visitante pagina con `?loop-nx…=N` (el `loopId` sale en la respuesta).
+  - **Campos por elemento**: dentro de un módulo con un bucle del conector valen las
+    fuentes `loop_post_title`, `loop_post_excerpt`, `loop_post_date`, `loop_post_author`,
+    `loop_post_terms`, `loop_post_link` (url) y `loop_post_featured_image` (imagen), y en un bucle de
+    productos `loop_product_title`, `loop_product_price_current`, `loop_product_sku` y
+    `loop_product_short_description`. Sólo se reconoce como «del conector» un bucle que es
+    exactamente lo que `set-divi-loop` escribiría: uno hecho en el Visual Builder o editado
+    a mano no abre las fuentes `loop_*`. Nunca `loop_user_*`, `loop_term_*`, `loop_menu_*` ni
+    meta.
+  - **Guarda de visibilidad**: Divi no excluye las entradas con contraseña y ninguna clave
+    guardada lo controla, así que el plugin fija, en el filtro `divi_loop_data_after_execution`
+    y sólo para bucles `loop-nx…` de tipos de contenido, `post_status = publish`, sin
+    contraseña, `posts_per_page` ≤ 24 y sin entradas fijas; y si el valor guardado ya no es lo que
+    escribió el conector (alguien lo editó a `any`, `attachment`, con `metaQuery`, búsqueda,
+    ids o un desplazamiento mayor) la consulta se renderiza **vacía**. La garantía necesita
+    el plugin activo. **Los bucles hechos en el Visual Builder no se guardan** (Divi con
+    un tipo vacío o `attachment` incluye privados), y el plugin no los toca.
+  - **Hallazgos de Divi 5.19.1**: ACF sólo texto, área de texto y número; los productos sólo
+    en entradas de tipo `product`; **el contenido Divi de un producto no se ve mientras la
+    tienda de WooCommerce está en «próximamente»** (WooCommerce › Ajustes › Visibilidad del sitio). Los `loop_*` y su bucle sólo
+    los escribe el conector dentro del mismo subárbol y `create-divi-page`, `edit-divi-section`
+    (`replace`/`insert`/`delete`, siempre por subárbol) y `edit-divi-module` rechazan tokens y no
+    escriben `module.advanced.loop`, así que ninguna herramienta puede dejar un token `loop_*`
+    huérfano (sin su bucle); una prueba lo fija. Un bucle que Divi duplica a otro diseño puede
+    perder el prefijo `loop-nx…` y deja de estar protegido por la guarda.
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D5/D6: el visitante
+    anónimo ve exactamente las entradas publicadas sin contraseña, y un bucle editado a mano
+    se renderiza vacío; sin Divi 5 se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -606,7 +687,10 @@ Divi 5 (D3) también lo necesita (SKIP sin Divi 5): enciende `divi_design_tools_
 (y la capacidad, si falta) sólo durante la sección y devuelve crudos `et_divi`,
 `et_divi_global_variables`, el historial y los ajustes, también si la corrida se corta. La de presets
 de Divi 5 (D4) igual (SKIP sin Divi 5): enciende `divi_presets_tools_enabled` (y la capacidad, si falta) y
-devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. Con Pro instalado, wp-cli necesita más
+devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. La de contenido
+dinámico y bucles de Divi 5 (D5/D6) igual (SKIP sin Divi 5): enciende `divi_dynamic_tools_enabled` (y la capacidad, si falta) sólo durante la
+sección, crea entradas de prueba (publicadas, privada, con contraseña y borrador) que borra al final, comprueba como visitante anónimo lo que se ve
+y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el
