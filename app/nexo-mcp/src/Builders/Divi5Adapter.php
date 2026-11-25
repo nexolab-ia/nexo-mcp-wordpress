@@ -20,11 +20,11 @@ namespace NexoDev\NexoMCP\Builders;
 final class Divi5Adapter implements BuilderAdapter {
 
 	/**
-	 * Esquema que resume las condiciones de visualización al leer (S7); null: el de producción.
+	 * Esquema que resume las condiciones de visualización al leer (S7).
 	 *
-	 * @var DiviConditionsSchema|null
+	 * @var DiviConditionsSchema
 	 */
-	private ?DiviConditionsSchema $conditions;
+	private DiviConditionsSchema $conditions;
 
 	/**
 	 * Construye el adaptador.
@@ -32,7 +32,7 @@ final class Divi5Adapter implements BuilderAdapter {
 	 * @param DiviConditionsSchema|null $conditions Esquema para resumir las condiciones leídas (las pruebas inyectan sus fuentes).
 	 */
 	public function __construct( ?DiviConditionsSchema $conditions = null ) {
-		$this->conditions = $conditions;
+		$this->conditions = $conditions ?? new DiviConditionsSchema();
 	}
 
 	/**
@@ -77,7 +77,7 @@ final class Divi5Adapter implements BuilderAdapter {
 	public function read_nodes( \WP_Post $post ): array {
 		$nodes = array();
 
-		$this->flatten( Divi5Tree::build( (string) $post->post_content, $this->conditions ?? new DiviConditionsSchema() ), $nodes );
+		$this->flatten( Divi5Tree::build( (string) $post->post_content, $this->conditions ), $nodes );
 
 		return $nodes;
 	}
@@ -90,7 +90,7 @@ final class Divi5Adapter implements BuilderAdapter {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function read_tree( \WP_Post $post ): array {
-		return Divi5Tree::build( (string) $post->post_content, $this->conditions ?? new DiviConditionsSchema() );
+		return Divi5Tree::build( (string) $post->post_content, $this->conditions );
 	}
 
 	/**

@@ -573,10 +573,12 @@ final class Divi5Tree {
 				);
 			}
 
-			$stored = null !== $conditions ? self::conditions_of( $block ) : null;
+			if ( null !== $conditions ) {
+				$stored = self::conditions_of( $block );
 
-			if ( null !== $conditions && null !== $stored ) {
-				$node['conditions'] = $conditions->summary( $stored );
+				if ( null !== $stored ) {
+					$node['conditions'] = $conditions->summary( $stored );
+				}
 			}
 
 			$preset = self::preset_refs( $attrs );

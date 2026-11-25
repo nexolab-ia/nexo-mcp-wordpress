@@ -486,26 +486,47 @@ final class DiviConditionsSchema {
 			$name     = is_string( $entry['conditionName'] ?? null ) && 1 === preg_match( '/^[A-Za-z0-9_\-]{1,40}\z/', $entry['conditionName'] ) ? $entry['conditionName'] : 'unknown';
 			$settings = is_array( $entry['conditionSettings'] ?? null ) ? $entry['conditionSettings'] : array();
 			$operator = is_string( $entry['operator'] ?? null ) && in_array( $entry['operator'], array( 'AND', 'OR' ), true ) ? $entry['operator'] : null;
-			$input    = $this->read_condition( $entry );
+			$input    = $this->safely( fn(): ?array => $this->read_condition( $entry ) );
+			$text     = null === $input ? null : $this->safely( fn(): string => $this->describe( $input ) );
 			$ops[]    = $operator ?? 'OR';
 
 			$entries[] = array(
 				'type'      => $name,
 				'operator'  => $operator,
 				'enabled'   => 'off' !== ( $settings['enableCondition'] ?? null ),
-				'supported' => null !== $input,
-				'summary'   => null !== $input ? $this->describe( $input ) : $name,
+				'supported' => null !== $text,
+				'summary'   => $text ?? $name,
 			);
 		}
 
 		$uniform = array() !== $ops && 1 === count( array_unique( $ops ) );
 
 		return array(
-			'ours'       => null !== $this->valid_stored( $value ),
+			'ours'       => null !== $this->safely( fn(): ?array => $this->valid_stored( $value ) ),
 			'match'      => $uniform ? ( 'AND' === $ops[0] ? 'all' : 'any' ) : null,
 			'total'      => count( $list ),
 			'conditions' => $entries,
 		);
+	}
+
+	/**
+	 * Ejecuta una lectura de lo guardado sin dejar escapar nada: el resumen sirve a lecturas y a avisos de herramientas
+	 * que no deben romperse por lo que haya guardado el Visual Builder o un tercero, ni porque falle una fuente de WordPress.
+	 *
+	 * @template T
+	 *
+	 * @param callable(): T $work Trabajo.
+	 *
+	 * @return T|null
+	 */
+	private function safely( callable $work ) {
+		try {
+			return $work();
+		} catch ( \Throwable $e ) {
+			unset( $e );
+
+			return null;
+		}
 	}
 
 	/**

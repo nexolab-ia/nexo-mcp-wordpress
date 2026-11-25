@@ -132,11 +132,11 @@ final class BuilderGateway {
 	private ?DiviLoopSchema $divi_loops;
 
 	/**
-	 * Esquema de las condiciones de visualización de Divi 5; se crea al usarlo.
+	 * Esquema de las condiciones de visualización de Divi 5 (el de producción si no se inyecta otro).
 	 *
-	 * @var DiviConditionsSchema|null
+	 * @var DiviConditionsSchema
 	 */
-	private ?DiviConditionsSchema $divi_conditions;
+	private DiviConditionsSchema $divi_conditions;
 
 	/**
 	 * Catálogo de las condiciones de visualización; se crea al usarlo.
@@ -203,7 +203,7 @@ final class BuilderGateway {
 		$this->divi_preset_ops         = $divi_preset_ops;
 		$this->divi_dynamic            = $divi_dynamic;
 		$this->divi_loops              = $divi_loops;
-		$this->divi_conditions         = $divi_conditions;
+		$this->divi_conditions         = $divi_conditions ?? new DiviConditionsSchema();
 		$this->divi_conditions_catalog = $divi_conditions_catalog;
 	}
 
@@ -1072,7 +1072,7 @@ final class BuilderGateway {
 			null,
 			null,
 			null,
-			$this->divi_conditions ?? new DiviConditionsSchema()
+			$this->divi_conditions
 		);
 
 		return $editor->edit(

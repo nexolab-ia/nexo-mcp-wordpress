@@ -64,11 +64,11 @@ final class Divi5SectionEditor {
 	private $presets_lock;
 
 	/**
-	 * Esquema que resume las condiciones que se pierden (S7); null: el de producción.
+	 * Esquema que resume las condiciones que se pierden (S7).
 	 *
-	 * @var DiviConditionsSchema|null
+	 * @var DiviConditionsSchema
 	 */
-	private ?DiviConditionsSchema $conditions;
+	private DiviConditionsSchema $conditions;
 
 	/**
 	 * Construye el editor.
@@ -101,7 +101,7 @@ final class Divi5SectionEditor {
 		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
 		$this->validator    = $validator;
 		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
-		$this->conditions   = $conditions;
+		$this->conditions   = $conditions ?? new DiviConditionsSchema();
 		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 	}
 
@@ -311,7 +311,7 @@ final class Divi5SectionEditor {
 	 * @return array<int, array<string, mixed>>
 	 */
 	private function dropped( array $block, string $path ): array {
-		$schema = $this->conditions ?? new DiviConditionsSchema();
+		$schema = $this->conditions;
 		$out    = array();
 		$all    = array_merge(
 			array(
