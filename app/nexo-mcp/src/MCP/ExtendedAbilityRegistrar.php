@@ -86,6 +86,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-conditions',
 		'nexo-mcp/create-divi-page',
 		'nexo-mcp/create-divi-layout',
+		'nexo-mcp/list-divi-theme-builder',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -874,6 +875,20 @@ final class ExtendedAbilityRegistrar {
 			$this->divi_layout_schema(),
 			fn( array $input ) => $this->builders->create_divi_layout( $input ),
 			// Sin id de página: un layout se muestra en todo el sitio. Permiso de sitio del Theme Builder (no el de constructores).
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'list-divi-theme-builder',
+			'Listar las plantillas del Theme Builder de Divi 5',
+			$this->divi_template_list_description(),
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(),
+				'additionalProperties' => false,
+			),
+			fn() => $this->builders->list_divi_theme_builder(),
+			// Sin id de página: una plantilla decide lo que ve todo el sitio. Lee con el permiso del Theme Builder (como los layouts).
 			fn() => $this->policy->can_write_divi_theme_builder()
 		);
 		$this->ability(
@@ -2184,6 +2199,24 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function divi_layout_note(): string {
 		return 'LAYOUTS DEL THEME BUILDER: id puede ser el de un layout de encabezado, cuerpo o pie (o su copia de trabajo); entonces se pide el permiso del Theme Builder (scope mcp:divi_theme_builder con su interruptor y un administrador con el permiso theme_builder de Divi) y NO el de una página: sin él, nexo_mcp_divi_layout_denied. Los demás tipos internos de Divi (plantillas, biblioteca) se rechazan siempre (nexo_mcp_divi_post_type_denied). El cambio va a la copia de trabajo del layout (el layout vivo, que ve todo el sitio, no cambia): revísala con nexo-mcp-get-working-copy-diff y publícala o descártala con nexo-mcp-set-content-status (también con el permiso del Theme Builder).';
+	}
+
+	/**
+	 * Descripción de list-divi-theme-builder.
+	 */
+	private function divi_template_list_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Lista las plantillas del Theme Builder EN VIVO de Divi 5 (el que ve el sitio) con todo lo necesario para decidir un cambio; sólo lee y no crea nada. Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi, también para leer: sin él, nexo_mcp_divi_template_denied. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'POR QUÉ IMPORTA: una plantilla decide lo que ve todo el sitio (TODO, no sólo una página) y Divi elige UNA sola plantilla por petición, no las fusiona: gana la de use_on con mayor prioridad (las deshabilitadas y las que cumplen alguna exclude_from se descartan) y, si ninguna aplica, la plantilla por defecto habilitada. Una plantilla más específica (por ejemplo una por id de página) hace desaparecer el encabezado y el pie de la por defecto en esa página.',
+				'',
+				'SALIDA: live {id, exists} (el Theme Builder en vivo; si no existe, set-divi-template lo crea), draft {exists, id?, note?} (un borrador auto-draft del Visual Builder: se ignora; WordPress lo barre a los 7 días y un Visual Builder abierto pisa el mapeo en vivo al guardar), templates (en el orden del mapeo: id, status, ours, title, enabled, default, site_wide, use_on y exclude_from como listas de {id, supported, priority} —los ids que el catálogo no conoce se conservan con supported: false y los textos libres no se muestran—, y header, body y footer con {layout_id, enabled, status del layout —publish, draft…, missing o wrong_type—, y en body has_post_content}), default_template (el id de la plantilla por defecto habilitada), contexts (cada contexto en uso con su priority, el winner —el id de la plantilla que gana si la petición sólo cumple ese contexto— y los templates que lo usan), shadows (qué plantilla tapa a cuál: {template, context, priority, covered_by, by_context, by_priority}), catalog (los contextos válidos con su prioridad, si son de sitio entero y si necesitan WooCommerce; WooCommerce sólo si está activo), limits y warnings.',
+				'',
+				'ours: true si el conector puede representar la plantilla por completo y reescribirla sin perder nada; false si es ajena o rara (hecha en el Visual Builder con metas que el conector no entiende): reemplazarla exige replace_foreign: true en set-divi-template. warnings: [{code, message, …}] con body_replaces_content (un cuerpo sin divi/post-content REEMPLAZA el contenido de las páginas a las que se asigna), layout_not_published (un layout que no es publish también lo ve el público), layout_invalid (no existe o es de otro tipo), scheduled_for_trash (Divi marcó la plantilla o el layout como sin uso y a los 7 días los manda a la papelera), template_trashed, orphan_mapping y multiple_defaults.',
+			)
+		);
 	}
 
 	/**

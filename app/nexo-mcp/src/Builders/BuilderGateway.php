@@ -1132,6 +1132,25 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lista las plantillas del Theme Builder en vivo de Divi 5 (sólo lee).
+	 *
+	 * Exige el permiso del Theme Builder (el inyectado o `PermissionPolicy::can_write_divi_theme_builder()`) ANTES de leer
+	 * nada. Ver {@see DiviTemplateEditor}.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_theme_builder() {
+		return $this->template_editor()->list_templates();
+	}
+
+	/**
+	 * Editor de plantillas del Theme Builder con los componentes de producción.
+	 */
+	private function template_editor(): DiviTemplateEditor {
+		return new DiviTemplateEditor( new DiviThemeBuilderSchema(), new DiviTemplateStore(), $this->layout_allowed_callable() );
+	}
+
+	/**
 	 * Reemplaza, inserta o borra un nodo de una página de Divi 5, en la copia de trabajo.
 	 *
 	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5SectionEditor}.

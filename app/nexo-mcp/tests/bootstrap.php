@@ -44,6 +44,9 @@ final class WP_Test_State {
 	/** @var array<int, array<string, mixed>> */
 	public static array $meta = array();
 
+	/** @var array<int, array<string, list<string>>> Metas con varias filas (`add_post_meta()`): contenido => clave => valores. */
+	public static array $multi_meta = array();
+
 	/** @var array<string, array<string, mixed>> */
 	public static array $abilities = array();
 
@@ -135,6 +138,7 @@ final class WP_Test_State {
 		self::$denied_edit_posts = array();
 		self::$posts     = array();
 		self::$meta      = array();
+		self::$multi_meta = array();
 		self::$abilities = array();
 		self::$object_taxonomies = array();
 		self::$terms     = array();
@@ -576,10 +580,25 @@ function get_post_meta( $post_id, $key = '', $single = false ) {
 		foreach ( WP_Test_State::$meta[ (int) $post_id ] ?? array() as $name => $stored ) {
 			$all[ $name ] = array( maybe_serialize( $stored ) );
 		}
+		foreach ( WP_Test_State::$multi_meta[ (int) $post_id ] ?? array() as $name => $rows ) {
+			$all[ $name ] = $rows;
+		}
 		return $all;
+	}
+	if ( isset( WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] ) ) {
+		$rows = WP_Test_State::$multi_meta[ (int) $post_id ][ $key ];
+		return $single ? ( $rows[0] ?? '' ) : $rows;
 	}
 	$value = WP_Test_State::$meta[ (int) $post_id ][ $key ] ?? '';
 	return $single ? $value : array( $value );
+}
+function add_post_meta( $post_id, $key, $value, $unique = false ) {
+	$rows = WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] ?? array();
+	if ( $unique && array() !== $rows ) {
+		return false;
+	}
+	WP_Test_State::$multi_meta[ (int) $post_id ][ $key ][] = (string) $value;
+	return count( $rows ) + 1;
 }
 function get_post_status( $post = null ) {
 	$post = get_post( $post );
@@ -616,6 +635,21 @@ function update_post_meta( $post_id, $key, $value, $prev = '' ) {
 	return true;
 }
 function delete_post_meta( $post_id, $key, $value = '' ): bool {
+	if ( '' === $value ) {
+		unset( WP_Test_State::$meta[ (int) $post_id ][ $key ], WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] );
+		return true;
+	}
+	// Con valor, sólo se quitan las filas que lo tienen.
+	$rows = WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] ?? null;
+	if ( null !== $rows ) {
+		$rows = array_values( array_filter( $rows, static fn( $row ): bool => (string) $row !== (string) $value ) );
+		if ( array() === $rows ) {
+			unset( WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] );
+		} else {
+			WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] = $rows;
+		}
+		return true;
+	}
 	unset( WP_Test_State::$meta[ (int) $post_id ][ $key ] );
 	return true;
 }
@@ -693,7 +727,7 @@ function wp_trash_post( $post_id ) {
 }
 function wp_delete_post( $post_id, $force = false ) {
 	$post = WP_Test_State::$posts[ (int) $post_id ] ?? false;
-	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ] );
+	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ], WP_Test_State::$multi_meta[ (int) $post_id ] );
 	return $post;
 }
 
