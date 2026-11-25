@@ -1144,6 +1144,30 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Crea o reemplaza UNA plantilla del Theme Builder en vivo de Divi 5.
+	 *
+	 * Exige el permiso del Theme Builder ANTES de mirar la entrada. Ver {@see DiviTemplateEditor::set_template()}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_template( array $input ) {
+		return $this->template_editor()->set_template( $input );
+	}
+
+	/**
+	 * Saca una plantilla del Theme Builder en vivo y la manda a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `id`, `confirm_site_wide`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_template( array $input ) {
+		return $this->template_editor()->delete_template( $input );
+	}
+
+	/**
 	 * Editor de plantillas del Theme Builder con los componentes de producción.
 	 */
 	private function template_editor(): DiviTemplateEditor {

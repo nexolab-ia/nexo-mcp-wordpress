@@ -361,6 +361,15 @@ final class DiviTemplateStore {
 	}
 
 	/**
+	 * Elimina del todo una plantilla que esta misma llamada acaba de crear (para deshacer una creación a medias).
+	 *
+	 * @param int $id Plantilla recién creada.
+	 */
+	public function discard( int $id ): void {
+		wp_delete_post( $id, true );
+	}
+
+	/**
 	 * La plantilla a la papelera (como Divi: recuperable desde WordPress).
 	 *
 	 * @param int $id Plantilla.

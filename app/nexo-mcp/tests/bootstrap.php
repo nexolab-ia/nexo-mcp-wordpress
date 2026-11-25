@@ -44,6 +44,9 @@ final class WP_Test_State {
 	/** @var array<int, array<string, mixed>> */
 	public static array $meta = array();
 
+	/** @var array<string, bool> Claves cuyo PRÓXIMO `add_post_meta()` falla (una sola vez cada una). */
+	public static array $fail_add_meta = array();
+
 	/** @var array<int, array<string, list<string>>> Metas con varias filas (`add_post_meta()`): contenido => clave => valores. */
 	public static array $multi_meta = array();
 
@@ -139,6 +142,7 @@ final class WP_Test_State {
 		self::$posts     = array();
 		self::$meta      = array();
 		self::$multi_meta = array();
+		self::$fail_add_meta = array();
 		self::$abilities = array();
 		self::$object_taxonomies = array();
 		self::$terms     = array();
@@ -593,6 +597,10 @@ function get_post_meta( $post_id, $key = '', $single = false ) {
 	return $single ? $value : array( $value );
 }
 function add_post_meta( $post_id, $key, $value, $unique = false ) {
+	if ( isset( WP_Test_State::$fail_add_meta[ $key ] ) ) {
+		unset( WP_Test_State::$fail_add_meta[ $key ] );
+		return false;
+	}
 	$rows = WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] ?? array();
 	if ( $unique && array() !== $rows ) {
 		return false;

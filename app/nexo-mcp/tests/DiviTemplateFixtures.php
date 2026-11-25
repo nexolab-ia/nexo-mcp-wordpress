@@ -13,6 +13,7 @@ namespace NexoDev\NexoMCP\Tests;
 use NexoDev\NexoMCP\Audit\AuditLogger;
 use NexoDev\NexoMCP\Audit\AuditRepository;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
+use NexoDev\NexoMCP\Builders\DiviTemplateStore;
 use NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar;
 use NexoDev\NexoMCP\MCP\ToolExecutor;
 use NexoDev\NexoMCP\Support\Settings;
@@ -177,17 +178,45 @@ trait DiviTemplateFixtures {
 	}
 
 	/**
+	 * Una plantilla nueva válida y NO de sitio entero (inicio, con un cuerpo con `divi/post-content`).
+	 *
 	 * @param array<string, mixed> $extra Parámetros que cambian.
 	 * @return array<string, mixed>
 	 */
 	protected function new_template( array $extra = array() ): array {
 		return array_merge(
 			array(
-				'title'  => 'Páginas',
-				'use_on' => array( 'singular:post_type:page:all' ),
-				'body'   => array( 'layout_id' => self::BODY ),
+				'title'   => 'Inicio',
+				'enabled' => true,
+				'use_on'  => array( 'homepage' ),
+				'body'    => array( 'layout_id' => self::BODY ),
 			),
 			$extra
+		);
+	}
+
+	/**
+	 * Metas `_et_*` de una plantilla tal como las lee el conector.
+	 *
+	 * @return array<string, string|array<int, string>>
+	 */
+	protected function metas_of( int $id ): array {
+		return ( new DiviTemplateStore() )->metas( $id );
+	}
+
+	/**
+	 * Lo que el conector toca de una plantilla y su mapeo, sin el respaldo: para comprobar que un rechazo no cambia nada.
+	 *
+	 * @return array<string, mixed>
+	 */
+	protected function template_state( int $id ): array {
+		$post = \WP_Test_State::$posts[ $id ] ?? null;
+
+		return array(
+			'title'   => $post instanceof \WP_Post ? $post->post_title : null,
+			'status'  => $post instanceof \WP_Post ? $post->post_status : null,
+			'metas'   => $this->metas_of( $id ),
+			'mapping' => $this->mapping(),
 		);
 	}
 }
