@@ -19,7 +19,7 @@ use NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-final class DiviListThemeBuilderToolTest extends NexoTestCase {
+final class DiviListThemeBuilderToolTest extends NexoTestCase implements DiviTemplateIds {
 
 	use DiviTemplateFixtures;
 

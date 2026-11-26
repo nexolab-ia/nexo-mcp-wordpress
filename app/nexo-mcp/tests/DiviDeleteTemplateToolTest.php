@@ -20,7 +20,7 @@ use NexoDev\NexoMCP\Support\PostLock;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-final class DiviDeleteTemplateToolTest extends NexoTestCase {
+final class DiviDeleteTemplateToolTest extends NexoTestCase implements DiviTemplateIds {
 
 	use DiviTemplateFixtures;
 
