@@ -24,23 +24,11 @@ use NexoDev\NexoMCP\WordPress\MaintenanceGateway;
 use NexoDev\NexoMCP\WordPress\SeoGateway;
 
 /**
- * Para pruebas de proceso aparte (definen `ET_BUILDER_5_DIR`).
+ * Para pruebas de proceso aparte (definen `ET_BUILDER_5_DIR`). La clase que lo usa implementa `DiviTemplateIds`, que
+ * tiene las constantes: un trait no puede tenerlas en PHP 8.1.
  */
 trait DiviTemplateFixtures {
 
-	private const SWITCH = 'divi_theme_builder_tools_enabled';
-
-	private const TB = 900;
-
-	private const HEADER = 910;
-
-	private const BODY = 911;
-
-	private const BODY_BARE = 912;
-
-	private const FOOTER = 913;
-
-	private const HEADER_DRAFT = 914;
 
 	protected function prepare_divi_templates(): void {
 		if ( ! defined( 'ET_BUILDER_5_DIR' ) ) {
