@@ -21,7 +21,7 @@ use NexoDev\NexoMCP\Support\PostLock;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-final class DiviRestoreTemplateToolTest extends NexoTestCase {
+final class DiviRestoreTemplateToolTest extends NexoTestCase implements DiviTemplateIds {
 
 	use DiviTemplateFixtures;
 
