@@ -307,4 +307,18 @@ final class DiviTemplateStoreTest extends NexoTestCase {
 		$this->assertArrayNotHasKey( self::TB, \WP_Test_State::$posts );
 		$this->assertFalse( $store->discard_live_builder( 0 ) );
 	}
+
+	public function test_discarding_the_live_builder_never_deletes_one_from_the_theme_builder_library(): void {
+		$store = $this->store();
+		update_post_meta( self::TB, '_et_library_theme_builder', '1' );
+
+		$this->assertSame( array(), $store->mapping( self::TB ), 'está vacío' );
+		$this->assertFalse( $store->discard_live_builder( self::TB ) );
+		$this->assertArrayHasKey( self::TB, \WP_Test_State::$posts );
+		$this->assertSame( '1', \WP_Test_State::$meta[ self::TB ]['_et_library_theme_builder'] );
+
+		delete_post_meta( self::TB, '_et_library_theme_builder' );
+
+		$this->assertTrue( $store->discard_live_builder( self::TB ), 'sin la marca, vacío y propio sí' );
+	}
 }

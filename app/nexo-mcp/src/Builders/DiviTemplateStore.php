@@ -499,14 +499,19 @@ final class DiviTemplateStore {
 		}
 
 		$status = self::snapshot_status( $snapshot );
-		$saved  = wp_update_post(
-			array(
-				'ID'          => $id,
-				'post_title'  => wp_slash( is_string( $snapshot['title'] ?? null ) ? $snapshot['title'] : '' ),
-				'post_status' => $status,
-			),
-			true
+		$update = array(
+			'ID'          => $id,
+			'post_title'  => wp_slash( is_string( $snapshot['title'] ?? null ) ? $snapshot['title'] : '' ),
+			'post_status' => $status,
 		);
+
+		// WordPress añade `__trashed` al slug al mandar la plantilla a la papelera: al sacarla de ahí se quita (WordPress lo
+		// vuelve único si otro contenido ya lo usa).
+		if ( 'trash' !== $status && 1 === preg_match( '/^(.*)__trashed$/', $post->post_name, $slug ) ) {
+			$update['post_name'] = $slug[1];
+		}
+
+		$saved = wp_update_post( $update, true );
 
 		if ( is_wp_error( $saved ) ) {
 			return $saved;

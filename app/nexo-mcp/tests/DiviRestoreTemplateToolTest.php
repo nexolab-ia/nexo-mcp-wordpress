@@ -347,6 +347,56 @@ final class DiviRestoreTemplateToolTest extends NexoTestCase {
 		$this->assertSame( $before, $this->snapshot() );
 	}
 
+	public function test_without_a_live_theme_builder_restoring_is_unavailable_and_writes_nothing(): void {
+		$this->put_template( 950, 'Plantilla', array( '_et_use_on' => array( 'homepage' ) ) );
+		$this->back_up( 950 );
+		$backup = \WP_Test_State::$meta[950][ DiviTemplateStore::BACKUP_META ];
+		unset( \WP_Test_State::$posts[ self::TB ] );
+		$this->reset_calls();
+		$before = $this->snapshot();
+
+		$error = $this->assertError( $this->restore( array( 'id' => 950 ) ), 'nexo_mcp_divi_template_unavailable' );
+
+		$this->assertSame( $before, $this->snapshot(), 'ni la plantilla, ni el mapeo, ni las metas, ni el respaldo cambian' );
+		$this->assertSame( $backup, \WP_Test_State::$meta[950][ DiviTemplateStore::BACKUP_META ], 'el respaldo sigue siendo el mismo' );
+		$this->assertArrayNotHasKey( self::TB, \WP_Test_State::$posts, 'no se crea un Theme Builder en vivo' );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$cache_calls );
+		$this->assertNotSame( '', $error->get_error_message() );
+	}
+
+	public function test_restoring_a_trashed_template_removes_the_trashed_suffix_wordpress_added_to_its_slug(): void {
+		$this->put_template( 951, 'Inicio', array( '_et_use_on' => array( 'homepage' ) ) );
+		\WP_Test_State::$posts[951]->post_name = 'inicio';
+
+		$this->assertIsArray( $this->call( 'delete-divi-template', array( 'id' => 951 ) ) );
+		\WP_Test_State::$posts[951]->post_name = 'inicio__trashed'; // Lo que hace wp_trash_post() en WordPress.
+
+		$result = $this->restore( array( 'id' => 951 ) );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[951]->post_status );
+		$this->assertSame( 'inicio', \WP_Test_State::$posts[951]->post_name );
+	}
+
+	public function test_restoring_to_the_trash_or_a_slug_without_the_suffix_keeps_the_slug(): void {
+		$this->put_template( 951, 'Inicio', array( '_et_use_on' => array( 'homepage' ) ) );
+		\WP_Test_State::$posts[951]->post_name = 'mi__trashed-plantilla';
+		$this->back_up( 951 );
+
+		$this->assertIsArray( $this->restore( array( 'id' => 951 ) ) );
+		$this->assertSame( 'mi__trashed-plantilla', \WP_Test_State::$posts[951]->post_name, 'un sufijo en medio del slug no se toca' );
+
+		$this->put_template( 952, 'Creada' );
+		\WP_Test_State::$posts[952]->post_name = 'creada';
+		$store = new DiviTemplateStore();
+		$this->assertTrue( $store->save_backup( 952, $store->snapshot( 952, self::TB, 'create', false ) ) );
+
+		$this->assertIsArray( $this->restore( array( 'id' => 952 ) ) );
+		$this->assertSame( 'trash', \WP_Test_State::$posts[952]->post_status );
+		$this->assertSame( 'creada', \WP_Test_State::$posts[952]->post_name, 'al mandarla a la papelera el slug no se toca (lo hace WordPress)' );
+	}
+
 	/**
 	 * @return array<string, array{int}>
 	 */
