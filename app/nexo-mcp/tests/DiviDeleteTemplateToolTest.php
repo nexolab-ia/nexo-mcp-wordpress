@@ -63,6 +63,15 @@ final class DiviDeleteTemplateToolTest extends NexoTestCase {
 		}
 	}
 
+	public function test_the_description_points_to_restore_divi_template_and_not_to_wordpress_for_recovering(): void {
+		$description = $this->tool( self::DELETE )['description'];
+
+		$this->assertStringContainsString( 'nexo-mcp-restore-divi-template', $description );
+		$this->assertStringNotContainsString( 'se recupera desde WordPress', $description );
+		$this->assertStringContainsString( 'nexo-mcp-restore-builder-backup NO acepta plantillas', $description );
+		$this->assertStringNotContainsString( 'set-divi-template sin id; nace deshabilitada', $description );
+	}
+
 	public function test_the_permission_is_the_theme_builder_one_and_without_it_nothing_changes(): void {
 		$this->put_template( 950, 'Plantilla' );
 		$before = $this->snapshot();

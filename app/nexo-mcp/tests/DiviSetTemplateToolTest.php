@@ -569,6 +569,25 @@ final class DiviSetTemplateToolTest extends NexoTestCase {
 		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
 	}
 
+	public function test_when_it_cannot_go_back_by_itself_the_error_points_to_restore_divi_template(): void {
+		$this->put_live_tb();
+		$this->put_template( 950, 'Vieja', array( '_et_use_on' => array( 'search' ) ) );
+
+		\WP_Test_State::$fail_update_post = true;
+		$error                           = $this->assertError( $this->set( $this->new_template( array( 'id' => 950, 'title' => 'Nueva' ) ) ), 'nexo_mcp_divi_template_save_failed' );
+		\WP_Test_State::$fail_update_post = false;
+
+		$this->assertStringContainsString( 'nexo-mcp-restore-divi-template', $error->get_error_message() );
+		$this->assertStringNotContainsString( 'restore-builder-backup', $error->get_error_message() );
+	}
+
+	public function test_the_description_says_how_to_undo_with_restore_divi_template(): void {
+		$description = $this->tool( self::SET )['description'];
+
+		$this->assertStringContainsString( 'nexo-mcp-restore-divi-template', $description );
+		$this->assertStringContainsString( 'nexo-mcp-restore-builder-backup NO acepta plantillas', $description );
+	}
+
 	public function test_when_what_was_saved_does_not_read_back_as_asked_the_template_goes_back_to_its_previous_state(): void {
 		$this->put_live_tb();
 		$this->put_template( 950, 'Vieja', array( '_et_use_on' => array( 'search' ) ) );

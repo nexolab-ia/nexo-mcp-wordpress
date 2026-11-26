@@ -90,6 +90,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/list-divi-theme-builder',
 		'nexo-mcp/set-divi-template',
 		'nexo-mcp/delete-divi-template',
+		'nexo-mcp/restore-divi-template',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -910,6 +911,15 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->divi_template_delete_schema(),
 			fn( array $input ) => $this->builders->delete_divi_template( $input ),
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'restore-divi-template',
+			'Restaurar una plantilla del Theme Builder de Divi 5 desde su respaldo',
+			$this->divi_template_restore_description(),
+			'write',
+			$this->divi_template_restore_schema(),
+			fn( array $input ) => $this->builders->restore_divi_template( $input ),
 			fn() => $this->policy->can_write_divi_theme_builder()
 		);
 		$this->ability(
@@ -2257,7 +2267,7 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'CONFIRMACIONES: confirm_site_wide: true es obligatorio si la plantilla es por defecto o su use_on incluye un …:all, archive:all o 404 (nexo_mcp_divi_template_site_wide), y también para cambiar o quitarle eso a una plantilla que ya lo tiene; la respuesta explica el efecto y qué plantillas más específicas la tapan (shadowed_by) o tapa (shadows). Un cuerpo sin divi/post-content asignado al inicio, a un singular, a WooCommerce o a la plantilla por defecto se rechaza (nexo_mcp_divi_template_body_replaces_content) salvo allow_without_post_content: true. replace_foreign: true es obligatorio para reemplazar una plantilla que no es del conector (hecha en el Visual Builder con ajustes que no representa): nexo_mcp_divi_template_foreign con el resumen en data.summary; las metas de Divi que el esquema no entiende se quitan, quedan en el respaldo y la salida trae replaced.',
 				'',
-				'RESPALDO Y CACHÉ: antes de cada cambio se guarda un respaldo de la plantilla (metas, título, estado y su fila del Theme Builder; una sola copia, la del último cambio) y sólo se toca la fila de ESTA plantilla del mapeo, nunca se reescribe todo. DESHACER: la salida trae previous (el resumen de lo que había: con esos valores se vuelve a llamar a set-divi-template con el id); nexo-mcp-restore-builder-backup NO acepta plantillas. El respaldo completo queda en la meta _nexo_mcp_template_backup de la propia plantilla. Después se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\'), primer render lento) y las cachés de página (et_theme_builder_clear_wp_cache): Divi no borra el CSS, sin avisar, si el usuario de la conexión no tiene edit_posts (la respuesta lo avisa). Una plantilla o layout que no está en el Theme Builder en vivo lo manda Divi a la papelera a los 7 días.',
+				'RESPALDO Y CACHÉ: antes de cada cambio se guarda un respaldo de la plantilla (metas, título, estado y su fila del Theme Builder; una sola copia, la del último cambio) y sólo se toca la fila de ESTA plantilla del mapeo, nunca se reescribe todo. DESHACER: nexo-mcp-restore-divi-template con el id de la plantilla la devuelve a ese respaldo (nexo-mcp-restore-builder-backup NO acepta plantillas); la salida trae además previous (el resumen de lo que había: con esos valores también se puede volver a llamar a set-divi-template con el id). El respaldo completo queda en la meta _nexo_mcp_template_backup de la propia plantilla. Después se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\'), primer render lento) y las cachés de página (et_theme_builder_clear_wp_cache): Divi no borra el CSS, sin avisar, si el usuario de la conexión no tiene edit_posts (la respuesta lo avisa). Una plantilla o layout que no está en el Theme Builder en vivo lo manda Divi a la papelera a los 7 días.',
 				'',
 				'SALIDA: id, created, title, enabled, default, site_wide, effect (texto del efecto si es de sitio entero), ours, use_on, exclude_from, header, body, footer, shadowed_by, shadows, live_theme_builder, previous (el resumen de lo que había antes, null al crear), backup {operation, captured_at, existed}, cache {css, page_cache}, warnings, needs_enable (sólo al crear) y replaced (sólo al reemplazar una ajena).',
 				'',
@@ -2340,13 +2350,13 @@ final class ExtendedAbilityRegistrar {
 		return implode(
 			"\n",
 			array(
-				'Saca UNA plantilla del Theme Builder EN VIVO de Divi 5 y la manda a la papelera (como Divi: se recupera desde WordPress). Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'Saca UNA plantilla del Theme Builder EN VIVO de Divi 5 y la manda a la papelera (como Divi; no hay pantalla de WordPress para recuperarla: se restaura con nexo-mcp-restore-divi-template). Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
 				'',
 				'EFECTO EN TODO EL SITIO: quitar una plantilla cambia lo que ve todo el sitio donde ganaba (Divi elige UNA sola plantilla por petición: la siguiente en prioridad, o la por defecto, pasa a mandar). Si es la plantilla por defecto o su use_on incluye un …:all, archive:all o 404 hay que pasar confirm_site_wide: true (nexo_mcp_divi_template_site_wide). Una plantilla que no es del conector (hecha en el Visual Builder) exige replace_foreign: true (nexo_mcp_divi_template_foreign con el resumen en data.summary). Un id que no es una plantilla del Theme Builder en vivo da nexo_mcp_divi_template_not_found.',
 				'',
 				'ENTRADA: id (de nexo-mcp-list-divi-theme-builder), confirm_site_wide y replace_foreign (opcionales).',
 				'',
-				'RESPALDO Y CACHÉ: antes se guarda un respaldo (metas, título, estado y fila del Theme Builder) y sólo se quita la fila de ESTA plantilla del mapeo. DESHACER: la salida trae previous (el resumen de lo que había): una plantilla borrada se vuelve a crear con esos valores (set-divi-template sin id; nace deshabilitada); nexo-mcp-restore-builder-backup NO acepta plantillas. El respaldo completo (metas, título, estado y fila del Theme Builder) queda en la meta _nexo_mcp_template_backup de la plantilla en la papelera. Después se borra el CSS estático de todo el sitio y las cachés de página, como el guardado en vivo de Divi (sin edit_posts Divi no borra el CSS, sin avisar: la respuesta lo avisa). Los layouts de la plantilla NO se borran, pero Divi los marca como sin uso y a los 7 días los manda a la papelera.',
+				'RESPALDO Y CACHÉ: antes se guarda un respaldo (metas, título, estado y fila del Theme Builder) y sólo se quita la fila de ESTA plantilla del mapeo. DESHACER: nexo-mcp-restore-divi-template con el id de la plantilla borrada la saca de la papelera y la devuelve tal cual estaba, con su fila del Theme Builder (nexo-mcp-restore-builder-backup NO acepta plantillas); la salida trae además previous (el resumen de lo que había). El respaldo completo (metas, título, estado y fila del Theme Builder) queda en la meta _nexo_mcp_template_backup de la plantilla en la papelera. Después se borra el CSS estático de todo el sitio y las cachés de página, como el guardado en vivo de Divi (sin edit_posts Divi no borra el CSS, sin avisar: la respuesta lo avisa). Los layouts de la plantilla NO se borran, pero Divi los marca como sin uso y a los 7 días los manda a la papelera.',
 				'',
 				'SALIDA: id, deleted, status (trash), title, was_default, site_wide, layouts (los ids de sus layouts), live_theme_builder, previous (el resumen de lo que había), backup, cache {css, page_cache} y warnings.',
 				'',
@@ -2376,6 +2386,56 @@ final class ExtendedAbilityRegistrar {
 				'replace_foreign'   => array(
 					'type'        => 'boolean',
 					'description' => 'Confirma borrar una plantilla que no es del conector (se guarda un respaldo).',
+				),
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de restore-divi-template.
+	 */
+	private function divi_template_restore_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Devuelve UNA plantilla del Theme Builder EN VIVO de Divi 5 al estado de su respaldo (la meta _nexo_mcp_template_backup de la propia plantilla): sus metas, título, estado y su fila del Theme Builder. Sirve para deshacer set-divi-template y también tras delete-divi-template (la plantilla borrada está en la papelera, sin pantalla en WordPress: se saca de la papelera y vuelve a su fila). Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él, antes de mirar la entrada. Requiere Divi 5 activo (nexo_mcp_divi5_required). nexo-mcp-restore-builder-backup NO acepta plantillas.',
+				'',
+				'EFECTO EN TODO EL SITIO: restaurar cambia lo que ve todo el sitio donde esa plantilla gane (Divi elige UNA sola plantilla por petición). Si la plantilla de ahora o la respaldada es la por defecto o su use_on incluye un …:all, archive:all o 404 hay que pasar confirm_site_wide: true (nexo_mcp_divi_template_site_wide). Si la plantilla de ahora está en el Theme Builder en vivo y no es del conector (hecha en el Visual Builder) hay que pasar replace_foreign: true (nexo_mcp_divi_template_foreign con el resumen en data.summary): lo que tiene ahora se pierde, aunque queda en el respaldo nuevo. Restaurar una plantilla borrada no puede pasar de 50 plantillas (nexo_mcp_divi_template_too_many) ni duplicar la por defecto (nexo_mcp_divi_template_default_exists). El respaldo de una CREACIÓN la manda a la papelera y la saca del Theme Builder en vivo.',
+				'',
+				'ENTRADA: id (de nexo-mcp-list-divi-theme-builder o de la salida de delete-divi-template), confirm_site_wide y replace_foreign (opcionales).',
+				'',
+				'RESPALDO Y CACHÉ: antes de escribir se guarda un respaldo del estado de ahora (sin él no se escribe: nexo_mcp_divi_template_backup_failed), así que restaurar dos veces alterna entre los dos estados. Sólo se toca la fila de ESTA plantilla del mapeo. Los layouts que vuelven a una ranura pierden la marca de «sin uso» de Divi (si no, a los 7 días los manda a la papelera). Después se borra el CSS estático de todo el sitio (primer render lento) y las cachés de página, como el guardado en vivo de Divi (sin edit_posts Divi no borra el CSS, sin avisar: la respuesta lo avisa). Si algo falla a medias la plantilla vuelve a su estado anterior.',
+				'',
+				'SALIDA: id, restored, title, status (publish, o trash si el respaldo era de una creación), mapped (si queda en el Theme Builder en vivo), enabled, default, site_wide, effect (texto del efecto si es de sitio entero), ours, use_on, exclude_from, header, body, footer, previous (el resumen de lo que había antes de restaurar), restored_from {operation, captured_at, existed} (el respaldo usado), backup {operation, captured_at, existed} (el respaldo nuevo del estado anterior), live_theme_builder, cache {css, page_cache} y warnings (por ejemplo un layout que ya no está publicado).',
+				'',
+				'ERRORES (no escriben nada): nexo_mcp_divi_template_denied, nexo_mcp_divi5_required, nexo_mcp_divi_template_invalid (con data.path), nexo_mcp_divi_template_not_found (no es una plantilla), nexo_mcp_divi_template_no_backup (no hay respaldo), nexo_mcp_divi_template_unavailable (no hay Theme Builder en vivo), nexo_mcp_divi_template_site_wide, nexo_mcp_divi_template_foreign, nexo_mcp_divi_template_too_many, nexo_mcp_divi_template_default_exists, nexo_mcp_divi_template_backup_failed, nexo_mcp_busy (otra llamada sobre el Theme Builder en curso: reintenta) y nexo_mcp_divi_template_save_failed (la plantilla vuelve a su estado anterior).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de restore-divi-template.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_template_restore_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'                => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Plantilla del Theme Builder con un respaldo (también una borrada, en la papelera).',
+				),
+				'confirm_site_wide' => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma restaurar una plantilla por defecto o de sitio entero (…:all, archive:all, 404), la de ahora o la respaldada.',
+				),
+				'replace_foreign'   => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma reemplazar la plantilla de ahora si no es del conector (se guarda un respaldo).',
 				),
 			),
 			'required'             => array( 'id' ),
@@ -3099,7 +3159,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset', 'delete-divi-template' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset', 'delete-divi-template', 'restore-divi-template' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),
