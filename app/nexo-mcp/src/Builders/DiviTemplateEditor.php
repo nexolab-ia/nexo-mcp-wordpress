@@ -97,6 +97,7 @@ final class DiviTemplateEditor {
 			),
 			'draft'            => $this->draft( $this->store->draft_id() ),
 			'templates'        => $seen['items'],
+			'truncated'        => $seen['truncated'],
 			'default_template' => $view['default_template'],
 			'contexts'         => $view['contexts'],
 			'shadows'          => $view['shadows'],
@@ -353,7 +354,8 @@ final class DiviTemplateEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function create_locked( array $params, array $stored ) {
-		$tb = $this->store->ensure_live_id();
+		$existing = $this->store->live_id();
+		$tb       = $this->store->ensure_live_id();
 
 		if ( $tb <= 0 ) {
 			return new \WP_Error(
@@ -362,15 +364,25 @@ final class DiviTemplateEditor {
 			);
 		}
 
-		$id = $this->store->insert( $params['title'] );
+		// Un Theme Builder en vivo que esta llamada acaba de crear no se deja vacío si la creación falla.
+		$created = 0 === $existing;
+		$drop    = function () use ( $tb, $created ): void {
+			if ( $created ) {
+				$this->store->discard_live_builder( $tb );
+			}
+		};
+		$id      = $this->store->insert( $params['title'] );
 
 		if ( is_wp_error( $id ) ) {
+			$drop();
+
 			return $this->failed( $id->get_error_message() );
 		}
 
-		$undo = function () use ( $tb, $id ): void {
+		$undo = function () use ( $tb, $id, $drop ): void {
 			$this->store->unmap( $tb, $id );
 			$this->store->discard( $id );
+			$drop();
 		};
 
 		$snapshot = $this->store->snapshot( $id, $tb, 'create', false );
@@ -396,6 +408,8 @@ final class DiviTemplateEditor {
 
 			return $this->failed( __( 'Lo guardado no coincide con lo pedido.', 'nexo-mcp' ) );
 		}
+
+		$this->store->release_layouts( $stored );
 
 		return $this->set_response( $id, $tb, $params, true, $snapshot, null, null );
 	}
@@ -437,6 +451,8 @@ final class DiviTemplateEditor {
 		if ( ! $this->store->map( $tb, $id ) || ! $this->matches( $id, $params ) ) {
 			return $this->undone( $id, $tb, __( 'Lo guardado no coincide con lo pedido.', 'nexo-mcp' ) );
 		}
+
+		$this->store->release_layouts( $stored );
 
 		return $this->set_response( $id, $tb, $params, false, $snapshot, $replaced, $this->schema->summary( $snapshot['metas'], (string) $snapshot['title'] ) );
 	}
@@ -623,7 +639,10 @@ final class DiviTemplateEditor {
 		$restored = $this->store->restore( $id, $tb, $snapshot );
 
 		if ( is_wp_error( $restored ) || ! $this->store->is_state( $id, $tb, $snapshot ) ) {
-			$this->store->restore( $id, $tb, $fresh );
+			if ( ! $this->store->is_state( $id, $tb, $fresh ) ) {
+				$this->store->restore( $id, $tb, $fresh );
+			}
+
 			$back = $this->store->is_state( $id, $tb, $fresh );
 			$this->store->save_backup( $id, $snapshot );
 
@@ -993,14 +1012,32 @@ final class DiviTemplateEditor {
 	 *
 	 * @param int $tb Theme Builder en vivo (0 si no hay).
 	 *
-	 * @return array{items: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>}
+	 * @return array{items: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>, truncated: bool}
 	 */
 	private function inspect( int $tb ): array {
-		$items    = array();
-		$warnings = array();
-		$defaults = array();
+		$items     = array();
+		$warnings  = array();
+		$defaults  = array();
+		$mapping   = $this->store->mapping( $tb );
+		$truncated = count( $mapping ) > DiviTemplateStore::MAX_TEMPLATES;
 
-		foreach ( $this->store->mapping( $tb ) as $id ) {
+		if ( $truncated ) {
+			$warnings[] = $this->warning(
+				'mapping_truncated',
+				sprintf(
+					/* translators: 1: filas del mapeo, 2: máximo. */
+					__( 'El Theme Builder en vivo tiene %1$d plantillas y sólo se leen las primeras %2$d (las demás no se listan ni cuentan para quién gana). El conector no administra más de %2$d: quita las que sobren desde el Visual Builder.', 'nexo-mcp' ),
+					count( $mapping ),
+					DiviTemplateStore::MAX_TEMPLATES
+				),
+				array(
+					'total' => count( $mapping ),
+					'max'   => DiviTemplateStore::MAX_TEMPLATES,
+				)
+			);
+		}
+
+		foreach ( array_slice( $mapping, 0, DiviTemplateStore::MAX_TEMPLATES ) as $id ) {
 			$post = $this->store->template( $id );
 
 			if ( null === $post ) {
@@ -1042,8 +1079,9 @@ final class DiviTemplateEditor {
 		}
 
 		return array(
-			'items'    => $items,
-			'warnings' => $warnings,
+			'items'     => $items,
+			'warnings'  => $warnings,
+			'truncated' => $truncated,
 		);
 	}
 
@@ -1094,6 +1132,20 @@ final class DiviTemplateEditor {
 					__( 'El layout %1$d no existe o no es un layout de tipo %2$s: Divi lo ignora y esa área sale como si no hubiera layout.', 'nexo-mcp' ),
 					$layout,
 					$slot
+				),
+				$at
+			);
+
+			return $out;
+		}
+
+		if ( 'trash' === $out['status'] ) {
+			$warnings[] = $this->warning(
+				'layout_trashed',
+				sprintf(
+					/* translators: %d: id. */
+					__( 'El layout %d está en la papelera: Divi no lo muestra y esa área sale como si no hubiera layout. Sácalo de la papelera o quítalo de la plantilla.', 'nexo-mcp' ),
+					$layout
 				),
 				$at
 			);

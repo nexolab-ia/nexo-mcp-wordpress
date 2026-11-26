@@ -663,4 +663,155 @@ final class DiviSetTemplateToolTest extends NexoTestCase {
 		$this->assertError( $this->tool( 'restore-builder-backup' )['execute_callback']( array( 'id' => self::TB ) ), 'nexo_mcp_divi_post_type_denied' );
 		$this->assertTrue( $this->tool( 'restore-builder-backup', array( self::SWITCH => false ) )['permission_callback']( array( 'id' => 100 ) ), 'una página sigue con su permiso de siempre' );
 	}
+
+	public function test_it_is_annotated_as_destructive_because_it_replaces_a_template(): void {
+		$this->assertTrue( $this->tool( self::SET )['meta']['annotations']['destructive'] );
+		$this->assertFalse( $this->tool( self::SET )['meta']['annotations']['readonly'] );
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function creation_failures(): array {
+		return array(
+			'las metas no se leen como se pidió' => array( 'metas' ),
+			'falla el insert de la plantilla'    => array( 'insert' ),
+			'falla el respaldo'                  => array( 'backup' ),
+			'se pierde el bloqueo'               => array( 'lock' ),
+		);
+	}
+
+	/**
+	 * Contenidos y metas sin los arreglos vacíos que deja `delete_post_meta()` (y sin el bloqueo, que es una opción): lo que se ve
+	 * de una llamada que deshace lo que hizo.
+	 */
+	private function content_state(): string {
+		$clean = static fn( array $all ): array => array_filter( $all, static fn( $rows ): bool => array() !== $rows );
+
+		return serialize( array( \WP_Test_State::$posts, $clean( \WP_Test_State::$meta ), $clean( \WP_Test_State::$multi_meta ) ) );
+	}
+
+	private function fail_creation( string $how ): void {
+		switch ( $how ) {
+			case 'metas':
+				\WP_Test_State::$fail_add_meta['_et_use_on'] = true;
+				break;
+			case 'insert':
+				\WP_Test_State::$fail_insert_type = 'et_template';
+				break;
+			case 'backup':
+				\WP_Test_State::$json_fail_in = 'save_backup';
+				break;
+			default:
+				$this->lose_lock_after_acquiring( DiviTemplateStore::LOCK_ID );
+		}
+	}
+
+	/**
+	 * @dataProvider creation_failures
+	 */
+	public function test_a_failed_creation_does_not_leave_the_live_builder_it_created_itself( string $how ): void {
+		$before = $this->content_state();
+
+		$this->fail_creation( $how );
+		$result = $this->set( $this->new_template() );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertContains( $result->get_error_code(), array( 'nexo_mcp_divi_template_save_failed', 'nexo_mcp_divi_template_backup_failed', 'nexo_mcp_busy' ) );
+		$this->assertSame( array( true ), \WP_Template_Stub_State::$tb_calls, 'el Theme Builder en vivo sí se intentó crear' );
+		$this->assertSame( $before, $this->content_state(), 'ni Theme Builder en vivo, ni plantilla, ni mapeo' );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$cache_calls );
+	}
+
+	/**
+	 * @dataProvider creation_failures
+	 */
+	public function test_a_failed_creation_keeps_a_live_builder_that_was_already_there_even_if_it_has_no_rows( string $how ): void {
+		$this->put_live_tb();
+		$before = $this->content_state();
+
+		$this->fail_creation( $how );
+		$result = $this->set( $this->new_template() );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $before, $this->content_state() );
+		$this->assertSame( 'et_theme_builder', \WP_Test_State::$posts[ self::TB ]->post_type );
+		$this->assertSame( array(), \WP_Template_Stub_State::$tb_calls, 'no hizo falta crearlo' );
+	}
+
+	public function test_without_a_live_builder_and_without_a_way_to_create_one_the_tool_says_it_is_unavailable_and_writes_nothing(): void {
+		$before = $this->snapshot();
+
+		\WP_Test_State::$fail_insert_post = true;
+		$result                           = $this->set( $this->new_template() );
+		\WP_Test_State::$fail_insert_post = false;
+
+		$error = $this->assertError( $result, 'nexo_mcp_divi_template_unavailable' );
+
+		$this->assertStringContainsString( 'Theme Builder', $error->get_error_message() );
+		$this->assertSame( $before, $this->snapshot() );
+		$this->assertSame( array( true ), \WP_Template_Stub_State::$tb_calls );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+	}
+
+	public function test_without_a_backup_nothing_is_written_when_creating_or_replacing(): void {
+		$this->put_live_tb();
+		$this->put_template( 950, 'Vieja', array( '_et_use_on' => array( 'search' ) ) );
+		$before = $this->snapshot();
+
+		foreach ( array( $this->new_template(), $this->new_template( array( 'id' => 950, 'title' => 'Nueva' ) ) ) as $input ) {
+			\WP_Test_State::$json_fail_in = 'save_backup';
+			$result                       = $this->set( $input );
+			\WP_Test_State::$json_fail_in = '';
+
+			$this->assertError( $result, 'nexo_mcp_divi_template_backup_failed' );
+			$this->assertSame( $before, $this->snapshot(), 'ni plantilla nueva, ni metas, ni título, ni mapeo, ni respaldo' );
+		}
+
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$cache_calls );
+	}
+
+	public function test_assigning_a_layout_clears_its_unused_mark_like_the_live_save_of_divi_and_only_the_assigned_ones(): void {
+		$this->put_live_tb();
+		$mark = '_et_theme_builder_marked_as_unused';
+
+		foreach ( array( self::BODY, self::HEADER, self::FOOTER, self::BODY_BARE ) as $layout ) {
+			update_post_meta( $layout, $mark, '1700000000' );
+		}
+
+		$result = $this->set(
+			$this->new_template(
+				array(
+					'header' => array( 'layout_id' => self::HEADER, 'enabled' => false ),
+				)
+			)
+		);
+
+		$this->assertIsArray( $result );
+		$this->assertSame( '', (string) get_post_meta( self::BODY, $mark, true ) );
+		$this->assertSame( '', (string) get_post_meta( self::HEADER, $mark, true ), 'una ranura oculta también tiene su layout asignado' );
+		$this->assertSame( '1700000000', get_post_meta( self::FOOTER, $mark, true ) );
+		$this->assertSame( '1700000000', get_post_meta( self::BODY_BARE, $mark, true ) );
+
+		// Reemplazar con otros layouts: los que salen no se tocan, los que entran se liberan.
+		update_post_meta( self::FOOTER, $mark, '1700000000' );
+		$this->assertIsArray( $this->set( $this->new_template( array( 'id' => $result['id'], 'body' => array( 'layout_id' => null ), 'footer' => array( 'layout_id' => self::FOOTER ) ) ) ) );
+		$this->assertSame( '', (string) get_post_meta( self::FOOTER, $mark, true ) );
+		$this->assertSame( '1700000000', get_post_meta( self::BODY_BARE, $mark, true ) );
+	}
+
+	public function test_a_failed_set_leaves_the_unused_marks_of_the_layouts_it_would_have_assigned(): void {
+		$this->put_live_tb();
+		$this->put_template( 950, 'Vieja', array( '_et_use_on' => array( 'search' ) ) );
+		update_post_meta( self::BODY, '_et_theme_builder_marked_as_unused', '1700000000' );
+		$before = $this->template_state( 950 );
+
+		\WP_Test_State::$fail_add_meta['_et_use_on'] = true;
+		$this->assertError( $this->set( $this->new_template( array( 'id' => 950 ) ) ), 'nexo_mcp_divi_template_save_failed' );
+
+		$this->assertSame( '1700000000', get_post_meta( self::BODY, '_et_theme_builder_marked_as_unused', true ) );
+		$this->assertEquals( $before, $this->template_state( 950 ) );
+	}
 }

@@ -370,7 +370,25 @@ final class DiviTemplateStore {
 	}
 
 	/**
-	 * La plantilla a la papelera (como Divi: recuperable desde WordPress).
+	 * Elimina un Theme Builder en vivo que esta misma llamada acaba de crear (para deshacer una creación fallida), pero sólo
+	 * si sigue vacío (sin filas en el mapeo) y no es uno de la biblioteca del Theme Builder.
+	 *
+	 * @param int $tb Theme Builder.
+	 *
+	 * @return bool Si lo eliminó.
+	 */
+	public function discard_live_builder( int $tb ): bool {
+		$post = $tb > 0 ? get_post( $tb ) : null;
+
+		if ( ! $post instanceof \WP_Post || self::BUILDER_TYPE !== $post->post_type || array() !== $this->mapping( $tb ) || '' !== (string) get_post_meta( $tb, '_et_library_theme_builder', true ) ) {
+			return false;
+		}
+
+		return (bool) wp_delete_post( $tb, true );
+	}
+
+	/**
+	 * La plantilla a la papelera (como Divi; se recupera con restore-divi-template).
 	 *
 	 * @param int $id Plantilla.
 	 */
@@ -472,7 +490,10 @@ final class DiviTemplateStore {
 		}
 
 		if ( true !== ( $snapshot['existed'] ?? null ) ) {
-			$this->unmap( $tb, $id );
+			// Si la fila no sale del mapeo no se manda a la papelera: quedaría una plantilla en vivo que Divi no usa.
+			if ( ! $this->unmap( $tb, $id ) ) {
+				return new \WP_Error( 'nexo_mcp_divi_template_save_failed', __( 'No se pudo sacar la plantilla del Theme Builder en vivo.', 'nexo-mcp' ), array( 'id' => $id ) );
+			}
 
 			return $this->trash( $id ) || 'trash' === $post->post_status ? true : new \WP_Error( 'nexo_mcp_divi_template_save_failed', __( 'WordPress no pudo enviar la plantilla a la papelera.', 'nexo-mcp' ), array( 'id' => $id ) );
 		}

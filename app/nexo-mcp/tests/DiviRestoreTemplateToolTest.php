@@ -560,4 +560,21 @@ final class DiviRestoreTemplateToolTest extends NexoTestCase {
 		$this->assertFalse( $result['cache']['css'] );
 		$this->assertStringContainsString( 'edit_posts', implode( ' ', $result['warnings'] ) );
 	}
+
+	public function test_restoring_a_creation_whose_row_cannot_be_removed_changes_nothing(): void {
+		$this->put_template( 950, 'Otra' );
+		$this->assertIsArray( $this->call( 'set-divi-template', $this->new_template() ) );
+		$id = array_values( array_filter( array_keys( \WP_Test_State::$posts ), static fn( int $post ): bool => 'et_template' === \WP_Test_State::$posts[ $post ]->post_type && 950 !== $post ) )[0];
+		$this->reset_calls();
+		$before = $this->snapshot();
+
+		\WP_Test_State::$fail_delete_meta['_et_template'] = true;
+		$result                                          = $this->restore( array( 'id' => $id ) );
+
+		$this->assertError( $result, 'nexo_mcp_divi_template_save_failed' );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[ $id ]->post_status );
+		$this->assertSame( array( '950', (string) $id ), $this->mapping() );
+		$this->assertSame( $before, $this->snapshot(), 'también el respaldo de la creación sigue siendo el de antes' );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+	}
 }

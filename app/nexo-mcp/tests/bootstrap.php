@@ -47,6 +47,9 @@ final class WP_Test_State {
 	/** @var array<string, bool> Claves cuyo PRÓXIMO `add_post_meta()` falla (una sola vez cada una). */
 	public static array $fail_add_meta = array();
 
+	/** @var array<string, bool> Claves cuyo PRÓXIMO `delete_post_meta()` no borra nada y devuelve false (una sola vez cada una). */
+	public static array $fail_delete_meta = array();
+
 	/** @var array<int, array<string, list<string>>> Metas con varias filas (`add_post_meta()`): contenido => clave => valores. */
 	public static array $multi_meta = array();
 
@@ -99,6 +102,9 @@ final class WP_Test_State {
 	/** Hace que `wp_insert_post()` devuelva un error. */
 	public static bool $fail_insert_post = false;
 
+	/** Si no está vacío, `wp_insert_post()` falla sólo para los contenidos de ese tipo. */
+	public static string $fail_insert_type = '';
+
 	/** Hace que `wp_insert_post()` guarde un `post_content` distinto del pedido (un filtro que lo reescribe). */
 	public static bool $mangle_insert = false;
 
@@ -143,6 +149,8 @@ final class WP_Test_State {
 		self::$meta      = array();
 		self::$multi_meta = array();
 		self::$fail_add_meta = array();
+		self::$fail_delete_meta = array();
+		self::$fail_insert_type = '';
 		self::$abilities = array();
 		self::$object_taxonomies = array();
 		self::$terms     = array();
@@ -643,6 +651,10 @@ function update_post_meta( $post_id, $key, $value, $prev = '' ) {
 	return true;
 }
 function delete_post_meta( $post_id, $key, $value = '' ): bool {
+	if ( isset( WP_Test_State::$fail_delete_meta[ $key ] ) ) {
+		unset( WP_Test_State::$fail_delete_meta[ $key ] );
+		return false;
+	}
 	if ( '' === $value ) {
 		unset( WP_Test_State::$meta[ (int) $post_id ][ $key ], WP_Test_State::$multi_meta[ (int) $post_id ][ $key ] );
 		return true;
@@ -713,7 +725,7 @@ if ( ! function_exists( 'clean_post_cache' ) ) {
 
 function wp_insert_post( $data, $wp_error = false ) {
 	WP_Test_State::$kses_during_insert[] = WP_Test_State::$kses_active;
-	if ( WP_Test_State::$fail_insert_post ) {
+	if ( WP_Test_State::$fail_insert_post || ( '' !== WP_Test_State::$fail_insert_type && ( $data['post_type'] ?? '' ) === WP_Test_State::$fail_insert_type ) ) {
 		return new WP_Error( 'db_insert_error', 'No se pudo insertar.' );
 	}
 	if ( WP_Test_State::$mangle_insert && isset( $data['post_content'] ) ) {
