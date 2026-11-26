@@ -86,6 +86,22 @@
 #    edit-divi-section delete devuelve dropped_conditions. Sin WooCommerce de pruebas (no se crean productos). Se guardan
 #    crudos los ajustes, la versión, el bloqueo y los roles al empezar y se devuelven al final (también si la corrida se
 #    corta); las páginas (con su et-cache) se borran (force).
+# 7j. Theme Builder de Divi 5 (D8a; sólo con Divi 5 activo, con SKIP si falta): con el interruptor
+#    divi_theme_builder_tools_enabled encendido sólo durante el bloque y la capacidad nexo_mcp_divi_theme_builder:
+#    create-divi-layout (encabezado, cuerpo con y sin divi/post-content, pie: publicados y sin asignar; no cambian el
+#    sitio), set-divi-template (una plantilla nueva nace deshabilitada y no cambia el sitio; activada, el visitante
+#    anónimo ve su encabezado, su cuerpo con el contenido de la página y su pie) y list-divi-theme-builder. Contra una
+#    página Divi 5 propia, una 404, ?s= y el archivo de una categoría: Divi usa UNA sola plantilla por petición (una
+#    plantilla de todas las páginas no pisa a la de una página concreta y sí se ve en otra); en el carrito de WooCommerce
+#    (woocommerce:cart), un cuerpo con divi/post-content conserva el carrito y uno sin él lo REEMPLAZA (sólo con
+#    allow_without_post_content) y restore-divi-template vuelve al anterior; delete-divi-template → restore-divi-template →
+#    restore-divi-template (la plantilla vuelve a su fila sin el sufijo __trashed del slug y la segunda restauración
+#    alterna); rechazos sin escribir (sitio entero sin confirm_site_wide, cuerpo sin post-content, id inexistente,
+#    interruptor apagado, y get-page-structure sobre un layout sin el permiso del Theme Builder). Antes de empezar se toma
+#    una foto del estado (posts, metas, términos, relaciones, opciones, metas del admin y archivos de et-cache) más las
+#    opciones crudas que se tocan (ajustes, versión, bloqueos y roles); al final se borra todo lo creado (plantillas,
+#    layouts, Theme Builder en vivo, términos, páginas, et-cache) y se compara la foto: el estado vuelve a ser exactamente
+#    el de antes (también si la corrida se corta).
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -528,6 +544,127 @@ if [ "${1:-}" = "--divi-condiciones-buscar" ]; then
 	curl -sL --max-time 60 --get --data-urlencode "s=$2" "http://localhost:8080/"
 	exit 0
 fi
+# Subcomandos y función del bloque del Theme Builder de Divi 5 (D8a). Esta prueba cambia plantillas que afectan a todo el
+# sitio: antes guarda una foto (--divi-tb-foto), al final lo creado se barre por id (--divi-tb-restaurar) y la huella
+# (--divi-tb-huella) tiene que ser idéntica a la de antes. La huella lista un resumen por línea (posts, metas, términos,
+# relaciones, opciones no transient, metas del administrador, usuarios y archivos de et-cache) y deja fuera lo que cualquier
+# conexión OAuth o visita cambia sola (tablas nexo_mcp_*, sesiones, transients, wc_last_active, avisos de Yoast) y las cachés
+# que Divi borra en todo el sitio al guardar una plantilla y regenera al renderizar (metas de recursos y tres opciones), más el cerrojo efímero de Action Scheduler.
+#   --divi-tb-foto / -huella / -restaurar    foto cruda y limpieza; la huella imprime una línea por concepto
+#   --divi-tb-categoria                      id de la categoría por defecto (el archivo contra el que se prueba)
+#   --divi-tb-faltantes                      ids de páginas con directorio en et-cache al empezar que ya no lo tienen
+#   --divi-tb-slug <id>                      slug (post_name) de una plantilla
+#   --divi-tb-carrito                        id de la página del carrito de WooCommerce (vacío sin WooCommerce)
+divi_tb_opciones='array( "nexo_mcp_settings", "nexo_mcp_version", $GLOBALS["wpdb"]->prefix . "user_roles" )'
+restaurar_divi_tb() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_tb_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+$borrados = array();
+$tipos = array( "et_theme_builder", "et_template", "et_header_layout", "et_body_layout", "et_footer_layout", "et_pb_layout" );
+$marcas = implode( ",", array_fill( 0, count( $tipos ), "%s" ) );
+$ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE ID > %d AND post_type IN ($marcas)", array_merge( array( (int) $foto["max_post"] ), $tipos ) ) );
+foreach ( $ids as $id ) { wp_delete_post( (int) $id, true ); $borrados[] = (int) $id; }
+$terminos = $wpdb->get_results( $wpdb->prepare( "SELECT t.term_id, tt.taxonomy FROM {$wpdb->terms} t JOIN {$wpdb->term_taxonomy} tt ON tt.term_id = t.term_id WHERE t.term_id > %d", (int) $foto["max_term"] ), ARRAY_A );
+foreach ( $terminos as $t ) { wp_delete_term( (int) $t["term_id"], (string) $t["taxonomy"] ); }
+foreach ( $foto["opciones"] as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+foreach ( $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE \"nexo\\_mcp\\_lock\\_%\"" ) as $nombre ) {
+	if ( ! in_array( $nombre, $foto["bloqueos"], true ) ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+$raiz = WP_CONTENT_DIR . "/et-cache";
+if ( is_dir( $raiz ) ) {
+	$it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $raiz, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
+	foreach ( $it as $f ) {
+		if ( in_array( substr( $f->getPathname(), strlen( $raiz ) + 1 ), $foto["cache"], true ) ) { continue; }
+		$f->isDir() ? @rmdir( $f->getPathname() ) : @unlink( $f->getPathname() );
+	}
+}
+echo "restaurado (posts borrados: " . implode( ",", $borrados ) . ")";'
+}
+# Divi borra el CSS estático de TODAS las páginas al guardar una plantilla y lo regenera al renderizar: las páginas que tenían
+# su directorio en et-cache al empezar se visitan una vez (como visitante) para que vuelva, y la portada para los archivos
+# globales. Después se borra la foto cruda.
+cerrar_divi_tb() {
+	local id
+	for id in $(tools/prueba_adaptadores.sh --divi-tb-faltantes); do
+		curl -sL --max-time 120 -o /dev/null "http://localhost:8080/?page_id=$id"
+	done
+	curl -sL --max-time 120 -o /dev/null "http://localhost:8080/"
+	php_wp 'delete_option( "nexo_prueba_divi_tb_foto" );' >/dev/null
+}
+if [ "${1:-}" = "--divi-tb-foto" ]; then
+	php_wp '
+global $wpdb;
+$opciones = array();
+foreach ( '"$divi_tb_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$opciones[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+$cache = array();
+$raiz = WP_CONTENT_DIR . "/et-cache";
+if ( is_dir( $raiz ) ) {
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $raiz, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $f ) { $cache[] = substr( $f->getPathname(), strlen( $raiz ) + 1 ); }
+}
+update_option( "nexo_prueba_divi_tb_foto", array(
+	"opciones" => $opciones,
+	"max_post" => (int) $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts}" ),
+	"max_term" => (int) $wpdb->get_var( "SELECT MAX(term_id) FROM {$wpdb->terms}" ),
+	"bloqueos" => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE \"nexo\\_mcp\\_lock\\_%\"" ),
+	"cache"    => $cache,
+), false );
+echo "foto";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-tb-huella" ]; then
+	php_wpr '
+global $wpdb;
+$linea = static function ( $nombre, $filas ) { echo $nombre . "=" . count( $filas ) . ":" . substr( md5( wp_json_encode( $filas ) ), 0, 12 ) . "\n"; };
+$linea( "posts", $wpdb->get_results( "SELECT ID, post_type, post_status, post_name, post_title, post_parent, MD5(post_content) FROM {$wpdb->posts} ORDER BY ID", ARRAY_N ) );
+// Cachés de Divi que borra remove_static_resources( "all", "all" ) en todas las entradas y que Divi regenera al renderizar.
+$cachesdivi = array( "et_enqueued_post_fonts", "_et_dynamic_cached_shortcodes", "_et_dynamic_cached_attributes", "_et_builder_module_features_cache", "_divi_dynamic_assets_cached_modules", "_divi_dynamic_assets_cached_feature_used", "_divi_dynamic_assets_canvases_used", "_edit_lock" );
+$linea( "metas", array_values( array_filter( $wpdb->get_results( "SELECT post_id, meta_key, MD5(meta_value) FROM {$wpdb->postmeta} ORDER BY post_id, meta_key, MD5(meta_value)", ARRAY_N ), static fn( $f ) => ! in_array( $f[1], $cachesdivi, true ) ) ) );
+$linea( "terminos", $wpdb->get_results( "SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.count FROM {$wpdb->terms} t LEFT JOIN {$wpdb->term_taxonomy} tt ON tt.term_id = t.term_id ORDER BY t.term_id", ARRAY_N ) );
+$linea( "relaciones", $wpdb->get_results( "SELECT object_id, term_taxonomy_id FROM {$wpdb->term_relationships} ORDER BY object_id, term_taxonomy_id", ARRAY_N ) );
+$opciones = array();
+foreach ( $wpdb->get_results( "SELECT option_name, MD5(option_value) FROM {$wpdb->options} ORDER BY option_name", ARRAY_N ) as $fila ) {
+	// Cachés que Divi y Elementor regeneran solos al renderizar una página y el cerrojo efímero de Action Scheduler.
+	if ( 0 === strpos( $fila[0], "_transient" ) || 0 === strpos( $fila[0], "_site_transient" ) || 0 === strpos( $fila[0], "nexo_prueba_" ) || 0 === strpos( $fila[0], "action_scheduler_lock_" ) || in_array( $fila[0], array( "_et_builder_da_feature_cache", "_et_builder_gf_feature_cache", "_elementor_design_system_sync_css_meta" ), true ) ) { continue; }
+	$opciones[] = $fila;
+}
+$linea( "opciones", $opciones );
+$ruido = array( "session_tokens", "mcp_adapter_sessions", "wc_last_active", "wp_yoast_notifications" );
+$linea( "usermeta", array_values( array_filter( $wpdb->get_results( "SELECT user_id, meta_key, MD5(meta_value) FROM {$wpdb->usermeta} ORDER BY user_id, meta_key", ARRAY_N ), static fn( $f ) => ! in_array( $f[1], $ruido, true ) ) ) );
+$linea( "usuarios", $wpdb->get_results( "SELECT ID, user_login FROM {$wpdb->users} ORDER BY ID", ARRAY_N ) );
+$cache = array();
+$raiz = WP_CONTENT_DIR . "/et-cache";
+if ( is_dir( $raiz ) ) {
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $raiz, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $f ) { $cache[] = array( substr( $f->getPathname(), strlen( $raiz ) + 1 ) ); }
+	sort( $cache );
+}
+$linea( "et-cache", $cache );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-tb-restaurar" ]; then restaurar_divi_tb; exit 0; fi
+if [ "${1:-}" = "--divi-tb-faltantes" ]; then
+	php_wpr '
+$foto = get_option( "nexo_prueba_divi_tb_foto", false );
+$faltan = array();
+foreach ( is_array( $foto ) ? $foto["cache"] : array() as $ruta ) {
+	if ( 1 === preg_match( "/^[0-9]+$/", $ruta ) && ! is_dir( WP_CONTENT_DIR . "/et-cache/" . $ruta ) ) { $faltan[] = $ruta; }
+}
+echo implode( " ", $faltan );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-tb-categoria" ]; then php_wpr 'echo (int) get_option( "default_category" );'; exit 0; fi
+if [ "${1:-}" = "--divi-tb-slug" ]; then php_wpr '$p = get_post( (int) getenv( "NEXO_A1" ) ); echo $p ? $p->post_name : "";' "$2"; exit 0; fi
+if [ "${1:-}" = "--divi-tb-carrito" ]; then php_wpr 'echo function_exists( "wc_get_page_id" ) ? max( 0, (int) wc_get_page_id( "cart" ) ) : "";'; exit 0; fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -634,6 +771,7 @@ divi_dinamico_foto_tomada=""
 divi_dinamico_cap_agregada=""
 divi_condiciones_foto_tomada=""
 divi_condiciones_cap_agregada=""
+divi_tb_foto_tomada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -774,6 +912,14 @@ cleanup() {
 		echo "Condiciones de Divi: $(restaurar_divi_condiciones)"
 		divi_condiciones_foto_tomada=""
 		divi_condiciones_cap_agregada=""
+	fi
+	# Divi 5, Theme Builder: se barre lo creado por id (plantillas, layouts, Theme Builder en vivo, términos, et-cache) y se
+	# devuelven las opciones crudas (ajustes, versión, bloqueos, roles) a la foto. Antes las páginas, que tienen su marcador.
+	if [ -n "$divi_tb_foto_tomada" ]; then
+		barrer_divi || fallidas=$((fallidas + 1))
+		echo "Theme Builder de Divi: $(restaurar_divi_tb)"
+		cerrar_divi_tb
+		divi_tb_foto_tomada=""
 	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
@@ -3300,6 +3446,293 @@ PY
 	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
 fi
 
+echo
+echo "### Theme Builder de Divi 5 (D8a: create-divi-layout, list-/set-/delete-/restore-divi-template; plantillas que cambian todo el sitio)"
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba del Theme Builder de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto del estado y de las opciones crudas que se tocan; la limpieza lo devuelve todo también si la corrida se corta.
+	tools/prueba_adaptadores.sh --divi-tb-foto
+	divi_tb_foto_tomada=1
+	divi_tb_huella_inicial="$(tools/prueba_adaptadores.sh --divi-tb-huella)"
+	echo "Huella inicial:"
+	printf '%s\n' "$divi_tb_huella_inicial" | sed 's/^/  /'
+	# La capacidad nexo_mcp_divi_theme_builder la da el instalador al subir de versión; si falta se concede (los roles se devuelven crudos).
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_theme_builder" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_theme_builder" );' >/dev/null
+		echo "Capacidad nexo_mcp_divi_theme_builder concedida al administrador (los roles se devuelven crudos al final)."
+	fi
+	# Interruptor apagado por omisión: sólo durante el bloque (se enciende antes de conectar para que la lista de herramientas lo vea).
+	tools/prueba_adaptadores.sh --ajuste divi_theme_builder_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, time, urllib.error, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+BASE = "http://localhost:8080"
+TITULO = f"Prueba themebuilder divi5-mcp-{suffix}"
+NOMBRES = ("PAG", "PAG2", "H1", "B1", "F1", "H2", "H3", "B3", "B4", "B5")
+M = {k: f"TB{k}MK{suffix}" for k in NOMBRES}
+NO_EXISTE = f"/divi5-mcp-{suffix}-no-existe/"
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=240).stdout.strip()
+
+def huella():
+    return script("--divi-tb-huella")
+
+def anonimo(ruta):
+    """GET sin cookies: lo que ve un visitante. Devuelve (código, HTML); una 404 no es una excepción."""
+    try:
+        with urllib.request.urlopen(BASE + ruta, timeout=60) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+
+def visibles(ruta, codigo=200):
+    """Marcas de esta prueba que el visitante ve en `ruta`, en el orden en que salen en el HTML."""
+    estado, html = anonimo(ruta)
+    assert estado == codigo, f"{ruta}: código {estado}, se esperaba {codigo}"
+    return [k for k in sorted((k for k in NOMBRES if M[k] in html), key=lambda k: html.index(M[k]))]
+
+def valor(v):
+    return {"desktop": {"value": v}}
+
+def titulo(clave):
+    return {"type": "divi/heading", "attrs": {"title": {"innerContent": valor(M[clave])}}}
+
+def secciones(*modulos):
+    return [{"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": list(modulos)}]}]}]
+
+POST_CONTENT = {"type": "divi/post-content"}
+st = {}
+
+def layout(tipo, clave, *extra):
+    _, d = cli.ok("create-divi-layout", {"type": tipo, "title": f"Layout {clave} divi5-mcp-{suffix}", "sections": secciones(titulo(clave), *extra)})
+    assert d["type"] == tipo and d["status"] == "publish" and d["assigned"] is False and d["post_type"] == f"et_{tipo}_layout", d
+    st[clave] = d["id"]
+    return d
+
+def plantilla(**params):
+    return cli.call("set-divi-template", params)
+
+def ok_plantilla(**params):
+    _, d = cli.ok("set-divi-template", params)
+    time.sleep(1.2)  # el CSS de Divi se regenera con la marca de un segundo: la primera visita llega después
+    return d
+
+def activar(id_, **params):
+    d = ok_plantilla(id=id_, enabled=True, **params)
+    assert d["created"] is False and d["enabled"] is True, d
+    return d
+
+def en_lista(id_):
+    _, d = cli.ok("list-divi-theme-builder", {})
+    return d, next((t for t in d["templates"] if t["id"] == id_), None)
+
+def preparar():
+    _, d = cli.ok("create-divi-page", {"title": TITULO, "sections": secciones(titulo("PAG"))})
+    st["p"] = d["id"]
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    _, d2 = cli.ok("create-divi-page", {"title": TITULO + " dos", "sections": secciones(titulo("PAG2"))})
+    st["q"] = d2["id"]
+    cli.ok("set-content-status", {"id": d2["id"], "status": "publish"})
+    st["cat"] = script("--divi-tb-categoria")
+    st["carrito"] = script("--divi-tb-carrito")
+    time.sleep(1.2)
+    assert visibles(f"/?page_id={st['p']}") == ["PAG"], visibles(f"/?page_id={st['p']}")
+    assert visibles(f"/?page_id={st['q']}") == ["PAG2"]
+    assert visibles(NO_EXISTE, 404) == [] and visibles(f"/?s=divi5mcp{suffix}") == [] and visibles(f"/?cat={st['cat']}") == []
+    _, listado = cli.ok("list-divi-theme-builder", {})
+    assert listado["draft"]["exists"] in (True, False) and isinstance(listado["templates"], list), listado
+    st["antes"] = len(listado["templates"])
+    if st["carrito"]:
+        _, html = anonimo(f"/?page_id={st['carrito']}")
+        st["marca_carrito"] = "wc-block-cart" if "wc-block-cart" in html else ""
+    st["huella0"] = huella()
+
+def crear_layouts():
+    layout("header", "H1")
+    layout("body", "B1", POST_CONTENT)
+    layout("footer", "F1")
+    layout("header", "H2")
+    layout("header", "H3")
+    d = layout("body", "B3", POST_CONTENT)
+    layout("body", "B4", POST_CONTENT)
+    d5 = layout("body", "B5")
+    assert "post-content" in json.dumps(d5["warnings"], ensure_ascii=False), d5["warnings"]
+    assert "post-content" not in json.dumps(d["warnings"], ensure_ascii=False), "un cuerpo con post-content no avisa"
+    assert any(n["type"] == "divi/post-content" for n in d["nodes"]), d["nodes"]
+    time.sleep(1.2)
+    assert visibles(f"/?page_id={st['p']}") == ["PAG"], "un layout sin asignar no cambia el sitio"
+
+def crear_plantilla_deshabilitada():
+    d = ok_plantilla(title=f"Plantilla página divi5-mcp-{suffix}", enabled=True, use_on=[f"singular:post_type:page:id:{st['p']}"], header={"layout_id": st["H1"]}, body={"layout_id": st["B1"]}, footer={"layout_id": st["F1"]})
+    assert d["created"] is True and d["enabled"] is False and d.get("needs_enable"), d
+    st["t1"] = d["id"]
+    assert visibles(f"/?page_id={st['p']}") == ["PAG"], "una plantilla nueva (deshabilitada) no cambia nada"
+    listado, t = en_lista(d["id"])
+    assert t is not None and t["ours"] is True and t["enabled"] is False and listado["live"]["exists"] is True, t
+    assert t["body"]["layout_id"] == st["B1"] and t["body"]["has_post_content"] is True, t["body"]
+
+def activar_pagina():
+    activar(st["t1"], title=f"Plantilla página divi5-mcp-{suffix}", use_on=[f"singular:post_type:page:id:{st['p']}"], header={"layout_id": st["H1"]}, body={"layout_id": st["B1"]}, footer={"layout_id": st["F1"]})
+    orden = visibles(f"/?page_id={st['p']}")
+    assert orden == ["H1", "B1", "PAG", "F1"], f"encabezado, cuerpo, contenido de la página y pie, en ese orden: {orden}"
+    assert visibles(f"/?page_id={st['q']}") == ["PAG2"], "otra página no cambia"
+    _, t = en_lista(st["t1"])
+    assert t["enabled"] is True and t["use_on"][0]["id"] == f"singular:post_type:page:id:{st['p']}", t
+
+def una_sola_plantilla():
+    d = ok_plantilla(title=f"Plantilla todas las páginas divi5-mcp-{suffix}", enabled=True, use_on=["singular:post_type:page:all"], header={"layout_id": st["H2"]}, confirm_site_wide=True)
+    assert d["created"] is True and d["site_wide"] is True, d
+    st["t2"] = d["id"]
+    activar(st["t2"], title=f"Plantilla todas las páginas divi5-mcp-{suffix}", use_on=["singular:post_type:page:all"], header={"layout_id": st["H2"]}, confirm_site_wide=True)
+    propia, otra = visibles(f"/?page_id={st['p']}"), visibles(f"/?page_id={st['q']}")
+    assert propia == ["H1", "B1", "PAG", "F1"], f"la plantilla de la página gana y no se mezcla con la otra: {propia}"
+    assert otra == ["H2", "PAG2"], f"la otra página usa la de todas las páginas: {otra}"
+    listado, _ = en_lista(st["t2"])
+    assert any(s["template"] == st["t2"] for s in listado["shadows"]), listado["shadows"]
+
+def contextos_404_busqueda_categoria():
+    parametros = dict(title=f"Plantilla 404 búsqueda categoría divi5-mcp-{suffix}", use_on=["404", "search", f"archive:taxonomy:category:term:id:{st['cat']}"], header={"layout_id": st["H3"]}, body={"layout_id": st["B3"]}, confirm_site_wide=True)
+    d = ok_plantilla(enabled=True, **parametros)
+    assert d["created"] is True and d["enabled"] is False, d
+    st["t3"] = d["id"]
+    assert visibles(NO_EXISTE, 404) == [] and visibles(f"/?s=divi5mcp{suffix}") == [] and visibles(f"/?cat={st['cat']}") == [], "deshabilitada: nada cambia"
+    activar(st["t3"], **parametros)
+    for ruta, codigo in ((NO_EXISTE, 404), (f"/?s=divi5mcp{suffix}", 200), (f"/?cat={st['cat']}", 200)):
+        assert visibles(ruta, codigo) == ["H3", "B3"], f"{ruta}: {visibles(ruta, codigo)}"
+    assert visibles(f"/?page_id={st['p']}") == ["H1", "B1", "PAG", "F1"], "las páginas siguen con sus plantillas"
+
+def carrito():
+    if not st.get("carrito") or not st.get("marca_carrito"):
+        print("SKIP: WooCommerce no está activo (o no tiene página de carrito); se saltea la prueba del carrito.")
+        return
+    ruta, marca = f"/?page_id={st['carrito']}", st["marca_carrito"]
+
+    def primera_visita():
+        # Con Divi 5 y WooCommerce de este docker la página del carrito pierde su contenido principal a partir de la segunda
+        # visita seguida, también sin ninguna plantilla (el CSS estático ya existe): cada estado se mira con UNA sola visita,
+        # la primera después de que set-divi-template borra el CSS de todo el sitio.
+        return anonimo(ruta)[1]
+
+    h = primera_visita()
+    assert marca in h and M["B4"] not in h and M["B5"] not in h, "línea base: el carrito se ve y no hay plantilla propia"
+    parametros = dict(title=f"Plantilla carrito divi5-mcp-{suffix}", use_on=["woocommerce:cart"])
+    d = ok_plantilla(enabled=True, body={"layout_id": st["B4"]}, **parametros)
+    st["t4"] = d["id"]
+    activar(st["t4"], body={"layout_id": st["B4"]}, **parametros)
+    h = primera_visita()
+    assert M["B4"] in h and marca in h, "el cuerpo con divi/post-content conserva el carrito"
+    # Un cuerpo sin divi/post-content REEMPLAZA el contenido: se rechaza salvo que se pida expresamente.
+    antes = huella()
+    es_error, texto, _ = cli.call("set-divi-template", {"id": st["t4"], "enabled": True, "body": {"layout_id": st["B5"]}, **parametros})
+    assert es_error and "allow_without_post_content" in texto, texto[:400]
+    despues = huella()
+    assert despues == antes, f"el rechazo cambió el estado: {[x for x in despues.splitlines() if x not in antes.splitlines()]}"
+    ok_plantilla(id=st["t4"], enabled=True, body={"layout_id": st["B5"]}, allow_without_post_content=True, **parametros)
+    h = primera_visita()
+    assert M["B5"] in h and marca not in h and M["B4"] not in h, "sin divi/post-content el cuerpo REEMPLAZA el carrito"
+    _, d = cli.ok("restore-divi-template", {"id": st["t4"]})
+    time.sleep(1.2)
+    assert d["restored"] is True and d["status"] == "publish" and d["mapped"] is True, d
+    h = primera_visita()
+    assert M["B4"] in h and M["B5"] not in h and marca in h, "restore-divi-template devuelve el cuerpo anterior y el carrito vuelve"
+
+def borrar_restaurar_restaurar():
+    pagina = f"/?page_id={st['p']}"
+    assert visibles(pagina) == ["H1", "B1", "PAG", "F1"]
+    _, d = cli.ok("delete-divi-template", {"id": st["t1"]})
+    time.sleep(1.2)
+    assert d["deleted"] is True and d["status"] == "trash" and d["backup"]["operation"] == "delete", d
+    assert visibles(pagina) == ["H2", "PAG"], f"sin su plantilla la página usa la de todas las páginas: {visibles(pagina)}"
+    _, t = en_lista(st["t1"])
+    assert t is None, "la plantilla borrada ya no está en el mapeo en vivo"
+    _, r = cli.ok("restore-divi-template", {"id": st["t1"]})
+    time.sleep(1.2)
+    assert r["restored"] is True and r["status"] == "publish" and r["mapped"] is True and r["restored_from"]["operation"] == "delete", r
+    assert visibles(pagina) == ["H1", "B1", "PAG", "F1"], f"restaurada: vuelve a mandar: {visibles(pagina)}"
+    assert not script("--divi-tb-slug", st["t1"]).endswith("__trashed"), "la plantilla restaurada conserva el sufijo __trashed del slug"
+    _, t = en_lista(st["t1"])
+    assert t is not None and t["enabled"] is True and t["ours"] is True, t
+    _, otra = cli.ok("restore-divi-template", {"id": st["t1"]})
+    time.sleep(1.2)
+    assert otra["status"] == "trash" and otra["mapped"] is False, otra
+    assert visibles(pagina) == ["H2", "PAG"], "restaurar otra vez alterna: vuelve al estado borrado"
+    _, t = en_lista(st["t1"])
+    assert t is None
+
+def sin_escribir(nombre, llamar, esperado):
+    def fn():
+        antes = huella()
+        es_error, texto, _ = llamar()
+        assert es_error, "debía rechazarse"
+        assert esperado in texto, f"falta «{esperado}» en: {texto[:500]!r}"
+        assert huella() == antes, "cambió el estado del sitio"
+    comprobar(f"rechazo sin escribir: {nombre}", fn)
+
+def interruptor_apagado():
+    # Con el interruptor apagado el módulo no se puede usar (mensaje genérico de módulo desactivado) y un layout no se lee
+    # con el permiso de constructores de las páginas (DiviLayoutGuard: «se muestran en todo el sitio»).
+    cerrado = ("desactivado en el panel", "se muestran en todo el sitio")
+    script("--ajuste", "divi_theme_builder_tools_enabled", "false")
+    try:
+        antes = huella()
+        for herramienta, entrada in (("set-divi-template", {"title": "x", "enabled": False}), ("list-divi-theme-builder", {}), ("delete-divi-template", {"id": st["t1"]}), ("restore-divi-template", {"id": st["t1"]}), ("create-divi-layout", {"type": "header", "title": "x", "sections": secciones(titulo("H1"))}), ("get-page-structure", {"id": st["H1"]})):
+            es_error, texto, _ = cli.call(herramienta, entrada)
+            assert es_error and any(c in texto for c in cerrado), f"{herramienta} debía rechazarse: {texto[:300]}"
+        assert huella() == antes, "cambió algo"
+    finally:
+        script("--ajuste", "divi_theme_builder_tools_enabled", "true")
+    _, d = cli.ok("get-page-structure", {"id": st["H1"]})
+    assert d["builder"] == "divi5", "con el interruptor encendido el layout se lee con el permiso del Theme Builder"
+
+comprobar("dos páginas Divi 5 publicadas, sin Theme Builder propio: el visitante ve sólo su contenido (también en 404, ?s= y la categoría)", preparar)
+if "huella0" in st:
+    comprobar("create-divi-layout: encabezados, cuerpos (con y sin divi/post-content) y pie publicados y sin asignar; no cambian el sitio y el cuerpo sin post-content avisa", crear_layouts)
+if "B5" in st:
+    comprobar("set-divi-template: una plantilla nueva nace deshabilitada (needs_enable), list-divi-theme-builder la muestra y el visitante no ve cambios", crear_plantilla_deshabilitada)
+if "t1" in st:
+    comprobar("activada: encabezado, cuerpo, contenido de la página y pie, en ese orden; otra página no cambia", activar_pagina)
+    comprobar("Divi usa UNA plantilla por petición: la de una página concreta gana a la de todas las páginas y ésta se ve en otra página", una_sola_plantilla)
+if "t2" in st:
+    comprobar("404, ?s= y la categoría: la plantilla creada deshabilitada no cambia nada y, activada, se ve en las tres (la 404 con código 404)", contextos_404_busqueda_categoria)
+    comprobar("carrito de WooCommerce: con divi/post-content se conserva, sin él se REEMPLAZA (sólo con allow_without_post_content) y restore-divi-template vuelve al anterior", carrito)
+    comprobar("delete-divi-template → restore-divi-template (vuelve a su fila, sin __trashed) → restore-divi-template (alterna: vuelve a estar borrada)", borrar_restaurar_restaurar)
+    comprobar("con el interruptor divi_theme_builder_tools_enabled apagado nada de esto se puede usar ni leer, y un layout no se lee con el permiso de las páginas", interruptor_apagado)
+    sin_escribir("plantilla por defecto sin confirm_site_wide → nexo_mcp_divi_template_site_wide", lambda: cli.call("set-divi-template", {"title": "x", "enabled": True, "default": True, "header": {"layout_id": st["H2"]}}), "confirm_site_wide")
+    sin_escribir("cuerpo sin divi/post-content en una página → nexo_mcp_divi_template_body_replaces_content", lambda: cli.call("set-divi-template", {"title": "x", "enabled": True, "use_on": [f"singular:post_type:page:id:{st['q']}"], "body": {"layout_id": st["B5"]}}), "allow_without_post_content")
+    sin_escribir("id inexistente → nexo_mcp_divi_template_not_found", lambda: cli.call("set-divi-template", {"id": 99999999, "title": "x", "enabled": False}), "No hay una plantilla con ese id en el Theme Builder en vivo")
+    sin_escribir("layout que no es del tipo de la ranura (un pie como encabezado) → nexo_mcp_divi_template_invalid", lambda: cli.call("set-divi-template", {"title": "x", "enabled": False, "header": {"layout_id": st["F1"]}}), "no es un layout de tipo header")
+    sin_escribir("restore-divi-template de algo que no es una plantilla → nexo_mcp_divi_template_not_found", lambda: cli.call("restore-divi-template", {"id": st["p"]}), "No hay una plantilla con ese id")
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones del Theme Builder de Divi 5 (D8a) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba del Theme Builder de Divi 5 (D8a) tuvo comprobaciones fallidas"
+	# Se borra todo lo creado (plantillas, layouts, Theme Builder en vivo, términos, páginas, et-cache) y se vuelve a la foto cruda.
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+	echo "Theme Builder de Divi: $(restaurar_divi_tb)"
+	cerrar_divi_tb
+	divi_tb_foto_tomada=""
+	divi_tb_huella_final="$(tools/prueba_adaptadores.sh --divi-tb-huella)"
+	check_eq "Divi D8a: el estado quedó exactamente como al empezar (posts, metas, términos, relaciones, opciones, metas del admin, usuarios y et-cache)" "$divi_tb_huella_inicial" "$divi_tb_huella_final"
+fi
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
 # Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page
 # con campos distintos (ninguna edición puede perderse) y 5 edit-elementor-section que insertan
