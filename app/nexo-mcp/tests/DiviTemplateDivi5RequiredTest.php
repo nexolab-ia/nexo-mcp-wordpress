@@ -18,7 +18,7 @@ use NexoDev\NexoMCP\Builders\DiviTemplateStore;
  * @runTestsInSeparateProcesses
  * @preserveGlobalState disabled
  */
-final class DiviTemplateDivi5RequiredTest extends NexoTestCase {
+final class DiviTemplateDivi5RequiredTest extends NexoTestCase implements DiviTemplateIds {
 
 	use DiviTemplateFixtures;
 
