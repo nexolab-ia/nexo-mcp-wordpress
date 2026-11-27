@@ -196,4 +196,68 @@ final class DiviLibraryToolSpec {
 			'additionalProperties' => false,
 		);
 	}
+
+	/**
+	 * Descripción de delete-divi-library-item.
+	 */
+	public static function delete_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Manda UN ítem de la biblioteca de Divi 5 a la papelera de WordPress (no lo elimina) tras guardar un respaldo. ' . self::access(),
+				'',
+				'SÓLO ítems no globales: uno global (nexo_mcp_divi_library_global_blocked) lo usan otras páginas por referencia y borrarlo las cambia; eso no lo hace el conector todavía, hazlo en el Visual Builder. Si la papelera de WordPress está desactivada (EMPTY_TRASH_DAYS = 0) borrar sería permanente y no se hace (nexo_mcp_divi_library_trash_disabled).',
+				'',
+				'ENTRADA: id (de nexo-mcp-list-divi-library).',
+				'',
+				'RESPALDO: antes de borrar se guarda el estado (título, estado, contenido, categorías y módulo; una sola copia) en la meta _nexo_mcp_library_backup del ítem; sin respaldo no se borra (nexo_mcp_divi_library_backup_failed). DESHACER: nexo-mcp-restore-divi-library-item con el id lo saca de la papelera y lo deja como estaba. Si la papelera falla el ítem queda como estaba (nexo_mcp_divi_library_save_failed).',
+				'',
+				'SALIDA: id, deleted, status (trash), title, type, scope, backup ({operation, captured_at}) y warnings.',
+				'',
+				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_trash_disabled, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Descripción de restore-divi-library-item.
+	 */
+	public static function restore_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Devuelve UN ítem de la biblioteca de Divi 5 al estado de su respaldo (la meta _nexo_mcp_library_backup del propio ítem: título, estado, contenido, categorías y módulo). Sirve para deshacer nexo-mcp-save-divi-library-item y también tras nexo-mcp-delete-divi-library-item (el ítem borrado está en la papelera y se saca de ahí). Antes de escribir se guarda el estado de ahora como respaldo nuevo, así que restaurar dos veces alterna entre los dos estados. ' . self::access(),
+				'',
+				'SÓLO ítems no globales (nexo_mcp_divi_library_global_blocked). Sin respaldo, nexo_mcp_divi_library_no_backup. El tipo y el alcance no cambian.',
+				'',
+				'ENTRADA: id (de nexo-mcp-list-divi-library o de la salida de nexo-mcp-delete-divi-library-item).',
+				'',
+				'SALIDA: id, restored, title, status, type, scope, categories, module_type, modified, nodes, previous ({title, categories, status} de antes de restaurar), restored_from ({operation, captured_at} del respaldo usado), backup (el respaldo nuevo del estado anterior) y warnings. Si algo falla a medias el ítem vuelve a su estado anterior (nexo_mcp_divi_library_save_failed).',
+				'',
+				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_no_backup, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de una herramienta que sólo recibe el id de un ítem.
+	 *
+	 * @param string $description Descripción del id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function id_schema( string $description ): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id' => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => $description,
+				),
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
+		);
+	}
 }

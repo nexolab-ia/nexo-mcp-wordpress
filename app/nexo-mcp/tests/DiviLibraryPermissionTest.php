@@ -211,6 +211,33 @@ final class DiviLibraryPermissionTest extends NexoTestCase {
 		$this->assertTrue( $this->policy()->can_write_divi_library( self::ITEM ), 'con edit_global_library pasa' );
 	}
 
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_un_global_de_divi_4_sin_termino_pero_con_modulo_y_opciones_excluidas_pide_edit_global_library(): void {
+		$GLOBALS['nexo_test_et_allowed'] = array( 'divi_library' => true, 'save_library' => true );
+		$GLOBALS['nexo_test_et_asked']   = array();
+		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- doble de Divi, definido sólo en este proceso aparte.
+		eval( 'function et_pb_is_allowed( $capability ) { $GLOBALS["nexo_test_et_asked"][] = $capability; return ! empty( $GLOBALS["nexo_test_et_allowed"][ $capability ] ); }' );
+		$this->connect_with_scopes( self::ALL_SCOPES );
+
+		\WP_Test_State::$posts[710] = new \WP_Post( array( 'ID' => 710, 'post_type' => 'et_pb_layout', 'post_status' => 'publish' ) );
+		update_post_meta( 710, '_et_pb_module_type', 'divi/text' );
+		update_post_meta( 710, '_et_pb_excluded_global_options', '[]' );
+
+		$this->assertFalse( $this->policy()->can_write_divi_library( 710 ), 'Divi lo trata como global aunque no tenga el término' );
+		$this->assertContains( 'edit_global_library', $GLOBALS['nexo_test_et_asked'] );
+
+		$GLOBALS['nexo_test_et_allowed']['edit_global_library'] = true;
+		$this->assertTrue( $this->policy()->can_write_divi_library( 710 ), 'con edit_global_library pasa' );
+
+		// Sin una de las dos metas no es global (como Divi).
+		$GLOBALS['nexo_test_et_allowed'] = array( 'divi_library' => true, 'save_library' => true );
+		delete_post_meta( 710, '_et_pb_excluded_global_options' );
+		$this->assertTrue( $this->policy()->can_write_divi_library( 710 ), 'sin opciones excluidas no es global' );
+	}
+
 	public function test_los_ajustes_guardan_el_interruptor_como_booleano_y_los_demas_no_lo_arrastran(): void {
 		$controller = new SettingsController();
 

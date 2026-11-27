@@ -36,6 +36,7 @@ final class DiviLibraryBackup {
 			'content'     => (string) $post->post_content,
 			'categories'  => $read['categories'],
 			'module_type' => $read['module_type'],
+			'use_divi_5'  => (string) get_post_meta( $post->ID, '_et_pb_use_divi_5', true ),
 		);
 	}
 
@@ -65,7 +66,7 @@ final class DiviLibraryBackup {
 	 *
 	 * @param int $id Ítem.
 	 *
-	 * @return array{operation: string, captured_at: string, title: string, status: string, content: string, categories: array<int, string>, module_type: string}|null
+	 * @return array{operation: string, captured_at: string, title: string, status: string, content: string, categories: array<int, string>, module_type: string, use_divi_5: string|null}|null
 	 */
 	public function read( int $id ): ?array {
 		$raw = get_post_meta( $id, self::META_KEY, true );
@@ -98,6 +99,7 @@ final class DiviLibraryBackup {
 			'content'     => $data['content'],
 			'categories'  => array_values( array_filter( $data['categories'], 'is_string' ) ),
 			'module_type' => $data['module_type'],
+			'use_divi_5'  => isset( $data['use_divi_5'] ) && is_string( $data['use_divi_5'] ) ? $data['use_divi_5'] : null,
 		);
 	}
 

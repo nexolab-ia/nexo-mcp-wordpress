@@ -25,9 +25,9 @@ Fase D8, la última del soporte de Divi 5 (ver `odd/tasks/divi-5.md`, S2). Rama 
 - [x] T6b (S6, S7) Restauración y avisos de T6 (L8): (1) herramienta o entrada para restaurar una plantilla desde su respaldo `_nexo_mcp_template_backup` (también tras borrar: el `et_template` en papelera no tiene pantalla en wp-admin), y corregir los textos «se recupera desde WordPress» (`ExtendedAbilityRegistrar.php:2345`) y el mensaje de `DiviTemplateEditor.php:584` que apunta a `restore-builder-backup`; (2) avisos de `review-796403376b678b53`: R3-001 (layout en papelera con aviso `layout_not_published`), R3-002 (prueba de `nexo_mcp_divi5_required`), R4-001 (`restore()` ignora el fallo de `unmap()`), R4-002 (tope de filas al listar); (3) avisos de `review-94f7db8fadb0ab70`: R1 (`set-divi-template` con `replace_foreign` sin anotación destructiva), R3 (crear deja un TB en vivo vacío si falla), R3 (pruebas de `template_unavailable` y `template_backup_failed`); (4) del verificador: quitar `_et_theme_builder_marked_as_unused` al asignar un layout. Ruta: worker + review nativa del padre. Risk: item 2. Commit: 71aa261, 46fffd3.
 - [x] T7 (S1-S3) Docs (README/EQUIVALENCIAS/readme.txt con los avisos: una plantilla gana, cuerpo sin contenido, layouts no `publish`, 7 días, roles de Divi), e2e en `prueba_adaptadores.sh` sección 7j (SKIP sin Divi 5; anónimo contra 5594/404/`?s=`/categoría, carrito con y sin `divi/post-content`, restauración como L2) y versión 1.12.0 + prueba de coincidencia. Ruta: worker. Risk: bajo.
 - [x] T8 (S2) [D8b] Scope `mcp:divi_library` + `PermissionPolicy::can_write_divi_library( id )` (mismo patrón que T4). Ruta: padre inline. Risk: item 2. Commit: a5b3c00.
-- [ ] T9 (S1, S3) [D8b] `DiviLibrarySchema` + `list-/get-/save-/delete-divi-library-item` (alta por `et_pb_create_layout`, metas y términos como los del VB: `layout_type`, `scope`, `module_width`, `_et_pb_template_type`, `_et_pb_module_type`, `_et_pb_use_divi_5`, `_et_pb_excluded_global_options`). Ruta: worker. Risk: medio.
+- [x] T9 (S1, S3) [D8b] `DiviLibrarySchema` + `list-/get-/save-/delete-divi-library-item` (alta por `et_pb_create_layout`, metas y términos como los del VB: `layout_type`, `scope`, `module_width`, `_et_pb_template_type`, `_et_pb_module_type`, `_et_pb_use_divi_5`, `_et_pb_excluded_global_options`). Ruta: worker (context backstop). Risk: item 1. Commit: 63c8005, 2321ced, 14c7a62, d9cf56a, 45018fb, d458bb9.
 - [ ] T10 (S1, S3) [D8b] `insert-divi-library-item` (copia/referencia global, con el validador ampliado para `divi/global-layout`), edición de ítems globales con `confirm_global`, lista de páginas afectadas y respaldo; sin importar/exportar. Ruta: worker + review nativa del padre. Risk: alto (un ítem global cambia muchas páginas sin tocarlas).
-- [ ] T11 (S1-S3) [D8b] Docs, e2e 7k (ítem global compartido por dos páginas, edición, borrado que despega, restauración), versión 1.13.0 con prueba de coincidencia que exija > 1.12.0 y mencione `mcp:divi_library` en el changelog (aviso R3-001 de `review-fdb16298ee4e671f`: sin esa subida, los sitios en 1.12.0 no reciben la capacidad). Ruta: worker. Risk: bajo.
+- [ ] T11 (S1-S3) [D8b] Docs, e2e 7k (ítem global compartido por dos páginas, edición, borrado que despega, restauración), versión 1.13.0 con prueba de coincidencia que exija > 1.12.0 y mencione `mcp:divi_library` en el changelog (aviso R3-001 de `review-fdb16298ee4e671f`: sin esa subida, los sitios en 1.12.0 no reciben la capacidad); avisos de T9 en L14: probar en el VB la forma guardada de filas y módulos, y el duplicado de categoría por slug). Ruta: worker. Risk: bajo.
 
 ## Log
 
@@ -83,3 +83,39 @@ Fase D8, la última del soporte de Divi 5 (ver `odd/tasks/divi-5.md`, S2). Rama 
 - L11 (2026-11-26): review nativa de 950dd69 (worktree temporal en el commit, base 4468e0f) `review-c21cf9504a09fe99`, lentes riesgo y fiabilidad, escalada item 1 (restaurar reescribe plantillas del TB en vivo): aprobada y confirmada (autoridad quemada), sin avisos. 18a472f (e2e) y c7a058a (docs y versión) sin review nativa.
 - L12 (2026-11-26): pedido «Continuemos con lo pendiente». Decisiones del usuario: «Mergear la cadena y abrir PR a main (Recomendado)» y «Sí, desde T8 en una rama nueva (Recomendado)». Los PRs #33-#37 (CI 4/4 en verde) se mergearon en orden en `feat/divi-theme-builder` (con la base de cada uno movida a esa rama), se abrió #38 `feat/divi-theme-builder → main` y se cerró #32 porque ya estaba en main (714a3b9). D8b arranca en la rama `feat/divi-library`, sacada de `origin/feat/divi-theme-builder` (2f221bd). T8 la hace el padre inline, igual que en T4 (8ffcb70): `can_write_divi_library( ?int $item_id = null )` pide el interruptor, la capacidad, el scope y `edit_posts`, más `et_pb_is_allowed('divi_library')` cuando Divi está cargado. Sin id (alta) pide además `save_library`; con id, que el post exista, sea `et_pb_layout` y el usuario tenga `edit_post` sobre él, y si el ítem es global (término `global` de `scope`), `edit_global_library`. Así se replican los permisos de las rutas REST de Divi de L2.
 - L13 (2026-11-26): T8 cerrada por el padre en a5b3c00. RED observado (14 pruebas nuevas fallando) y después GREEN. Verificador independiente: T8, S2 y S5 cumplidas, sin bloqueos. De sus avisos se adoptó el 2: si `wp_get_object_terms` devuelve WP_Error, el ítem se trata como global (falla cerrado). Se agregaron la prueba del WP_Error (RED visto con el código anterior) y la de ids negativos y otros tipos de Divi. Avisos que pasan a otras tareas: (3) la ruta `/divi-library/save` de Divi pide `edit_global_library` para cualquier ítem, y nosotros sólo para los globales (decisión de L12; revisarlo en T10); (4) no se comprueba el estado del post, así que un ítem en la papelera o en auto-draft pasa (T9/T10). Comprobaciones en el docker: PHPUnit 2716 OK (1 deprecación), PHPCS 0, PHPStan sin errores. Review nativa `review-fdb16298ee4e671f` (lentes riesgo y fiabilidad, escalada item 2): aprobada y confirmada; su aviso R3-001 (la concesión al actualizar depende de subir la versión) va a T11. Siguiente: T9.
+- L14 (2026-11-26): T9 hecha por un worker (lanzado al llegar al context backstop del padre). Commits:
+  - 63c8005: `DiviLibrarySchema`.
+  - 2321ced: `list-divi-library` y `get-divi-library-item`, `DiviLibraryBackup` y `DiviLibraryToolSpec`.
+  - 14c7a62: `save-divi-library-item` (alta por `et_pb_create_layout` y actualización).
+  - d9cf56a: `delete-divi-library-item` y `restore-divi-library-item`.
+
+  Desviaciones aceptadas por el verificador:
+  - El listado se llama `list-divi-library`, como en D10.
+  - Hay una herramienta más, `restore-divi-library-item`, porque `restore-builder-backup` rechaza los tipos `et_*`.
+  - Los ítems globales se crean, listan y leen, pero cambiarlos, borrarlos o restaurarlos da `nexo_mcp_divi_library_global_blocked` hasta T10.
+  - No se pueden cambiar el tipo ni el alcance de un ítem existente.
+  - Reemplazar contenido ajeno o de Divi 4 pide `replace_foreign`.
+  - Borrar se rechaza con `EMPTY_TRASH_DAYS=0`.
+  - Listar y leer usan el permiso de escritura.
+  - `save` está marcada destructiva.
+  - El respaldo es una sola copia, en `_nexo_mcp_library_backup`.
+
+  Verificador independiente: un BLOQUEO. Divi también trata como global un ítem sin término `scope` que tiene `_et_pb_module_type` y `_et_pb_excluded_global_options` no vacía (`GlobalLayout.php:297-301`, los globales importados de Divi 4), y nosotros lo dejábamos cambiar y borrar. Lo arregla 45018fb, con una sola regla global para el esquema, el editor y `PermissionPolicy`. En el mismo commit:
+  - un restore fallido ya no pierde su respaldo;
+  - las categorías que WordPress normaliza (`header` → `Header`, `&` → `&amp;`) fallaban siempre al guardar (reproducido en vivo) y ahora se comparan por slug;
+  - una llamada fallida ya no deja categorías creadas;
+  - `replace_foreign` pone `_et_pb_use_divi_5`;
+  - `put_back` quita `_et_pb_module_type` cuando el respaldo no lo tiene.
+
+  Review nativa `review-e42df6a0d860af18` (2321ced..45018fb; lentes riesgo, resiliencia y fiabilidad; escalada item 1): aprobada y confirmada. Sus avisos los cierra d458bb9: borrar y sacar de la papelera piden `delete_post`; el rollback sólo borra las categorías que creó la propia llamada, y nada si no sabe cuáles están en uso; hay una prueba de módulo no global. Review nativa de d458bb9, `review-f0d277ef09919679`: aprobada y confirmada. Sus avisos pasan a T11:
+  - un nombre distinto con el mismo slug crea en el WordPress real una categoría duplicada vacía (sólo desorden);
+  - la prueba del caso seguro no comprueba que «Nueva» quede.
+
+  Riesgos abiertos para T10:
+  - la forma guardada de filas y módulos bajo `divi/placeholder` no está probada en el VB;
+  - levantar el bloqueo de los globales con `confirm_global` y la lista de páginas afectadas;
+  - al borrar un global, despegar sus instancias como `GlobalLayout::preserve_instances_before_delete`;
+  - el respaldo de una sola copia;
+  - `divi/global-layout` no pasa el validador actual.
+
+  Comprobaciones del padre en el docker: PHPUnit 2860 OK (1 deprecación), PHPCS 0, PHPStan sin errores. Siguiente: T10.

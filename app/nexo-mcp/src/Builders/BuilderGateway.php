@@ -1216,6 +1216,28 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Manda un ítem de la biblioteca de Divi 5 a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_library_item( array $input ) {
+		return $this->library_editor()->delete_item( $input );
+	}
+
+	/**
+	 * Devuelve un ítem de la biblioteca de Divi 5 al estado de su respaldo (también uno borrado).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_divi_library_item( array $input ) {
+		return $this->library_editor()->restore_item( $input );
+	}
+
+	/**
 	 * Editor de la biblioteca de Divi 5 con los componentes de producción.
 	 */
 	private function library_editor(): DiviLibraryEditor {

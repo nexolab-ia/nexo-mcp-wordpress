@@ -258,14 +258,17 @@ final class DiviLibrarySchema {
 
 		return array(
 			'type'        => $type,
-			'scope'       => in_array( 'global', $scopes, true ) ? 'global' : 'non_global',
+			'scope'       => in_array( 'global', $scopes, true ) || $this->meta_global( $id ) ? 'global' : 'non_global',
 			'categories'  => $this->strings( $id, 'layout_category' ),
 			'module_type' => is_string( $module ) ? $module : '',
 		);
 	}
 
 	/**
-	 * Indica si el ítem es global. Si no se pueden leer los términos se trata como global (falla cerrado, como el permiso).
+	 * Indica si el ítem es global, con la regla de Divi (`GlobalLayout::is_global_layout_template()`): el término `global` de
+	 * `scope` o, para los globales importados de Divi 4, un módulo (`_et_pb_module_type`) con opciones excluidas
+	 * (`_et_pb_excluded_global_options`) no vacías. Si no se pueden leer los términos se trata como global (falla cerrado,
+	 * como el permiso: {@see PermissionPolicy::can_write_divi_library()} usa {@see self::meta_is_global()}).
 	 *
 	 * @param int $id Ítem.
 	 */
@@ -276,7 +279,109 @@ final class DiviLibrarySchema {
 			return true;
 		}
 
-		return ! is_array( $scopes ) || in_array( 'global', $scopes, true );
+		return ! is_array( $scopes ) || in_array( 'global', $scopes, true ) || $this->meta_global( $id );
+	}
+
+	/**
+	 * La alternativa de Divi para globales importados de Divi 4, a partir de las dos metas.
+	 *
+	 * @param mixed $module_type      `_et_pb_module_type`.
+	 * @param mixed $excluded_options `_et_pb_excluded_global_options`.
+	 */
+	public static function meta_is_global( $module_type, $excluded_options ): bool {
+		return ! empty( $module_type ) && ! empty( $excluded_options );
+	}
+
+	/**
+	 * Clave para reconocer una categoría como lo hace WordPress: el slug del nombre sin escapar (`header` es `Header`, y
+	 * `A & B` se guarda como `A &amp; B`).
+	 *
+	 * @param string $name Nombre de categoría.
+	 */
+	public static function category_key( string $name ): string {
+		return sanitize_title( html_entity_decode( $name, ENT_QUOTES ) );
+	}
+
+	/**
+	 * Mismas categorías (por {@see self::category_key()}) sin importar el orden.
+	 *
+	 * @param array<int, string> $a Nombres.
+	 * @param array<int, string> $b Nombres.
+	 */
+	public static function same_categories( array $a, array $b ): bool {
+		$a = array_map( array( self::class, 'category_key' ), $a );
+		$b = array_map( array( self::class, 'category_key' ), $b );
+		sort( $a );
+		sort( $b );
+
+		return $a === $b;
+	}
+
+	/**
+	 * Crea las categorías que no existen y devuelve SÓLO los ids de las que creó esta llamada (las que ya existían, con el
+	 * mismo nombre o slug, dan `term_exists` y no cuentan). Así un deshacer sabe qué es suyo ({@see self::drop_categories()}).
+	 *
+	 * @param array<int, string> $names Nombres pedidos.
+	 *
+	 * @return array<int, int>
+	 */
+	public function ensure_categories( array $names ): array {
+		$created = array();
+
+		try {
+			foreach ( $names as $name ) {
+				$term = function_exists( 'wp_insert_term' ) ? wp_insert_term( $name, 'layout_category' ) : null;
+
+				if ( is_array( $term ) ) {
+					$created[] = (int) $term['term_id'];
+				}
+			}
+		} catch ( \Throwable $e ) {
+			return $created;
+		}
+
+		return $created;
+	}
+
+	/**
+	 * Borra categorías creadas por esta llamada ({@see self::ensure_categories()}) que ningún ítem usa. Si no se puede saber
+	 * cuáles se usan no borra ninguna; nunca toca otras.
+	 *
+	 * @param array<int, int> $created Ids que creó esta llamada.
+	 */
+	public function drop_categories( array $created ): void {
+		if ( array() === $created ) {
+			return;
+		}
+
+		try {
+			$used = function_exists( 'get_terms' ) ? get_terms(
+				array(
+					'taxonomy'   => 'layout_category',
+					'hide_empty' => true,
+					'fields'     => 'ids',
+				)
+			) : null;
+
+			if ( ! is_array( $used ) ) {
+				return;
+			}
+
+			foreach ( array_diff( $created, array_map( 'intval', $used ) ) as $term_id ) {
+				wp_delete_term( $term_id, 'layout_category' );
+			}
+		} catch ( \Throwable $e ) {
+			return;
+		}
+	}
+
+	/**
+	 * Alternativa de Divi 4 para el ítem, leyendo las metas con la fuente inyectada (nunca lanza).
+	 *
+	 * @param int $id Ítem.
+	 */
+	private function meta_global( int $id ): bool {
+		return self::meta_is_global( $this->safe_meta( $id, '_et_pb_module_type' ), $this->safe_meta( $id, '_et_pb_excluded_global_options' ) );
 	}
 
 	/**
@@ -505,7 +610,14 @@ final class DiviLibrarySchema {
 			return array();
 		}
 
-		return is_array( $terms ) ? array_values( array_filter( $terms, 'is_string' ) ) : array();
+		if ( ! is_array( $terms ) ) {
+			return array();
+		}
+
+		$names = array_values( array_filter( $terms, 'is_string' ) );
+
+		// WordPress guarda `&` como `&amp;` en el nombre del término.
+		return 'layout_category' === $taxonomy ? array_map( static fn( string $name ): string => html_entity_decode( $name, ENT_QUOTES ), $names ) : $names;
 	}
 
 	/**

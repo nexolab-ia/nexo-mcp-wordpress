@@ -281,6 +281,230 @@ final class DiviLibraryEditor {
 	}
 
 	/**
+	 * Manda un ítem a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_item( array $input ) {
+		return $this->guarded( $input, false );
+	}
+
+	/**
+	 * Devuelve un ítem al estado de su respaldo (también uno borrado, que está en la papelera).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_item( array $input ) {
+		return $this->guarded( $input, true );
+	}
+
+	/**
+	 * Camino común de borrar y restaurar: permiso, Divi 5, id, ítem usable y no global, y el bloqueo del ítem.
+	 *
+	 * @param array<string, mixed> $input   Parámetros: `id`.
+	 * @param bool                 $restore Restaurar (true) o borrar (false).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function guarded( array $input, bool $restore ) {
+		$id   = $this->id_of( $input );
+		$gate = $this->gate( $id );
+
+		if ( null !== $gate ) {
+			return $gate;
+		}
+
+		if ( null === $id ) {
+			return $this->schema->error( 'id', __( 'debe ser el id entero de un ítem de la biblioteca.', 'nexo-mcp' ) );
+		}
+
+		$checked = $this->checked( $id, $restore );
+
+		if ( $checked instanceof \WP_Error ) {
+			return $checked;
+		}
+
+		return PostLock::run(
+			$id,
+			function () use ( $id, $restore ) {
+				$post = $this->checked( $id, $restore );
+
+				return $post instanceof \WP_Error ? $post : ( $restore ? $this->restore_locked( $post ) : $this->delete_locked( $post ) );
+			}
+		);
+	}
+
+	/**
+	 * El ítem, si se puede borrar o restaurar: existe, no es global y (si se borra) la papelera lo guarda.
+	 *
+	 * @param int  $id      Ítem.
+	 * @param bool $restore Restaurar (acepta uno en la papelera) o borrar.
+	 *
+	 * @return \WP_Post|\WP_Error
+	 */
+	private function checked( int $id, bool $restore ) {
+		$post = $this->load( $id, $restore );
+
+		if ( $post instanceof \WP_Error ) {
+			return $post;
+		}
+
+		$editable = $this->editable( $id );
+
+		if ( $editable instanceof \WP_Error ) {
+			return $editable;
+		}
+
+		// Mandar a la papelera y sacar de ella son `delete_post` y `untrash_post` (que WordPress mapea a `delete_post`), no `edit_post`.
+		if ( ( ! $restore || 'trash' === $post->post_status ) && ! current_user_can( 'delete_post', $id ) ) {
+			return new \WP_Error(
+				self::CODE_DENIED,
+				__( 'No tienes permiso para borrar este ítem de la biblioteca de Divi 5 (hace falta delete_post sobre él).', 'nexo-mcp' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		if ( ! $restore && defined( 'EMPTY_TRASH_DAYS' ) && 0 === (int) EMPTY_TRASH_DAYS ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_trash_disabled',
+				__( 'La papelera está desactivada en este sitio (EMPTY_TRASH_DAYS es 0): borrar el ítem lo eliminaría para siempre y no se hace. Bórralo desde la biblioteca de Divi.', 'nexo-mcp' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		return $post;
+	}
+
+	/**
+	 * Borra con el bloqueo en mano: respaldo (sin él no se borra), comprobación del bloqueo y papelera.
+	 *
+	 * @param \WP_Post $post Ítem.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function delete_locked( \WP_Post $post ) {
+		$id       = (int) $post->ID;
+		$snapshot = $this->backup->snapshot( $post, 'delete', $this->schema->read( $id ) );
+		$guard    = $this->back_up( $id, $snapshot );
+
+		if ( null !== $guard ) {
+			return $guard;
+		}
+
+		$trashed = wp_trash_post( $id );
+		$now     = get_post( $id );
+
+		if ( ! $trashed || ! $now instanceof \WP_Post || 'trash' !== $now->post_status ) {
+			return $this->restore_state( $id, $snapshot, __( 'WordPress no mandó el ítem a la papelera.', 'nexo-mcp' ) );
+		}
+
+		$read = $this->schema->read( $id );
+
+		return array(
+			'id'       => $id,
+			'deleted'  => true,
+			'status'   => 'trash',
+			'title'    => (string) $post->post_title,
+			'type'     => $read['type'],
+			'scope'    => $read['scope'],
+			'backup'   => $this->backup->describe( $id ),
+			'warnings' => array( __( 'El ítem está en la papelera de WordPress (se vacía sola a los pocos días). Restáuralo con nexo-mcp-restore-divi-library-item.', 'nexo-mcp' ) ),
+		);
+	}
+
+	/**
+	 * Restaura con el bloqueo en mano: respaldo del estado de ahora, comprobación del bloqueo y escritura.
+	 *
+	 * @param \WP_Post $post Ítem.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function restore_locked( \WP_Post $post ) {
+		$id   = (int) $post->ID;
+		$from = $this->backup->read( $id );
+
+		if ( null === $from ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_no_backup',
+				__( 'Este ítem no tiene un respaldo disponible: no hay nada que restaurar (el respaldo lo guardan guardar y borrar antes de cambiarlo).', 'nexo-mcp' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$now   = $this->backup->snapshot( $post, 'restore', $this->schema->read( $id ) );
+		$guard = $this->back_up( $id, $now );
+
+		if ( null !== $guard ) {
+			return $guard;
+		}
+
+		if ( 'trash' === $post->post_status && function_exists( 'wp_untrash_post' ) ) {
+			wp_untrash_post( $id );
+		}
+
+		if ( ! $this->put_back( $id, $from ) ) {
+			$error = $this->restore_state( $id, $now, __( 'WordPress no dejó el ítem como estaba en el respaldo.', 'nexo-mcp' ) );
+
+			// El respaldo del que se restauraba sigue siendo el bueno: se devuelve (el de ahora es el mismo estado que ya tiene).
+			$this->backup->save( $id, $from );
+
+			return $error;
+		}
+
+		$answer = $this->answer(
+			$id,
+			false,
+			array(),
+			array(
+				'title'      => $now['title'],
+				'categories' => $now['categories'],
+				'status'     => $now['status'],
+			),
+			$this->backup->describe( $id )
+		);
+
+		return $answer instanceof \WP_Error ? $answer : array_merge(
+			$answer,
+			array(
+				'restored'      => true,
+				'restored_from' => array(
+					'operation'   => $from['operation'],
+					'captured_at' => $from['captured_at'],
+				),
+			)
+		);
+	}
+
+	/**
+	 * Guarda el respaldo y comprueba el bloqueo, justo antes de la primera escritura.
+	 *
+	 * @param int                  $id       Ítem.
+	 * @param array<string, mixed> $snapshot Estado que se respalda.
+	 */
+	private function back_up( int $id, array $snapshot ): ?\WP_Error {
+		// Primero el bloqueo: un bloqueo perdido no debe dejar escrito un respaldo nuevo encima del que había.
+		$locked = PostLock::verify( $id );
+
+		if ( is_wp_error( $locked ) ) {
+			return $locked;
+		}
+
+		if ( ! $this->backup->save( $id, $snapshot ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_backup_failed',
+				__( 'No se pudo guardar el respaldo del ítem, así que no se cambió nada.', 'nexo-mcp' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		return null;
+	}
+
+	/**
 	 * Alta de un ítem.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta (sin `id`).
@@ -307,6 +531,26 @@ final class DiviLibraryEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function create_unlocked( array $parsed ) {
+		$created = array();
+		$result  = $this->create_prepared( $parsed, $created );
+
+		// Un alta que se deshace no deja las categorías que creó ella misma (y sólo esas).
+		if ( $result instanceof \WP_Error ) {
+			$this->schema->drop_categories( $created );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Valida el árbol y crea el ítem; si algo falla después de crearlo, lo borra.
+	 *
+	 * @param array<string, mixed> $parsed  Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 * @param array<int, int>      $created Se llena con los ids de las categorías que crea esta llamada.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function create_prepared( array $parsed, array &$created ) {
 		$type     = (string) $parsed['type'];
 		$prepared = $this->prepare( $type, $parsed['nodes'] );
 
@@ -316,6 +560,7 @@ final class DiviLibraryEditor {
 
 		$scope      = (string) $parsed['scope'];
 		$categories = (array) ( $parsed['categories'] ?? array() );
+		$created    = $this->schema->ensure_categories( $categories );
 		$stored     = $this->schema->stored( $type, $scope, $prepared['module_type'] );
 		$marker     = bin2hex( random_bytes( 16 ) );
 		$meta       = array_merge( $stored['meta'], array( self::MARKER_META => $marker ) );
@@ -346,7 +591,7 @@ final class DiviLibraryEditor {
 				|| DiviLibrarySchema::POST_TYPE !== $post->post_type
 				|| $type !== $read['type']
 				|| $scope !== $read['scope']
-				|| ! $this->same_names( $categories, $read['categories'] )
+				|| ! DiviLibrarySchema::same_categories( $categories, $read['categories'] )
 				|| ! $this->has_metas( $id, $stored['meta'] ) ) {
 				return $this->rollback( $id, __( 'WordPress guardó un contenido, unos términos o unas metas distintos de los pedidos.', 'nexo-mcp' ) );
 			}
@@ -463,24 +708,22 @@ final class DiviLibraryEditor {
 		$read     = $this->schema->read( $id );
 		$snapshot = $this->backup->snapshot( $post, 'save', $read );
 
-		if ( ! $this->backup->save( $id, $snapshot ) ) {
-			return new \WP_Error(
-				'nexo_mcp_divi_library_backup_failed',
-				__( 'No se pudo guardar el respaldo del ítem, así que no se cambió nada.', 'nexo-mcp' ),
-				array( 'status' => 500 )
-			);
+		$guard = $this->back_up( $id, $snapshot );
+
+		if ( null !== $guard ) {
+			return $guard;
 		}
 
-		$locked = PostLock::verify( $id );
-
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
-		}
-
+		$created = null === $parsed['categories'] ? array() : $this->schema->ensure_categories( $parsed['categories'] );
 		$failure = $this->apply( $id, $parsed, $prepared );
 
 		if ( null !== $failure ) {
-			return $this->restore_state( $id, $snapshot, $failure );
+			$error = $this->restore_state( $id, $snapshot, $failure );
+
+			// Las categorías que creó esta llamada (sólo ésas) no se quedan de sobra.
+			$this->schema->drop_categories( $created );
+
+			return $error;
 		}
 
 		$warnings = array();
@@ -532,6 +775,11 @@ final class DiviLibraryEditor {
 				}
 			}
 
+			if ( null !== $prepared ) {
+				// Un ítem de Divi 4 que se reescribe con bloques pasa a ser de Divi 5.
+				update_post_meta( $id, '_et_pb_use_divi_5', 'on' );
+			}
+
 			if ( null !== $prepared && null !== $prepared['module_type'] ) {
 				update_post_meta( $id, '_et_pb_module_type', $prepared['module_type'] );
 			}
@@ -542,7 +790,7 @@ final class DiviLibraryEditor {
 			if ( ! $post instanceof \WP_Post
 				|| ( null !== $parsed['title'] && $parsed['title'] !== $post->post_title )
 				|| ( null !== $prepared && $prepared['content'] !== $post->post_content )
-				|| ( null !== $parsed['categories'] && ! $this->same_names( $parsed['categories'], $read['categories'] ) ) ) {
+				|| ( null !== $parsed['categories'] && ! DiviLibrarySchema::same_categories( $parsed['categories'], $read['categories'] ) ) ) {
 				return __( 'WordPress guardó un contenido o unos términos distintos de los pedidos.', 'nexo-mcp' );
 			}
 		} catch ( \Throwable $e ) {
@@ -595,8 +843,11 @@ final class DiviLibraryEditor {
 			);
 			wp_set_object_terms( $id, (array) $snapshot['categories'], 'layout_category' );
 
-			if ( '' !== (string) $snapshot['module_type'] ) {
-				update_post_meta( $id, '_et_pb_module_type', (string) $snapshot['module_type'] );
+			// Un respaldo sin módulo o sin la marca de Divi 5 también las quita: lo que el cambio fallido pudo haber puesto.
+			$this->put_meta( $id, '_et_pb_module_type', (string) $snapshot['module_type'] );
+
+			if ( isset( $snapshot['use_divi_5'] ) && is_string( $snapshot['use_divi_5'] ) ) {
+				$this->put_meta( $id, '_et_pb_use_divi_5', $snapshot['use_divi_5'] );
 			}
 
 			$post = get_post( $id );
@@ -605,10 +856,27 @@ final class DiviLibraryEditor {
 				&& $post->post_title === $snapshot['title']
 				&& $post->post_content === $snapshot['content']
 				&& $post->post_status === $snapshot['status']
-				&& $this->same_names( (array) $snapshot['categories'], $this->schema->read( $id )['categories'] );
+				&& DiviLibrarySchema::same_categories( (array) $snapshot['categories'], $this->schema->read( $id )['categories'] );
 		} catch ( \Throwable $e ) {
 			return false;
 		}
+	}
+
+	/**
+	 * Pone una meta, o la quita si el valor es vacío.
+	 *
+	 * @param int    $id    Ítem.
+	 * @param string $key   Meta.
+	 * @param string $value Valor.
+	 */
+	private function put_meta( int $id, string $key, string $value ): void {
+		if ( '' === $value ) {
+			delete_post_meta( $id, $key );
+
+			return;
+		}
+
+		update_post_meta( $id, $key, $value );
 	}
 
 	/**
@@ -813,19 +1081,6 @@ final class DiviLibraryEditor {
 		}
 
 		return true;
-	}
-
-	/**
-	 * Mismos nombres sin importar el orden.
-	 *
-	 * @param array<int, string> $a Nombres.
-	 * @param array<int, string> $b Nombres.
-	 */
-	private function same_names( array $a, array $b ): bool {
-		sort( $a );
-		sort( $b );
-
-		return $a === $b;
 	}
 
 	/**
