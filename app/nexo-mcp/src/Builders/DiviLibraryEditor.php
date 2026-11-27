@@ -281,6 +281,211 @@ final class DiviLibraryEditor {
 	}
 
 	/**
+	 * Manda un ítem a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_item( array $input ) {
+		return $this->guarded( $input, false );
+	}
+
+	/**
+	 * Devuelve un ítem al estado de su respaldo (también uno borrado, que está en la papelera).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_item( array $input ) {
+		return $this->guarded( $input, true );
+	}
+
+	/**
+	 * Camino común de borrar y restaurar: permiso, Divi 5, id, ítem usable y no global, y el bloqueo del ítem.
+	 *
+	 * @param array<string, mixed> $input   Parámetros: `id`.
+	 * @param bool                 $restore Restaurar (true) o borrar (false).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function guarded( array $input, bool $restore ) {
+		$id   = $this->id_of( $input );
+		$gate = $this->gate( $id );
+
+		if ( null !== $gate ) {
+			return $gate;
+		}
+
+		if ( null === $id ) {
+			return $this->schema->error( 'id', __( 'debe ser el id entero de un ítem de la biblioteca.', 'nexo-mcp' ) );
+		}
+
+		$checked = $this->checked( $id, $restore );
+
+		if ( $checked instanceof \WP_Error ) {
+			return $checked;
+		}
+
+		return PostLock::run(
+			$id,
+			function () use ( $id, $restore ) {
+				$post = $this->checked( $id, $restore );
+
+				return $post instanceof \WP_Error ? $post : ( $restore ? $this->restore_locked( $post ) : $this->delete_locked( $post ) );
+			}
+		);
+	}
+
+	/**
+	 * El ítem, si se puede borrar o restaurar: existe, no es global y (si se borra) la papelera lo guarda.
+	 *
+	 * @param int  $id      Ítem.
+	 * @param bool $restore Restaurar (acepta uno en la papelera) o borrar.
+	 *
+	 * @return \WP_Post|\WP_Error
+	 */
+	private function checked( int $id, bool $restore ) {
+		$post = $this->load( $id, $restore );
+
+		if ( $post instanceof \WP_Error ) {
+			return $post;
+		}
+
+		$editable = $this->editable( $id );
+
+		if ( $editable instanceof \WP_Error ) {
+			return $editable;
+		}
+
+		if ( ! $restore && defined( 'EMPTY_TRASH_DAYS' ) && 0 === (int) EMPTY_TRASH_DAYS ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_trash_disabled',
+				__( 'La papelera está desactivada en este sitio (EMPTY_TRASH_DAYS es 0): borrar el ítem lo eliminaría para siempre y no se hace. Bórralo desde la biblioteca de Divi.', 'nexo-mcp' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		return $post;
+	}
+
+	/**
+	 * Borra con el bloqueo en mano: respaldo (sin él no se borra), comprobación del bloqueo y papelera.
+	 *
+	 * @param \WP_Post $post Ítem.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function delete_locked( \WP_Post $post ) {
+		$id       = (int) $post->ID;
+		$snapshot = $this->backup->snapshot( $post, 'delete', $this->schema->read( $id ) );
+		$guard    = $this->back_up( $id, $snapshot );
+
+		if ( null !== $guard ) {
+			return $guard;
+		}
+
+		$trashed = wp_trash_post( $id );
+		$now     = get_post( $id );
+
+		if ( ! $trashed || ! $now instanceof \WP_Post || 'trash' !== $now->post_status ) {
+			return $this->restore_state( $id, $snapshot, __( 'WordPress no mandó el ítem a la papelera.', 'nexo-mcp' ) );
+		}
+
+		$read = $this->schema->read( $id );
+
+		return array(
+			'id'       => $id,
+			'deleted'  => true,
+			'status'   => 'trash',
+			'title'    => (string) $post->post_title,
+			'type'     => $read['type'],
+			'scope'    => $read['scope'],
+			'backup'   => $this->backup->describe( $id ),
+			'warnings' => array( __( 'El ítem está en la papelera de WordPress (se vacía sola a los pocos días). Restáuralo con nexo-mcp-restore-divi-library-item.', 'nexo-mcp' ) ),
+		);
+	}
+
+	/**
+	 * Restaura con el bloqueo en mano: respaldo del estado de ahora, comprobación del bloqueo y escritura.
+	 *
+	 * @param \WP_Post $post Ítem.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function restore_locked( \WP_Post $post ) {
+		$id   = (int) $post->ID;
+		$from = $this->backup->read( $id );
+
+		if ( null === $from ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_no_backup',
+				__( 'Este ítem no tiene un respaldo disponible: no hay nada que restaurar (el respaldo lo guardan guardar y borrar antes de cambiarlo).', 'nexo-mcp' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$now   = $this->backup->snapshot( $post, 'restore', $this->schema->read( $id ) );
+		$guard = $this->back_up( $id, $now );
+
+		if ( null !== $guard ) {
+			return $guard;
+		}
+
+		if ( 'trash' === $post->post_status && function_exists( 'wp_untrash_post' ) ) {
+			wp_untrash_post( $id );
+		}
+
+		if ( ! $this->put_back( $id, $from ) ) {
+			return $this->restore_state( $id, $now, __( 'WordPress no dejó el ítem como estaba en el respaldo.', 'nexo-mcp' ) );
+		}
+
+		$answer = $this->answer(
+			$id,
+			false,
+			array(),
+			array(
+				'title'      => $now['title'],
+				'categories' => $now['categories'],
+				'status'     => $now['status'],
+			),
+			$this->backup->describe( $id )
+		);
+
+		return $answer instanceof \WP_Error ? $answer : array_merge(
+			$answer,
+			array(
+				'restored'      => true,
+				'restored_from' => array(
+					'operation'   => $from['operation'],
+					'captured_at' => $from['captured_at'],
+				),
+			)
+		);
+	}
+
+	/**
+	 * Guarda el respaldo y comprueba el bloqueo, justo antes de la primera escritura.
+	 *
+	 * @param int                  $id       Ítem.
+	 * @param array<string, mixed> $snapshot Estado que se respalda.
+	 */
+	private function back_up( int $id, array $snapshot ): ?\WP_Error {
+		if ( ! $this->backup->save( $id, $snapshot ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_backup_failed',
+				__( 'No se pudo guardar el respaldo del ítem, así que no se cambió nada.', 'nexo-mcp' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$locked = PostLock::verify( $id );
+
+		return is_wp_error( $locked ) ? $locked : null;
+	}
+
+	/**
 	 * Alta de un ítem.
 	 *
 	 * @param array<string, mixed> $input Parámetros de la herramienta (sin `id`).
@@ -463,18 +668,10 @@ final class DiviLibraryEditor {
 		$read     = $this->schema->read( $id );
 		$snapshot = $this->backup->snapshot( $post, 'save', $read );
 
-		if ( ! $this->backup->save( $id, $snapshot ) ) {
-			return new \WP_Error(
-				'nexo_mcp_divi_library_backup_failed',
-				__( 'No se pudo guardar el respaldo del ítem, así que no se cambió nada.', 'nexo-mcp' ),
-				array( 'status' => 500 )
-			);
-		}
+		$guard = $this->back_up( $id, $snapshot );
 
-		$locked = PostLock::verify( $id );
-
-		if ( is_wp_error( $locked ) ) {
-			return $locked;
+		if ( null !== $guard ) {
+			return $guard;
 		}
 
 		$failure = $this->apply( $id, $parsed, $prepared );
