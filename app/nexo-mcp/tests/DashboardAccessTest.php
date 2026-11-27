@@ -152,6 +152,15 @@ final class DashboardAccessTest extends NexoTestCase {
 		$this->assertStringContainsString( 'nexo/lista', $sec );
 	}
 
+	public function test_actividad_reciente_del_resumen_dice_el_resultado_en_texto(): void {
+		$panel = $this->panel( $this->render( array(), array( $this->entry( 'success' ), $this->entry( 'denied' ) ) ), 'resumen' );
+
+		$this->assertMatchesRegularExpression( '/nexo-mcp-event--success">.*?Correcto</s', $panel );
+		$this->assertMatchesRegularExpression( '/nexo-mcp-event--denied">.*?Denegado</s', $panel );
+		$this->assertStringNotContainsString( '>success<', $panel );
+		$this->assertStringNotContainsString( '>denied<', $panel );
+	}
+
 	public function test_actividad_error_y_denegado_dicen_su_estado_en_texto(): void {
 		$sec = $this->activity( $this->render( array(), array( $this->entry( 'error', 'write', 'Falló' ), $this->entry( 'denied' ) ) ) );
 
