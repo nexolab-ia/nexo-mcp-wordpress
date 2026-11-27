@@ -1179,6 +1179,41 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lista los ítems de la biblioteca de Divi 5 (sólo lee).
+	 *
+	 * Exige el permiso de la biblioteca (`PermissionPolicy::can_write_divi_library()`) ANTES de mirar la entrada. Ver {@see DiviLibraryEditor}.
+	 *
+	 * @param array<string, mixed> $input Filtros: `type`, `scope`, `category`, `search`, `limit`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_library( array $input ) {
+		return $this->library_editor()->list_items( $input );
+	}
+
+	/**
+	 * Lee un ítem de la biblioteca de Divi 5 con la lista de sus nodos.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_divi_library_item( array $input ) {
+		return $this->library_editor()->get_item( $input );
+	}
+
+	/**
+	 * Editor de la biblioteca de Divi 5 con los componentes de producción.
+	 */
+	private function library_editor(): DiviLibraryEditor {
+		return new DiviLibraryEditor(
+			new DiviLibrarySchema(),
+			new DiviLibraryBackup(),
+			fn( ?int $item_id ): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_library( $item_id )
+		);
+	}
+
+	/**
 	 * Editor de plantillas del Theme Builder con los componentes de producción.
 	 */
 	private function template_editor(): DiviTemplateEditor {
