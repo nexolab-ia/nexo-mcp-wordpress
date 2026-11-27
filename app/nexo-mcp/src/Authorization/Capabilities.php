@@ -115,6 +115,14 @@ final class Capabilities {
 	public const DIVI_THEME_BUILDER = 'nexo_mcp_divi_theme_builder';
 
 	/**
+	 * Guardar, cambiar, borrar y reutilizar ítems de la biblioteca de Divi 5.
+	 *
+	 * Va aparte de DIVI_THEME_BUILDER y de BUILDERS: un ítem global se repite en todas las páginas que lo usan, y un
+	 * cambio se ve en todas sin tocarlas. Además lo enciende aparte el interruptor `divi_library_tools_enabled`.
+	 */
+	public const DIVI_LIBRARY = 'nexo_mcp_divi_library';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {

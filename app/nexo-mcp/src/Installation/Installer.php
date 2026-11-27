@@ -94,6 +94,7 @@ final class Installer {
 			$administrator->add_cap( Capabilities::DIVI_DYNAMIC );
 			$administrator->add_cap( Capabilities::DIVI_CONDITIONS );
 			$administrator->add_cap( Capabilities::DIVI_THEME_BUILDER );
+			$administrator->add_cap( Capabilities::DIVI_LIBRARY );
 		}
 	}
 

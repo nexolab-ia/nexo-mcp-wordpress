@@ -57,9 +57,9 @@ final class DiviThemeBuilderPermissionTest extends NexoTestCase {
 		$switches = ( new \ReflectionClassConstant( ScopeMap::class, 'MODULE_SWITCH' ) )->getValue();
 		$labels   = ( new \ReflectionClassConstant( ScopeMap::class, 'LABELS' ) )->getValue();
 
-		$this->assertSame( 'mcp:divi_conditions', array_key_last( array_slice( $switches, 0, -1, true ) ) );
-		$this->assertSame( self::SCOPE, array_key_last( $switches ) );
-		$this->assertSame( self::SWITCH, end( $switches ) );
+		$keys = array_keys( $switches );
+		$this->assertSame( self::SCOPE, $keys[ array_search( 'mcp:divi_conditions', $keys, true ) + 1 ], 'va justo tras condiciones; la biblioteca se agrega después' );
+		$this->assertSame( self::SWITCH, $switches[ self::SCOPE ] );
 		$this->assertSame( 'divi_conditions_tools_enabled', $switches['mcp:divi_conditions'] );
 		$this->assertSame( 'divi_dynamic_tools_enabled', $switches['mcp:divi_dynamic'] );
 		$this->assertSame( 'divi_presets_tools_enabled', $switches['mcp:divi_presets'] );

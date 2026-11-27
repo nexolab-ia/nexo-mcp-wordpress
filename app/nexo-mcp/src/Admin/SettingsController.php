@@ -70,6 +70,7 @@ final class SettingsController {
 		$sanitized['divi_dynamic_tools_enabled']       = ! empty( $input['divi_dynamic_tools_enabled'] );
 		$sanitized['divi_conditions_tools_enabled']    = ! empty( $input['divi_conditions_tools_enabled'] );
 		$sanitized['divi_theme_builder_tools_enabled'] = ! empty( $input['divi_theme_builder_tools_enabled'] );
+		$sanitized['divi_library_tools_enabled']       = ! empty( $input['divi_library_tools_enabled'] );
 		$sanitized['maintenance_tools_enabled']        = ! empty( $input['maintenance_tools_enabled'] );
 		$sanitized['extension_deletion_enabled']       = ! empty( $input['extension_deletion_enabled'] );
 		$sanitized['publishing_enabled']               = ! empty( $input['publishing_enabled'] );

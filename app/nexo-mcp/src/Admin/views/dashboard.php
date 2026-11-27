@@ -116,6 +116,12 @@ $sensitive_options = array(
 		'confirm-title' => __( '¿Seguro que quieres activar el Theme Builder de Divi?', 'nexo-mcp' ),
 		'confirm-text'  => __( 'La IA conectada podrá crear y cambiar las plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo y 404). Una plantilla decide qué ven todos tus visitantes en todo el sitio: una mal asignada puede tapar páginas o dejar sin contenido el cuerpo de muchas. Las plantillas nuevas nacen desactivadas, y cada cambio guarda un respaldo.', 'nexo-mcp' ),
 	),
+	'divi_library_tools_enabled'       => array(
+		'risk'          => 'on',
+		'confirm-word'  => __( 'biblioteca', 'nexo-mcp' ),
+		'confirm-title' => __( '¿Seguro que quieres activar la biblioteca de Divi?', 'nexo-mcp' ),
+		'confirm-text'  => __( 'La IA conectada podrá guardar, cambiar y borrar elementos de la biblioteca de Divi 5 y ponerlos en las páginas. Un elemento global se repite en todas las páginas que lo usan: cambiarlo cambia todas a la vez, sin pasar por la copia de trabajo de cada página. Cada cambio guarda un respaldo.', 'nexo-mcp' ),
+	),
 	'extension_deletion_enabled'       => array(
 		'risk'          => 'on',
 		'confirm-word'  => __( 'borrar', 'nexo-mcp' ),
@@ -1054,6 +1060,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							value="1"
 							<?php $print_sensitive( 'divi_theme_builder_tools_enabled' ); ?>
 							<?php checked( ! empty( $settings['divi_theme_builder_tools_enabled'] ) ); ?>
+						>
+						<i aria-hidden="true"></i>
+					</label>
+
+					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
+						<span class="nexo-mcp-toggle__text">
+							<strong><?php esc_html_e( 'Biblioteca de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
+							<small><?php esc_html_e( 'Guarda, cambia y reutiliza elementos de la biblioteca de Divi 5: un elemento global cambia todas las páginas que lo usan.', 'nexo-mcp' ); ?></small>
+						</span>
+						<input
+							type="checkbox"
+							name="nexo_mcp_settings[divi_library_tools_enabled]"
+							value="1"
+							<?php $print_sensitive( 'divi_library_tools_enabled' ); ?>
+							<?php checked( ! empty( $settings['divi_library_tools_enabled'] ) ); ?>
 						>
 						<i aria-hidden="true"></i>
 					</label>

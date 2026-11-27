@@ -61,6 +61,8 @@ final class Settings {
 			'divi_conditions_tools_enabled'    => false,
 			// Crea y cambia plantillas del Theme Builder de Divi 5 (encabezado, pie y cuerpo de todo el sitio): apagado hasta que el dueño lo enciende.
 			'divi_theme_builder_tools_enabled' => false,
+			// Guarda y cambia ítems de la biblioteca de Divi 5 (un ítem global cambia todas las páginas que lo usan): apagado hasta que el dueño lo enciende.
+			'divi_library_tools_enabled'       => false,
 			'publishing_enabled'               => true,
 			'destructive_enabled'              => false,
 			'read_only'                        => true,

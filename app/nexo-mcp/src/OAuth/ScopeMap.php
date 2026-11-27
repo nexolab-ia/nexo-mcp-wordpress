@@ -54,6 +54,7 @@ final class ScopeMap {
 		'mcp:divi_dynamic'        => Capabilities::DIVI_DYNAMIC,
 		'mcp:divi_conditions'     => Capabilities::DIVI_CONDITIONS,
 		'mcp:divi_theme_builder'  => Capabilities::DIVI_THEME_BUILDER,
+		'mcp:divi_library'        => Capabilities::DIVI_LIBRARY,
 		// Variantes de sólo consulta: apuntan a la misma capacidad que su módulo.
 		'mcp:seo:read'            => Capabilities::SEO,
 		'mcp:maintenance:read'    => Capabilities::MAINTENANCE,
@@ -118,6 +119,7 @@ final class ScopeMap {
 		'mcp:divi_dynamic'        => 'divi_dynamic_tools_enabled',
 		'mcp:divi_conditions'     => 'divi_conditions_tools_enabled',
 		'mcp:divi_theme_builder'  => 'divi_theme_builder_tools_enabled',
+		'mcp:divi_library'        => 'divi_library_tools_enabled',
 	);
 
 	/**
@@ -146,6 +148,7 @@ final class ScopeMap {
 		'mcp:divi_dynamic'        => 'Poner contenido dinámico y bucles de consulta en páginas de Divi 5 (muestra datos del sitio al público)',
 		'mcp:divi_conditions'     => 'Poner condiciones de visualización en los módulos de Divi 5 (decide qué contenido ve cada visitante)',
 		'mcp:divi_theme_builder'  => 'Crear y cambiar las plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo y 404): afecta a todo el sitio',
+		'mcp:divi_library'        => 'Guardar, cambiar y borrar elementos de la biblioteca de Divi 5 y reutilizarlos en las páginas (un elemento global cambia todas las páginas que lo usan)',
 		'mcp:seo:read'            => 'Consultar metadatos SEO, sitemap y robots, sin modificarlos',
 		'mcp:maintenance:read'    => 'Ver plugins y temas instalados y sus actualizaciones, sin aplicarlas',
 	);
