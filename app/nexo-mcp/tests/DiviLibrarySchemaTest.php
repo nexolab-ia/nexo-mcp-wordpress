@@ -254,7 +254,7 @@ final class DiviLibrarySchemaTest extends NexoTestCase {
 		$empty    = array( 'type' => '', 'scope' => 'non_global', 'categories' => array(), 'module_type' => '' );
 
 		$this->assertSame( $empty, $throwing->read( 1 ) );
-		$this->assertSame( array( 'type' => 'layout', 'scope' => 'non_global', 'categories' => array( 'layout' ), 'module_type' => '' ), $garbage->read( 1 ) );
+		$this->assertSame( array( 'type' => 'layout', 'scope' => 'global', 'categories' => array( 'layout' ), 'module_type' => '' ), $garbage->read( 1 ), 'metas basura pero no vacías cuentan como la alternativa de Divi 4: global'  );
 		$this->assertSame( $empty, $wp_error->read( 1 ) );
 		$this->assertSame( $empty, $this->schema()->read( -4 ) );
 	}
@@ -265,6 +265,24 @@ final class DiviLibrarySchemaTest extends NexoTestCase {
 			throw new \RuntimeException( 'boom' );
 		} ) )->is_global( 3 ) );
 		$this->assertFalse( ( new DiviLibrarySchema( static fn(): array => array( 'non_global' ) ) )->is_global( 3 ) );
+	}
+
+	public function test_the_divi_4_fallback_makes_a_module_with_excluded_options_global_whatever_its_scope_term(): void {
+		$metas  = array( '_et_pb_module_type' => 'divi/text', '_et_pb_excluded_global_options' => '[]' );
+		$schema = static fn( array $metas ): DiviLibrarySchema => new DiviLibrarySchema( static fn(): array => array( 'non_global' ), static fn( int $id, string $key ) => $metas[ $key ] ?? '' );
+
+		$this->assertTrue( $schema( $metas )->is_global( 1 ) );
+		$this->assertSame( 'global', $schema( $metas )->read( 1 )['scope'] );
+		$this->assertFalse( $schema( array( '_et_pb_module_type' => 'divi/text' ) )->is_global( 1 ), 'falta una de las dos metas' );
+		$this->assertFalse( $schema( array( '_et_pb_module_type' => 'divi/text', '_et_pb_excluded_global_options' => '' ) )->is_global( 1 ) );
+		$this->assertTrue( DiviLibrarySchema::meta_is_global( 'divi/text', '[]' ) );
+		$this->assertFalse( DiviLibrarySchema::meta_is_global( '', '[]' ) );
+	}
+
+	public function test_categories_are_compared_like_wordpress_does(): void {
+		$this->assertTrue( DiviLibrarySchema::same_categories( array( 'header', 'A & B' ), array( 'A &amp; B', 'Header' ) ) );
+		$this->assertFalse( DiviLibrarySchema::same_categories( array( 'header' ), array( 'footer' ) ) );
+		$this->assertFalse( DiviLibrarySchema::same_categories( array( 'header' ), array() ) );
 	}
 
 	public function test_foreign_types_lists_divi_blocks_outside_the_catalog(): void {

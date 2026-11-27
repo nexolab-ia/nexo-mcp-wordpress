@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace NexoDev\NexoMCP\Authorization;
 
 use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
+use NexoDev\NexoMCP\Builders\DiviLibrarySchema;
 use NexoDev\NexoMCP\OAuth\BearerTokenGuard;
 use NexoDev\NexoMCP\OAuth\ScopeMap;
 use NexoDev\NexoMCP\Support\Settings;
@@ -229,7 +230,8 @@ final class PermissionPolicy {
 	 * cargado, más la capacidad `nexo_mcp_divi_library` con su interruptor `divi_library_tools_enabled` (y su scope en
 	 * el token). Sin id (alta de un ítem) pide además `save_library`. Con id, el post tiene que existir, ser un ítem de
 	 * la biblioteca (`et_pb_layout`) y el usuario poder editarlo; si el ítem es global (término `global` de `scope`)
-	 * pide `edit_global_library`, porque cambiarlo cambia todas las páginas que lo usan.
+	 * (o, como Divi, un módulo con `_et_pb_excluded_global_options`: un global importado de Divi 4) pide `edit_global_library`,
+	 * porque cambiarlo cambia todas las páginas que lo usan.
 	 *
 	 * @param int|null $item_id Ítem de la biblioteca, o null para dar de alta uno nuevo.
 	 */
@@ -256,7 +258,8 @@ final class PermissionPolicy {
 
 		// Si no se pueden leer los términos (taxonomía sin registrar), se trata como global: falla cerrado.
 		$scopes = wp_get_object_terms( $item_id, 'scope', array( 'fields' => 'slugs' ) );
-		$global = ! is_array( $scopes ) || in_array( 'global', $scopes, true );
+		$global = ! is_array( $scopes ) || in_array( 'global', $scopes, true )
+			|| DiviLibrarySchema::meta_is_global( get_post_meta( $item_id, '_et_pb_module_type', true ), get_post_meta( $item_id, '_et_pb_excluded_global_options', true ) );
 
 		return ! $global || (bool) et_pb_is_allowed( 'edit_global_library' );
 	}

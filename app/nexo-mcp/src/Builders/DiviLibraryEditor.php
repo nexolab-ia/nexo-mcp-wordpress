@@ -438,7 +438,12 @@ final class DiviLibraryEditor {
 		}
 
 		if ( ! $this->put_back( $id, $from ) ) {
-			return $this->restore_state( $id, $now, __( 'WordPress no dejó el ítem como estaba en el respaldo.', 'nexo-mcp' ) );
+			$error = $this->restore_state( $id, $now, __( 'WordPress no dejó el ítem como estaba en el respaldo.', 'nexo-mcp' ) );
+
+			// El respaldo del que se restauraba sigue siendo el bueno: se devuelve (el de ahora es el mismo estado que ya tiene).
+			$this->backup->save( $id, $from );
+
+			return $error;
 		}
 
 		$answer = $this->answer(
@@ -472,6 +477,13 @@ final class DiviLibraryEditor {
 	 * @param array<string, mixed> $snapshot Estado que se respalda.
 	 */
 	private function back_up( int $id, array $snapshot ): ?\WP_Error {
+		// Primero el bloqueo: un bloqueo perdido no debe dejar escrito un respaldo nuevo encima del que había.
+		$locked = PostLock::verify( $id );
+
+		if ( is_wp_error( $locked ) ) {
+			return $locked;
+		}
+
 		if ( ! $this->backup->save( $id, $snapshot ) ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_library_backup_failed',
@@ -480,9 +492,7 @@ final class DiviLibraryEditor {
 			);
 		}
 
-		$locked = PostLock::verify( $id );
-
-		return is_wp_error( $locked ) ? $locked : null;
+		return null;
 	}
 
 	/**
@@ -512,6 +522,25 @@ final class DiviLibraryEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function create_unlocked( array $parsed ) {
+		$known  = array() === (array) ( $parsed['categories'] ?? array() ) ? null : $this->schema->category_ids();
+		$result = $this->create_prepared( $parsed );
+
+		// Un alta que se deshace no deja las categorías nuevas que alcanzó a crear.
+		if ( $result instanceof \WP_Error && null !== $known ) {
+			$this->schema->drop_categories_since( $known );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Valida el árbol y crea el ítem; si algo falla después de crearlo, lo borra.
+	 *
+	 * @param array<string, mixed> $parsed Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function create_prepared( array $parsed ) {
 		$type     = (string) $parsed['type'];
 		$prepared = $this->prepare( $type, $parsed['nodes'] );
 
@@ -551,7 +580,7 @@ final class DiviLibraryEditor {
 				|| DiviLibrarySchema::POST_TYPE !== $post->post_type
 				|| $type !== $read['type']
 				|| $scope !== $read['scope']
-				|| ! $this->same_names( $categories, $read['categories'] )
+				|| ! DiviLibrarySchema::same_categories( $categories, $read['categories'] )
 				|| ! $this->has_metas( $id, $stored['meta'] ) ) {
 				return $this->rollback( $id, __( 'WordPress guardó un contenido, unos términos o unas metas distintos de los pedidos.', 'nexo-mcp' ) );
 			}
@@ -674,10 +703,18 @@ final class DiviLibraryEditor {
 			return $guard;
 		}
 
+		$known   = null === $parsed['categories'] ? null : $this->schema->category_ids();
 		$failure = $this->apply( $id, $parsed, $prepared );
 
 		if ( null !== $failure ) {
-			return $this->restore_state( $id, $snapshot, $failure );
+			$error = $this->restore_state( $id, $snapshot, $failure );
+
+			// Las categorías nuevas que alcanzó a crear no se quedan de sobra.
+			if ( null !== $known ) {
+				$this->schema->drop_categories_since( $known );
+			}
+
+			return $error;
 		}
 
 		$warnings = array();
@@ -729,6 +766,11 @@ final class DiviLibraryEditor {
 				}
 			}
 
+			if ( null !== $prepared ) {
+				// Un ítem de Divi 4 que se reescribe con bloques pasa a ser de Divi 5.
+				update_post_meta( $id, '_et_pb_use_divi_5', 'on' );
+			}
+
 			if ( null !== $prepared && null !== $prepared['module_type'] ) {
 				update_post_meta( $id, '_et_pb_module_type', $prepared['module_type'] );
 			}
@@ -739,7 +781,7 @@ final class DiviLibraryEditor {
 			if ( ! $post instanceof \WP_Post
 				|| ( null !== $parsed['title'] && $parsed['title'] !== $post->post_title )
 				|| ( null !== $prepared && $prepared['content'] !== $post->post_content )
-				|| ( null !== $parsed['categories'] && ! $this->same_names( $parsed['categories'], $read['categories'] ) ) ) {
+				|| ( null !== $parsed['categories'] && ! DiviLibrarySchema::same_categories( $parsed['categories'], $read['categories'] ) ) ) {
 				return __( 'WordPress guardó un contenido o unos términos distintos de los pedidos.', 'nexo-mcp' );
 			}
 		} catch ( \Throwable $e ) {
@@ -792,8 +834,11 @@ final class DiviLibraryEditor {
 			);
 			wp_set_object_terms( $id, (array) $snapshot['categories'], 'layout_category' );
 
-			if ( '' !== (string) $snapshot['module_type'] ) {
-				update_post_meta( $id, '_et_pb_module_type', (string) $snapshot['module_type'] );
+			// Un respaldo sin módulo o sin la marca de Divi 5 también las quita: lo que el cambio fallido pudo haber puesto.
+			$this->put_meta( $id, '_et_pb_module_type', (string) $snapshot['module_type'] );
+
+			if ( isset( $snapshot['use_divi_5'] ) && is_string( $snapshot['use_divi_5'] ) ) {
+				$this->put_meta( $id, '_et_pb_use_divi_5', $snapshot['use_divi_5'] );
 			}
 
 			$post = get_post( $id );
@@ -802,10 +847,27 @@ final class DiviLibraryEditor {
 				&& $post->post_title === $snapshot['title']
 				&& $post->post_content === $snapshot['content']
 				&& $post->post_status === $snapshot['status']
-				&& $this->same_names( (array) $snapshot['categories'], $this->schema->read( $id )['categories'] );
+				&& DiviLibrarySchema::same_categories( (array) $snapshot['categories'], $this->schema->read( $id )['categories'] );
 		} catch ( \Throwable $e ) {
 			return false;
 		}
+	}
+
+	/**
+	 * Pone una meta, o la quita si el valor es vacío.
+	 *
+	 * @param int    $id    Ítem.
+	 * @param string $key   Meta.
+	 * @param string $value Valor.
+	 */
+	private function put_meta( int $id, string $key, string $value ): void {
+		if ( '' === $value ) {
+			delete_post_meta( $id, $key );
+
+			return;
+		}
+
+		update_post_meta( $id, $key, $value );
 	}
 
 	/**
@@ -1010,19 +1072,6 @@ final class DiviLibraryEditor {
 		}
 
 		return true;
-	}
-
-	/**
-	 * Mismos nombres sin importar el orden.
-	 *
-	 * @param array<int, string> $a Nombres.
-	 * @param array<int, string> $b Nombres.
-	 */
-	private function same_names( array $a, array $b ): bool {
-		sort( $a );
-		sort( $b );
-
-		return $a === $b;
 	}
 
 	/**

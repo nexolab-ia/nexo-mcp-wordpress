@@ -52,6 +52,9 @@ trait DiviLibraryFixtures {
 		\WP_Library_Stub_State::$term_calls    = array();
 		\WP_Library_Stub_State::$fail_terms_in = '';
 		\WP_Library_Stub_State::$throw_after_insert = false;
+		\WP_Library_Stub_State::$known              = array();
+		\WP_Library_Stub_State::$leak_terms_in      = '';
+		\WP_Library_Stub_State::$lose_terms_in      = '';
 
 		\WP_Test_State::$posts[ self::PAGE ] = new \WP_Post( array( 'ID' => self::PAGE, 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Inicio' ) );
 
