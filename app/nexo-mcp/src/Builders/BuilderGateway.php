@@ -1132,6 +1132,49 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lista las plantillas del Theme Builder en vivo de Divi 5 (sólo lee).
+	 *
+	 * Exige el permiso del Theme Builder (el inyectado o `PermissionPolicy::can_write_divi_theme_builder()`) ANTES de leer
+	 * nada. Ver {@see DiviTemplateEditor}.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_theme_builder() {
+		return $this->template_editor()->list_templates();
+	}
+
+	/**
+	 * Crea o reemplaza UNA plantilla del Theme Builder en vivo de Divi 5.
+	 *
+	 * Exige el permiso del Theme Builder ANTES de mirar la entrada. Ver {@see DiviTemplateEditor::set_template()}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function set_divi_template( array $input ) {
+		return $this->template_editor()->set_template( $input );
+	}
+
+	/**
+	 * Saca una plantilla del Theme Builder en vivo y la manda a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `id`, `confirm_site_wide`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_template( array $input ) {
+		return $this->template_editor()->delete_template( $input );
+	}
+
+	/**
+	 * Editor de plantillas del Theme Builder con los componentes de producción.
+	 */
+	private function template_editor(): DiviTemplateEditor {
+		return new DiviTemplateEditor( new DiviThemeBuilderSchema(), new DiviTemplateStore(), $this->layout_allowed_callable() );
+	}
+
+	/**
 	 * Reemplaza, inserta o borra un nodo de una página de Divi 5, en la copia de trabajo.
 	 *
 	 * Mismo permiso sobre el original que {@see self::edit_elementor_section()}. Ver {@see Divi5SectionEditor}.

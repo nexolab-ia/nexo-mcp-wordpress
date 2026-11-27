@@ -298,6 +298,31 @@ final class DiviLayoutContentAdminTest extends NexoTestCase {
 		$this->assertSame( 'draft', \WP_Test_State::$posts[ $copy ]->post_status );
 	}
 
+	public function test_a_page_with_a_forged_draft_of_pointing_at_a_layout_cannot_be_merged_into_it(): void {
+		// Una página-borrador propia lleva la meta `draft_of` de un layout del Theme Builder (una meta de un contenido propio se
+		// puede escribir), pero el layout no apunta de vuelta: no es su copia y publicarla no puede fusionarse en el layout.
+		\WP_Test_State::$posts[101]               = new \WP_Post( array( 'ID' => 101, 'post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Falsa', 'post_content' => Divi5SectionEditorTest::page() . '<!-- falsa -->' ) );
+		\WP_Test_State::$meta[101][ WorkingCopy::META_DRAFT_OF ] = 200;
+		\WP_Test_State::$meta[101][ WorkingCopy::META_BASE ]     = (string) \WP_Test_State::$posts[200]->post_modified_gmt;
+		$layout                                                  = clone \WP_Test_State::$posts[200];
+		$layout_meta                                             = \WP_Test_State::$meta[200] ?? array();
+
+		$tools = $this->tools( array( self::SWITCH => false ) );
+
+		$this->assertSame( 0, WorkingCopy::copy_of( \WP_Test_State::$posts[200] ), 'el layout no apunta de vuelta' );
+		$this->assertTrue( $tools['set-content-status']['permission_callback']( array( 'id' => 101, 'status' => 'publish' ) ), 'para el permiso es una página más' );
+
+		$result = $tools['set-content-status']['execute_callback']( array( 'id' => 101, 'status' => 'publish' ) );
+
+		$this->assertEquals( $layout, \WP_Test_State::$posts[200], 'el contenido, el estado y el tipo del layout no cambian' );
+		$this->assertSame( $layout->post_content, \WP_Test_State::$posts[200]->post_content );
+		$this->assertSame( $layout_meta, \WP_Test_State::$meta[200] ?? array(), 'ni sus metas' );
+		$this->assertSame( 0, WorkingCopy::copy_of( \WP_Test_State::$posts[200] ) );
+		$this->assertNotSame( 200, is_array( $result ) ? ( $result['id'] ?? null ) : null, 'nunca se informa una fusión en el layout' );
+		$this->assertArrayNotHasKey( 'merged_from', is_array( $result ) ? $result : array() );
+		$this->assertSame( 'page', \WP_Test_State::$posts[101]->post_type, 'la página sigue siendo una página' );
+	}
+
 	public function test_preserve_a_page_copy_is_still_published_with_edit_post_and_no_theme_builder(): void {
 		$tools = $this->tools( array( self::SWITCH => false ) );
 		$edit  = $tools['edit-divi-section']['execute_callback'](
