@@ -280,13 +280,18 @@ final class DiviLibrarySchema {
 	}
 
 	/**
-	 * Tipos de bloque del contenido que el catálogo no conoce (módulos de Divi hechos en el Visual Builder).
+	 * Tipos de bloque del contenido que el catálogo no conoce (módulos de Divi hechos en el Visual Builder). Un contenido
+	 * que no es de Divi 5 (shortcodes de Divi 4, texto suelto) da `legacy`.
 	 *
 	 * @param string $content `post_content` del ítem.
 	 *
 	 * @return array<int, string>
 	 */
 	public function foreign_types( string $content ): array {
+		if ( '' !== trim( $content ) && ! Divi5Tree::is_divi5( $content ) ) {
+			return array( 'legacy' );
+		}
+
 		try {
 			$tree = Divi5Tree::build( $content );
 		} catch ( \Throwable $e ) {

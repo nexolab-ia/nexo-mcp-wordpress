@@ -91,6 +91,8 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-template',
 		'nexo-mcp/delete-divi-template',
 		'nexo-mcp/restore-divi-template',
+		'nexo-mcp/list-divi-library',
+		'nexo-mcp/get-divi-library-item',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -921,6 +923,25 @@ final class ExtendedAbilityRegistrar {
 			$this->divi_template_restore_schema(),
 			fn( array $input ) => $this->builders->restore_divi_template( $input ),
 			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'list-divi-library',
+			'Listar los ítems de la biblioteca de Divi 5',
+			DiviLibraryToolSpec::list_description(),
+			'read',
+			DiviLibraryToolSpec::list_schema(),
+			fn( array $input ) => $this->builders->list_divi_library( $input ),
+			// Sin id de ítem: permiso de la biblioteca (también para leer; más estricto que la ruta de Divi).
+			fn() => $this->policy->can_write_divi_library()
+		);
+		$this->ability(
+			'get-divi-library-item',
+			'Leer un ítem de la biblioteca de Divi 5',
+			DiviLibraryToolSpec::get_description(),
+			'read',
+			DiviLibraryToolSpec::get_schema(),
+			fn( array $input ) => $this->builders->get_divi_library_item( $input ),
+			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
 		);
 		$this->ability(
 			'edit-divi-section',
@@ -2230,6 +2251,15 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function divi_layout_note(): string {
 		return 'LAYOUTS DEL THEME BUILDER: id puede ser el de un layout de encabezado, cuerpo o pie (o su copia de trabajo); entonces se pide el permiso del Theme Builder (scope mcp:divi_theme_builder con su interruptor y un administrador con el permiso theme_builder de Divi) y NO el de una página: sin él, nexo_mcp_divi_layout_denied. Los demás tipos internos de Divi (plantillas, biblioteca) se rechazan siempre (nexo_mcp_divi_post_type_denied). El cambio va a la copia de trabajo del layout (el layout vivo, que ve todo el sitio, no cambia): revísala con nexo-mcp-get-working-copy-diff y publícala o descártala con nexo-mcp-set-content-status (también con el permiso del Theme Builder).';
+	}
+
+	/**
+	 * Id de ítem de la biblioteca de la entrada: un entero positivo, o null (alta o entrada sin id válido).
+	 *
+	 * @param array<string, mixed> $input Entrada.
+	 */
+	private function library_item_id( array $input ): ?int {
+		return isset( $input['id'] ) && is_int( $input['id'] ) && $input['id'] > 0 ? $input['id'] : null;
 	}
 
 	/**

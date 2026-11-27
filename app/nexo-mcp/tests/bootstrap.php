@@ -636,7 +636,7 @@ function wp_get_object_terms( $object_ids, $taxonomies, $args = array() ) {
 	}
 	$terms  = WP_Test_State::$terms[ (int) $object_ids ][ (string) $taxonomies ] ?? array();
 	$fields = $args['fields'] ?? 'all';
-	if ( 'slugs' === $fields ) {
+	if ( 'slugs' === $fields || 'names' === $fields ) {
 		return array_map( 'strval', array_keys( $terms ) );
 	}
 	if ( 'ids' === $fields ) {

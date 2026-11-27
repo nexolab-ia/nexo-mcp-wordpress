@@ -275,6 +275,7 @@ final class DiviLibrarySchemaTest extends NexoTestCase {
 		$this->assertSame( array( 'divi/fullwidth-menu', 'divi/global-layout' ), $this->schema()->foreign_types( $content ) );
 		$this->assertSame( array(), $this->schema()->foreign_types( '<!-- wp:divi/placeholder --><!-- wp:divi/text /--><!-- /wp:divi/placeholder -->' ) );
 		$this->assertSame( array(), $this->schema()->foreign_types( '' ) );
+		$this->assertSame( array( 'legacy' ), $this->schema()->foreign_types( '[et_pb_section][et_pb_row][/et_pb_row][/et_pb_section]' ) );
 		$this->assertSame( array(), $this->schema()->foreign_types( "texto \0 <!-- wp:divi/ -->" ) );
 	}
 
