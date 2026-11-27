@@ -623,16 +623,27 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 				<section class="nexo-mcp-overview__block" aria-labelledby="nexo-mcp-overview-activity">
 					<h2 id="nexo-mcp-overview-activity"><?php esc_html_e( 'Actividad reciente', 'nexo-mcp' ); ?></h2>
 					<p class="nexo-mcp-overview__lead"><?php esc_html_e( 'De la más reciente a la más antigua.', 'nexo-mcp' ); ?></p>
+					<?php
+					$result_labels = array(
+						'success' => array( __( 'Correcto', 'nexo-mcp' ), '✓' ),
+						'error'   => array( __( 'Error', 'nexo-mcp' ), '✕' ),
+						'denied'  => array( __( 'Denegado', 'nexo-mcp' ), '⊘' ),
+						'limited' => array( __( 'Limitado', 'nexo-mcp' ), '!' ),
+					);
+					?>
 					<?php if ( array() === $summary_audit ) : ?>
 						<p class="nexo-mcp-overview__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></p>
 					<?php else : ?>
 						<ol class="nexo-mcp-timeline">
 							<?php foreach ( $summary_audit as $summary_entry ) : ?>
-								<?php $entry_ok = 'success' === (string) $summary_entry->status; ?>
+								<?php
+								$entry_ok    = 'success' === (string) $summary_entry->status;
+								$entry_label = $result_labels[ (string) $summary_entry->status ] ?? array( (string) $summary_entry->status, '•' );
+								?>
 								<li class="nexo-mcp-timeline__item<?php echo $entry_ok ? '' : ' nexo-mcp-timeline__item--bad'; ?>">
 									<time><?php echo esc_html( (string) $summary_entry->occurred_at ); ?> UTC</time>
 									<code class="nexo-mcp-timeline__tool"><?php echo esc_html( (string) $summary_entry->tool ); ?></code>
-									<span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( (string) $summary_entry->status ) ); ?>"><?php echo esc_html( (string) $summary_entry->status ); ?></span>
+									<span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( (string) $summary_entry->status ) ); ?>"><span aria-hidden="true"><?php echo esc_html( $entry_label[1] ); ?></span> <?php echo esc_html( $entry_label[0] ); ?></span>
 								</li>
 							<?php endforeach; ?>
 						</ol>
@@ -1205,14 +1216,6 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 									<td colspan="5" class="nexo-mcp-table__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></td>
 								</tr>
 							<?php else : ?>
-								<?php
-								$result_labels = array(
-									'success' => array( __( 'Correcto', 'nexo-mcp' ), '✓' ),
-									'error'   => array( __( 'Error', 'nexo-mcp' ), '✕' ),
-									'denied'  => array( __( 'Denegado', 'nexo-mcp' ), '⊘' ),
-									'limited' => array( __( 'Limitado', 'nexo-mcp' ), '!' ),
-								);
-								?>
 								<?php foreach ( $audit_entries as $entry ) : ?>
 									<?php
 									$entry_status = (string) $entry->status;

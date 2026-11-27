@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.13.0
+Stable tag: 1.14.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -41,7 +41,7 @@ Nexo MCP no trae ningún servidor de licencias. Si quieres usar uno, define en `
 
 `define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );`
 
-Sin esa constante el plugin funciona completo y las pestañas Licencia y sitio, Actualizaciones y Soporte lo indican.
+Sin esa constante el plugin funciona completo y las secciones Licencia, Actualizaciones y Soporte de la pestaña Sistema lo indican.
 
 = Desarrollo local sin HTTPS =
 
@@ -65,6 +65,13 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.14.0 =
+* Cambio visual, sin cambio funcional: el panel de Nexo MCP se rediseñó con identidad propia. Arriba queda fija la banda del mapa (Tu IA · OAuth 2.1 · PKCE · WordPress · módulos activos) con el estado en texto e icono y los botones «Conectar una IA» y «Probar OAuth». Las pestañas pasan a cinco: Resumen (módulos agrupados, accesos y actividad reciente), Conectar, Accesos, Módulos y Sistema (actividad, licencia, actualizaciones, endpoint y soporte).
+* Los enlaces antiguos con `?tab=` (licencia, actualizaciones, endpoint, actividad, soporte) ahora abren la pestaña Sistema en su sección. Los formularios, campos y diálogos de confirmación y de secreto no cambian.
+* La pantalla de activación y la pantalla de autorización OAuth usan el mismo estilo nuevo (la de autorización no cambia su formulario ni su lógica).
+* Corrección: al revocar un acceso en Accesos, su tarjeta desaparece de inmediato (antes quedaba hasta recargar la página).
+* Se quitó la fuente Inter incluida en el plugin: todo el panel y la pantalla de autorización usan las fuentes del sistema (menos peso y se integran con wp-admin).
 
 = 1.13.0 =
 * Nuevo: biblioteca de Divi 5 con scope propio `mcp:divi_library` (capacidad `nexo_mcp_divi_library` que el instalador da al administrador al actualizar a 1.13.0, también a los sitios que ya están en 1.12.0; interruptor `divi_library_tools_enabled` apagado por defecto). Exige además `edit_posts` y los permisos de biblioteca de los roles de Divi (`divi_library`, `save_library` para crear y `edit_global_library` para los ítems globales). Herramientas: `list-divi-library`, `get-divi-library-item`, `save-divi-library-item` (crea o actualiza), `delete-divi-library-item`, `restore-divi-library-item` e `insert-divi-library-item` (copia o referencia global). No importa ni exporta.
