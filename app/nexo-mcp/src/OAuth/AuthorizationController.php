@@ -409,7 +409,29 @@ final class AuthorizationController {
 	 * @param array<int, string>    $scopes  Scopes concedibles.
 	 */
 	private function render_consent( array $request, array $client, array $scopes ): void {
-		$user        = wp_get_current_user();
+		$user = wp_get_current_user();
+
+		$body = $this->consent_markup(
+			$request,
+			$client,
+			$scopes,
+			(string) $user->user_login,
+			wp_nonce_field( self::NONCE_ACTION, 'nexo_mcp_consent_nonce', true, false )
+		);
+
+		$this->render_page( __( 'Autorizar conexión', 'nexo-mcp' ), $body );
+	}
+
+	/**
+	 * Construye el contenido de la pantalla de consentimiento.
+	 *
+	 * @param array<string, string> $request     Parámetros normalizados.
+	 * @param array<string, mixed>  $client      Cliente resuelto.
+	 * @param array<int, string>    $scopes      Scopes concedibles.
+	 * @param string                $user_login  Usuario que consiente.
+	 * @param string                $nonce_field Campo del nonce ya generado.
+	 */
+	private function consent_markup( array $request, array $client, array $scopes, string $user_login, string $nonce_field ): string {
 		$client_name = isset( $client['client_name'] ) && '' !== $client['client_name']
 			? (string) $client['client_name']
 			: (string) $request['client_id'];
@@ -443,7 +465,7 @@ final class AuthorizationController {
 			);
 		}
 
-		$body = sprintf(
+		return sprintf(
 			'<main class="sheet">
 				<aside class="rail">
 					<div class="rail-top">
@@ -487,7 +509,7 @@ final class AuthorizationController {
 			esc_html__( 'Sitio', 'nexo-mcp' ),
 			esc_html( (string) wp_parse_url( home_url(), PHP_URL_HOST ) ),
 			esc_html__( 'Sesión', 'nexo-mcp' ),
-			esc_html( $user->user_login ),
+			esc_html( $user_login ),
 			esc_html( NEXO_MCP_VERSION ),
 			esc_html__( 'Solicitud de acceso', 'nexo-mcp' ),
 			esc_html( $client_name ),
@@ -495,15 +517,13 @@ final class AuthorizationController {
 			esc_html__( 'Permisos solicitados', 'nexo-mcp' ),
 			$items,
 			$hidden,
-			wp_nonce_field( self::NONCE_ACTION, 'nexo_mcp_consent_nonce', true, false ),
+			$nonce_field,
 			esc_html__( 'Rechazar', 'nexo-mcp' ),
 			esc_html__( 'Autorizar acceso', 'nexo-mcp' ),
 			esc_html__( 'Revocable cuando quieras desde el panel Nexo MCP.', 'nexo-mcp' ),
 			esc_html__( 'Nexo MCP · software libre GPL', 'nexo-mcp' ),
 			esc_url( $this->logo_url() )
 		);
-
-		$this->render_page( __( 'Autorizar conexión', 'nexo-mcp' ), $body );
 	}
 
 	/**
@@ -583,29 +603,26 @@ final class AuthorizationController {
 	/**
 	 * Entrega la hoja de estilos de la pantalla.
 	 *
-	 * Usa la identidad Nexo del panel (admin.css): banda negra con el logo y
-	 * la franja degradado Nexo, tarjeta blanca de esquinas redondeadas y botón
-	 * negro con el hover degradado Nexo. La tipografía se sirve desde el propio
-	 * plugin: la pantalla vive fuera del administrador y no debe depender de
-	 * ningún recurso externo.
+	 * Usa la identidad Nexo «Mapa claro» del panel (admin.css): banda slate que
+	 * conserva legible el logo de texto blanco, hoja clara de bordes finos y
+	 * radios chicos, botón primario teal y foco índigo. Sólo fuentes del
+	 * sistema: la pantalla vive fuera del administrador y no depende de ningún
+	 * recurso externo.
 	 */
 	private function styles(): string {
-		$font = plugins_url( 'assets/fonts/inter-latin.woff2', NEXO_MCP_FILE );
-
-		return "@font-face{font-family:'NexoInter';src:url('" . esc_url( $font ) . "') format('woff2');font-weight:100 900;font-display:swap}
-
-		:root{
-			--bg:#fafafa; --panel:#fff; --fg:#121212; --fg-soft:#3a3a3a; --muted:#6e6e6e;
-			--border:#ebebeb; --input:#d9d9d9; --row:#f5f5f5; --rail:#121212;
+		return ":root{
+			--bg:#e9eef4; --panel:#f8fafc; --fg:#0f172a; --fg-soft:#475569; --muted:#475569;
+			--border:#c7d2de; --input:#64748b; --row:#eef2f7; --rail:#0f172a;
+			--primary:#0f766e; --primary-hover:#115e59; --accent:#22d3ee; --focus:#4f46e5;
 			--err:#b91c1c;
-			--gradient:linear-gradient(90deg,#22d3ee 0%,#3b82f6 35%,#6366f1 65%,#14b8a6 100%);
-			--hover:linear-gradient(120deg,#1e3a8a 0%,#4338ca 50%,#0f766e 100%);
-			--ring:0 0 0 2px var(--panel),0 0 0 4px var(--fg);
+			--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+			--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 		}
 		@media (prefers-color-scheme:dark){
 			:root{
-				--bg:#0b0b0b; --panel:#161616; --fg:#f2f2f2; --fg-soft:#d4d4d4; --muted:#a3a3a3;
-				--border:#262626; --input:#3a3a3a; --row:#1d1d1d; --rail:#000;
+				--bg:#0b1220; --panel:#111c2e; --fg:#e2e8f0; --fg-soft:#cbd5e1; --muted:#a5b4c8;
+				--border:#334155; --input:#64748b; --row:#16233a; --rail:#0f172a;
+				--primary:#0f766e; --primary-hover:#115e59; --focus:#22d3ee;
 				--err:#f87171;
 			}
 		}
@@ -613,102 +630,96 @@ final class AuthorizationController {
 		*{margin:0;padding:0;box-sizing:border-box}
 		html{-webkit-text-size-adjust:100%}
 		body{
-			font-family:'NexoInter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+			font-family:var(--sans); font-size:14px;
 			background:var(--bg); color:var(--fg);
 			min-height:100vh; display:flex; align-items:center; justify-content:center;
-			padding:clamp(0px,4vw,40px); line-height:1.5; -webkit-font-smoothing:antialiased;
+			padding:clamp(0px,4vw,40px); line-height:1.5;
 		}
+		:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 
 		.sheet{
 			width:min(860px,100%); display:grid; grid-template-columns:220px 1fr;
-			background:var(--panel); border:1px solid var(--border); border-radius:16px;
-			box-shadow:0 8px 30px -8px rgba(0,0,0,.08);
-			overflow:hidden; animation:rise .45s cubic-bezier(.16,.84,.44,1) both;
+			background:var(--panel); border:1px solid var(--border); border-radius:8px;
+			overflow:hidden;
 		}
-		@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 
 		/* ---------- Banda de identidad ---------- */
 		.rail{
-			position:relative; background:var(--rail); color:#fff;
+			position:relative; background:var(--rail); color:#e2e8f0;
+			border-bottom:3px solid var(--accent);
 			padding:28px 24px 32px; display:flex; flex-direction:column; gap:24px;
-		}
-		.rail::after{
-			content:''; position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--gradient);
 		}
 		.rail-top{display:flex;flex-direction:column;gap:10px}
 		.logo{display:block;width:auto;height:26px;max-width:100%}
-		.sig-sub{font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.6}
+		.sig-sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4c8}
 		.rail-meta{margin-top:auto;display:grid;gap:16px}
 		.rail-meta div{display:flex;flex-direction:column;gap:2px}
-		.rail-meta dt{font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.6}
-		.rail-meta dd{font-size:14px;font-weight:500;word-break:break-word}
+		.rail-meta dt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4c8}
+		.rail-meta dd{font-size:14px;font-weight:600;word-break:break-word}
 		.rail-foot{
 			display:flex; flex-direction:column; gap:2px;
-			padding-top:16px; border-top:1px solid rgba(255,255,255,.14);
+			padding-top:16px; border-top:1px solid #334155;
 		}
-		.ver{font-size:13px;font-weight:500}
-		.proto{font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.6}
+		.ver{font-size:13px;font-weight:600}
+		.proto{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a5b4c8}
 
 		/* ---------- Zona de decisión ---------- */
 		.stage{padding:32px;display:flex;flex-direction:column}
 		.eyebrow{
-			font-size:10px; letter-spacing:.18em; text-transform:uppercase;
-			color:var(--muted); font-weight:500; margin-bottom:8px;
+			font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+			color:var(--primary); font-weight:700; margin-bottom:8px;
 		}
+		@media (prefers-color-scheme:dark){.eyebrow{color:#5eead4}}
 		.eyebrow--halt{color:var(--err)}
 		.title{
-			font-size:clamp(24px,3.6vw,30px); font-weight:600; letter-spacing:-.02em;
-			line-height:1.1; color:var(--fg); word-break:break-word;
+			font-size:clamp(22px,3.6vw,28px); font-weight:700; letter-spacing:-.2px;
+			line-height:1.15; color:var(--fg); word-break:break-word;
 		}
-		.claim{font-size:14px;color:var(--muted);margin-top:6px;max-width:46ch}
+		.claim{font-size:14px;color:var(--fg-soft);margin-top:6px;max-width:46ch}
 
 		.rule{
-			margin:24px 0 8px; font-size:10px; letter-spacing:.18em; text-transform:uppercase;
-			color:var(--muted); font-weight:500;
+			margin:24px 0 8px; font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+			color:var(--fg-soft); font-weight:700;
 		}
 
-		.scopes{list-style:none;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+		.scopes{list-style:none;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:6px;overflow:hidden}
 		.scopes li{
 			display:grid; grid-template-columns:22px 1fr 14px; align-items:center; gap:10px;
 			padding:7px 14px; border-bottom:1px solid var(--border);
-			animation:slide .4s cubic-bezier(.16,.84,.44,1) both;
-			animation-delay:calc(80ms + var(--i) * 45ms);
 		}
 		.scopes li:nth-child(even){background:var(--row)}
 		.scopes li:last-child{border-bottom:0}
-		@keyframes slide{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-		.idx{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+		.idx{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 		.body{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}
 		/* El nombre técnico va a la derecha: una línea por permiso. */
-		.key{order:1;flex:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;color:var(--muted)}
-		.label{font-size:13px;color:var(--fg-soft)}
+		.key{order:1;flex:none;font-family:var(--mono);font-size:12px;color:var(--fg-soft)}
+		.label{font-size:13px;color:var(--fg)}
 		/* Visto dibujado con bordes: sin imágenes ni íconos externos. */
 		.tick{
 			width:6px; height:11px; justify-self:center; margin-top:-3px;
-			border:solid var(--fg); border-width:0 2px 2px 0; transform:rotate(45deg);
+			border:solid var(--primary); border-width:0 2px 2px 0; transform:rotate(45deg);
 		}
+		@media (prefers-color-scheme:dark){.tick{border-color:#5eead4}}
 
 		/* ---------- Acciones ---------- */
 		.decide{display:flex;gap:10px;margin-top:24px}
 		.btn{
-			font-family:inherit; font-size:14px; font-weight:500; cursor:pointer;
-			border:1px solid var(--input); border-radius:12px; padding:11px 18px;
+			font-family:inherit; font-size:14px; font-weight:700; cursor:pointer;
+			border:2px solid var(--input); border-radius:4px; padding:10px 18px;
 			background:var(--panel); color:var(--fg);
-			transition:background .2s ease,color .2s ease,border-color .2s ease;
+			transition:background .15s ease,border-color .15s ease;
 		}
-		.btn:focus-visible{outline:none;box-shadow:var(--ring)}
+		.btn:hover{border-color:var(--fg)}
 		.ghost{flex:0 0 auto}
-		.go{flex:1;border-color:var(--fg);background:var(--fg);color:var(--panel)}
-		/* El hover degradado Nexo del panel, en tonos que mantienen el contraste AA. */
-		.btn:hover{border-color:transparent;background:var(--hover);color:#fff}
+		.go{flex:1;border-color:var(--primary);background:var(--primary);color:#fff}
+		.go:hover{border-color:var(--primary-hover);background:var(--primary-hover)}
 
 		.foot{
 			margin-top:20px; padding-top:14px; border-top:1px solid var(--border);
-			font-size:12px; color:var(--muted);
+			font-size:12px; color:var(--fg-soft);
 			display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;
 		}
-		.by{color:var(--muted);text-decoration:none;white-space:nowrap;transition:color .2s ease}
-		.by:hover{color:var(--fg)}
+		.by{color:var(--fg-soft);white-space:nowrap}
 
 		.sheet--halt .stage{justify-content:center;min-height:220px}
 
@@ -719,13 +730,13 @@ final class AuthorizationController {
 			.scopes li{padding:5px 14px}
 			.rule{margin:16px 0 6px}
 			.decide{margin-top:18px}
-			.btn{padding:10px 16px}
+			.btn{padding:9px 16px}
 			.foot{margin-top:14px;padding-top:10px}
 		}
 
 		@media (max-width:720px){
 			body{align-items:stretch;padding:0}
-			.sheet{grid-template-columns:1fr;border:0;border-radius:0;box-shadow:none}
+			.sheet{grid-template-columns:1fr;border:0;border-radius:0}
 			.rail{padding:24px 16px 28px;gap:18px;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap}
 			.rail-meta{margin-top:0;grid-auto-flow:column;gap:20px}
 			.rail-foot{width:100%;padding-top:14px}

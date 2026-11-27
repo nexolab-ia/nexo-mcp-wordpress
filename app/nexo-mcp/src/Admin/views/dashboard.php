@@ -1171,6 +1171,13 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 		aria-labelledby="nexo-mcp-tablink-sistema"
 		<?php echo 'sistema' === $active_tab ? '' : 'hidden'; ?>
 	>
+		<nav class="nexo-mcp-sysnav" aria-label="<?php esc_attr_e( 'Secciones de Sistema', 'nexo-mcp' ); ?>">
+			<ol class="nexo-mcp-sysnav__list">
+				<?php foreach ( $system_sections as $section_slug => $section_label ) : ?>
+					<li><a class="nexo-mcp-sysnav__link" href="#nexo-mcp-sec-<?php echo esc_attr( $section_slug ); ?>"><?php echo esc_html( $section_label ); ?></a></li>
+				<?php endforeach; ?>
+			</ol>
+		</nav>
 		<div id="nexo-mcp-sec-actividad" class="nexo-mcp-sistema__section">
 			<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-actividad-title">
 				<div class="nexo-mcp-card__head">
