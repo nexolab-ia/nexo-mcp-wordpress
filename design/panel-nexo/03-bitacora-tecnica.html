@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexo MCP — Bitácora técnica</title>
+<style>
+  :root {
+    --wp-menu: #1d2327;
+    --paper: #f7f6f2; --ink: #1c1b18; --soft: #55524a; --rule: #cfcbc0;
+    --accent: #0f766e; --err: #9f1239;
+    --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.6 var(--serif); color: var(--ink); background: var(--paper); }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  code, .m { font-family: var(--mono); font-size: 13px; }
+  .wpbar { height: 32px; background: var(--wp-menu); color: #c3c4c7; font: 13px var(--sans); display: flex; align-items: center; padding: 0 12px; }
+  .shell { display: grid; grid-template-columns: 160px 1fr; }
+  .wpmenu { background: var(--wp-menu); padding: 8px 0; font: 13px var(--sans); }
+  .wpmenu a { display: block; color: #f0f0f1; text-decoration: none; padding: 7px 12px; }
+  .wpmenu a[aria-current] { background: #2271b1; }
+
+  .page { display: grid; grid-template-columns: 180px minmax(0, 860px); gap: 48px; justify-content: center; padding: 40px 32px 80px; }
+  .index { position: sticky; top: 24px; align-self: start; font-family: var(--mono); font-size: 13px; }
+  .index ol { list-style: none; margin: 16px 0 0; padding: 0; border-left: 1px solid var(--rule); }
+  .index a { display: block; padding: 3px 12px; color: var(--soft); text-decoration: none; margin-left: -1px; border-left: 2px solid transparent; }
+  .index a:hover { color: var(--ink); }
+  .index a[aria-current] { color: var(--accent); border-left-color: var(--accent); font-weight: 700; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 18px var(--sans); }
+  .brand b { font-weight: 800; } .brand .l { font-weight: 300; }
+
+  h1 { font: 700 28px/1.2 var(--serif); margin: 0 0 4px; }
+  .lede { color: var(--soft); margin: 0 0 40px; }
+  section { padding: 28px 0; border-top: 1px solid var(--rule); }
+  h2 { font: 700 18px var(--serif); margin: 0 0 6px; }
+  h2 .n { font: 400 14px var(--mono); color: var(--accent); margin-right: 10px; }
+  section > p { margin: 0 0 14px; color: var(--soft); }
+  dl.kv { display: grid; grid-template-columns: 210px 1fr; margin: 0; }
+  dl.kv dt, dl.kv dd { padding: 6px 0; border-bottom: 1px dotted var(--rule); margin: 0; }
+  dl.kv dt { color: var(--soft); }
+  .ok::before { content: "✔ "; color: var(--accent); }
+  .no::before { content: "✖ "; color: var(--err); }
+  .warn::before { content: "▲ "; }
+  .btn { font: 600 14px var(--sans); background: var(--accent); color: #fff; border: 2px solid var(--accent); padding: 7px 16px; border-radius: 0; cursor: pointer; }
+  .btn.alt { background: transparent; color: var(--accent); }
+  .btn.rev { background: transparent; color: var(--err); border-color: var(--err); font-size: 13px; padding: 2px 10px; }
+  pre.snip { font: 13px/1.5 var(--mono); border: 1px solid var(--rule); padding: 10px 14px; margin: 0 0 16px; overflow-x: auto; background: #efede6; }
+  ol.steps { margin: 0 0 16px; padding-left: 22px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font: 600 12px var(--sans); color: var(--soft); border-bottom: 1px solid var(--ink); padding: 6px 8px 6px 0; }
+  td { padding: 8px 8px 8px 0; border-bottom: 1px dotted var(--rule); vertical-align: top; }
+
+  .mods { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 40px; }
+  .mods li { break-inside: avoid; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dotted var(--rule); }
+  .mods .nm { font-weight: 600; display: block; }
+  .mods code { color: var(--soft); font-size: 12px; }
+  .mods .why { display: block; font: 12px var(--sans); color: var(--err); }
+  .grp { column-span: all; font: 600 12px var(--sans); text-transform: uppercase; letter-spacing: .5px; color: var(--accent); margin: 14px 0 0; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 2px; font: 600 12px var(--sans); color: var(--ink); cursor: pointer; min-width: 84px; }
+  .track { width: 30px; height: 16px; border: 2px solid var(--soft); position: relative; transition: background .15s; border-radius: 0; }
+  .track::after { content: ""; position: absolute; top: 1px; left: 1px; width: 10px; height: 10px; background: var(--soft); transition: transform .15s; }
+  .switch[aria-checked="true"] .track { background: var(--accent); border-color: var(--accent); }
+  .switch[aria-checked="true"] .track::after { background: #fff; transform: translateX(14px); }
+
+  .logl { font: 13px/1.7 var(--mono); margin: 0; padding: 0; list-style: none; }
+  .logl li { padding: 3px 0; border-bottom: 1px dotted var(--rule); display: flex; flex-wrap: wrap; gap: 0 10px; }
+  .logl .t { color: var(--soft); }
+  .logl .bad { color: var(--err); font-weight: 700; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 1fr; }
+    .wpmenu { display: none; }
+    .page { grid-template-columns: 1fr; gap: 16px; padding: 20px 16px 48px; }
+    .index { position: static; }
+    .index ol { display: flex; flex-wrap: wrap; border-left: 0; gap: 0 8px; }
+    .mods { columns: 1; }
+    dl.kv { grid-template-columns: 1fr; }
+    dl.kv dt { border-bottom: 0; padding-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wpbar" aria-hidden="true">Ferretería Los Andes · 3 comentarios · + Nuevo</div>
+<div class="shell">
+  <nav class="wpmenu" aria-label="Menú de WordPress">
+    <a href="#">Escritorio</a><a href="#">Entradas</a><a href="#">Páginas</a><a href="#">WooCommerce</a><a href="#">Apariencia</a><a href="#">Plugins</a><a href="#" aria-current="page">Nexo MCP</a><a href="#">Ajustes</a>
+  </nav>
+  <div class="page">
+    <nav class="index" aria-label="Índice de la página">
+      <div class="brand">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#1c1b18"/><circle cx="24" cy="24" r="3.4" fill="#1c1b18"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#0f766e"/></svg>
+        <span><b>nexo</b> <span class="l">MCP</span></span>
+      </div>
+      <ol>
+        <li><a href="#estado" aria-current="location">01 Estado</a></li>
+        <li><a href="#conectar">02 Conectar</a></li>
+        <li><a href="#accesos">03 Accesos</a></li>
+        <li><a href="#modulos">04 Módulos</a></li>
+        <li><a href="#actividad">05 Actividad</a></li>
+        <li><a href="#licencia">06 Licencia</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <h1>Panel de Nexo MCP</h1>
+      <p class="lede">Qué IA tiene acceso a tienda-losandes.cl, qué puede hacer y qué hizo hoy.</p>
+
+      <section id="estado" aria-labelledby="h-estado">
+        <h2 id="h-estado"><span class="n">01</span>Estado</h2>
+        <p>Comprobaciones del conector al cargar esta página.</p>
+        <dl class="kv">
+          <dt>Conector</dt><dd class="ok">Activo, respondiendo</dd>
+          <dt>Certificado</dt><dd class="ok">Válido</dd>
+          <dt>Descubrimiento OAuth</dt><dd class="ok">Las dos direcciones responden</dd>
+          <dt>WordPress</dt><dd>6.9.4</dd>
+          <dt>Nexo</dt><dd class="ok">1.13.0, al día</dd>
+          <dt>Endpoint</dt><dd><code>/wp-json/nexo-mcp/v1/mcp</code></dd>
+        </dl>
+      </section>
+
+      <section id="conectar" aria-labelledby="h-conectar">
+        <h2 id="h-conectar"><span class="n">02</span>Conectar</h2>
+        <p>Autorización OAuth 2.1 con PKCE; no se copian claves a mano.</p>
+        <ol class="steps">
+          <li>Abre el cliente (Claude Desktop, Cursor o Codex) y agrega un conector remoto.</li>
+          <li>Pega la dirección del endpoint:</li>
+        </ol>
+        <pre class="snip">tienda-losandes.cl/wp-json/nexo-mcp/v1/mcp</pre>
+        <p style="margin:0 0 14px">Después tú apruebas los alcances en la pantalla de autorización.</p>
+        <button class="btn" type="button">Conectar una IA</button>
+        <button class="btn alt" type="button">Probar OAuth</button>
+      </section>
+
+      <section id="accesos" aria-labelledby="h-accesos">
+        <h2 id="h-accesos"><span class="n">03</span>Accesos</h2>
+        <p>Revocar corta el acceso en la siguiente petición.</p>
+        <table>
+          <thead><tr><th scope="col">Cliente</th><th scope="col">Alcances</th><th scope="col">Último uso</th><th scope="col"><span style="position:absolute;left:-9999px">Acción</span></th></tr></thead>
+          <tbody>
+            <tr><td>Claude Desktop<br><span style="color:var(--soft)">María Pérez</span></td><td class="m">read content seo divi_library</td><td>hace 12 min</td><td><button class="btn rev" type="button">Revocar</button></td></tr>
+            <tr><td>Cursor<br><span style="color:var(--soft)">Tomás Rivas</span></td><td class="m">read write builders <strong class="warn">publish</strong></td><td>hace 5 h</td><td><button class="btn rev" type="button">Revocar</button></td></tr>
+            <tr><td>Codex<br><span style="color:var(--soft)">María Pérez</span></td><td class="m">read</td><td>hace 2 días</td><td><button class="btn rev" type="button">Revocar</button></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="modulos" aria-labelledby="h-modulos">
+        <h2 id="h-modulos"><span class="n">04</span>Módulos</h2>
+        <p>9 de 17 activos. Un módulo apagado no se puede usar, aunque el acceso tenga el alcance.</p>
+        <ul class="mods">
+          <li class="grp" aria-hidden="true">Sitio</li>
+          <li><span><span class="nm">Contenido</span><code>mcp:content</code></span><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></li>
+          <li><span><span class="nm">SEO</span><code>mcp:seo</code></span><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></li>
+          <li><span><span class="nm">Comercio</span><code>mcp:commerce</code></span><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></li>
+          <li class="grp" aria-hidden="true">Divi 5</li>
+          <li><span><span class="nm">Biblioteca</span><code>mcp:divi_library</code></span><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></li>
+          <li><span><span class="nm">Presets de módulos</span><code>mcp:divi_presets</code></span><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></li>
+          <li><span><span class="nm">Theme Builder</span><code>mcp:divi_theme_builder</code><span class="why warn">Cambia todo el sitio</span></span><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></li>
+          <li class="grp" aria-hidden="true">Riesgo alto</li>
+          <li><span><span class="nm">Acciones destructivas</span><code>mcp:destructive</code><span class="why warn">Borra contenido</span></span><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></li>
+        </ul>
+        <p style="margin:14px 0 0"><a href="#">Ver los 17 módulos y sus límites</a></p>
+      </section>
+
+      <section id="actividad" aria-labelledby="h-act">
+        <h2 id="h-act"><span class="n">05</span>Actividad</h2>
+        <p>Hoy, de la más reciente a la más antigua.</p>
+        <ul class="logl">
+          <li><span class="t">10:42</span><span>Claude Desktop</span><span>edit-divi-module</span><span>✔ OK</span><span class="t">Inicio → copia de trabajo</span></li>
+          <li><span class="t">10:39</span><span>Claude Desktop</span><span>get-page-structure</span><span>✔ OK</span><span class="t">Inicio</span></li>
+          <li><span class="t">09:15</span><span>Cursor</span><span>set-divi-template</span><span class="bad">✖ Rechazada</span><span class="t">Falta confirm_site_wide</span></li>
+          <li><span class="t">09:02</span><span>Cursor</span><span>insert-divi-library-item</span><span>✔ OK</span><span class="t">ítem global «Banner envíos»</span></li>
+        </ul>
+        <p style="margin:12px 0 0"><a href="#">Ver todo</a></p>
+      </section>
+
+      <section id="licencia" aria-labelledby="h-lic">
+        <h2 id="h-lic"><span class="n">06</span>Licencia</h2>
+        <p>Cupos y soporte.</p>
+        <dl class="kv">
+          <dt>Versión instalada</dt><dd>Nexo 1.13.0</dd>
+          <dt>Accesos en uso</dt><dd>3</dd>
+          <dt>Soporte</dt><dd><a href="#">Reportar un problema</a></dd>
+        </dl>
+      </section>
+    </main>
+  </div>
+</div>
+</body>
+</html>

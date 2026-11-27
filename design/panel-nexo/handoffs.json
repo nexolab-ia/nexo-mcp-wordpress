@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "chosen": "04-mapa-claro.html",
+  "handoffs": {
+    "04-mapa-claro.html": {
+      "status": "in_progress",
+      "queued": false,
+      "sentAt": "2026-11-27T13:39:12.486Z",
+      "startedAt": "2026-11-27T13:39:19.788Z",
+      "implementedAt": null,
+      "note": "Planificando: rama feat/panel-nexo, documento ODD y mapa del panel actual."
+    }
+  }
+}

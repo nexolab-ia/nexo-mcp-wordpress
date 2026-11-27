@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexo MCP — Mapa compacto con pestañas</title>
+<style>
+  :root {
+    --wp-menu:#1d2327; --ink:#0f172a; --ink-2:#1e293b; --ink-line:#334155;
+    --on-dark:#e2e8f0; --on-dark-soft:#a5b4c8; --cyan:#22d3ee; --teal-lt:#5eead4;
+    --fg:#0f172a; --fg-soft:#475569; --bg:#e9eef4; --panel:#f8fafc; --line:#c7d2de;
+    --teal:#0f766e; --indigo:#4f46e5; --ok:#047857; --warn:#92400e; --warn-bg:#fef3c7; --err:#b91c1c;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 var(--sans); color:var(--fg); background:var(--bg); }
+  a { color:var(--teal); }
+  :focus-visible { outline:3px solid var(--indigo); outline-offset:2px; }
+  .dark :focus-visible { outline-color:var(--cyan); }
+  .wpbar { height:32px; background:var(--wp-menu); color:#c3c4c7; font-size:13px; display:flex; align-items:center; padding:0 12px; }
+  .shell { display:grid; grid-template-columns:160px 1fr; }
+  .wpmenu { background:var(--wp-menu); padding:8px 0; font-size:13px; }
+  .wpmenu a { display:block; color:#f0f0f1; text-decoration:none; padding:7px 12px; }
+  .wpmenu a[aria-current] { background:#2271b1; }
+  .brand { display:flex; align-items:center; gap:10px; font-size:20px; }
+  .brand b { font-weight:800; } .brand .m { font-weight:300; }
+  .btn { font:700 14px var(--sans); border-radius:2px; padding:10px 18px; border:2px solid transparent; cursor:pointer; }
+  .btn-sm { font:700 13px var(--sans); padding:5px 10px; background:#fff; color:var(--fg); border:2px solid var(--fg-soft); border-radius:2px; cursor:pointer; }
+  .btn-rev { font:700 13px var(--sans); padding:5px 10px; background:#fff; color:var(--err); border:2px solid var(--err); border-radius:2px; cursor:pointer; }
+  .ico { width:16px; height:16px; flex:none; }
+  .scope { font:12px var(--mono); background:#e2e8f0; border:1px solid var(--line); padding:0 6px; margin:0 4px 4px 0; display:inline-block; border-radius:2px; }
+  .scope.risky { background:var(--warn-bg); color:var(--warn); border-color:#d97706; }
+  .tag { font:700 11px var(--sans); background:var(--warn-bg); color:var(--warn); border:1px solid #d97706; padding:0 6px; border-radius:2px; white-space:nowrap; }
+  code { font:12px var(--mono); }
+  .switch { display:inline-flex; align-items:center; gap:8px; background:none; border:0; padding:2px; font:700 12px var(--sans); color:var(--fg); cursor:pointer; border-radius:2px; }
+  .track { width:34px; height:20px; background:#64748b; border-radius:2px; position:relative; transition:background .15s; flex:none; }
+  .track::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; transition:transform .15s; }
+  .switch[aria-checked="true"] .track { background:var(--teal); }
+  .switch[aria-checked="true"] .track::after { transform:translateX(14px); }
+  .res { font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:4px; }
+  .res.ok { color:var(--ok); } .res.no { color:var(--err); }
+  .tl { list-style:none; margin:0; padding:0 0 0 18px; border-left:2px solid var(--ink-line); }
+  .tl li { position:relative; padding:0 0 16px 8px; }
+  .tl li::before { content:""; position:absolute; left:-26px; top:4px; width:14px; height:14px; background:var(--panel); border:2px solid var(--ink); border-radius:50%; }
+  .tl li.bad::before { border-radius:2px; transform:rotate(45deg); border-color:var(--err); }
+  .tl time { font:12px var(--mono); color:var(--fg-soft); }
+  .tl .tool { font:600 13px var(--mono); display:block; }
+  h3.sub { margin:16px 0 6px; font:700 12px var(--sans); text-transform:uppercase; letter-spacing:.6px; color:var(--fg-soft); }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+
+  .rail { background:var(--ink); color:var(--on-dark); border-bottom:4px solid var(--teal); min-height:96px; padding:12px 24px; display:flex; align-items:center; gap:20px; }
+  .rail .brand { color:#fff; font-size:18px; flex:none; } .rail .brand .m { color:var(--on-dark-soft); }
+  .rail h1 { margin:0; font-size:15px; color:#fff; }
+  .rail .ver { margin:0; font-size:12px; color:var(--on-dark-soft); }
+  .rail .id { flex:none; }
+  .diagram { list-style:none; margin:0; padding:0; display:flex; align-items:center; gap:0; flex:1; min-width:0; }
+  .node { background:var(--ink-2); border:2px solid var(--ink-line); border-radius:2px; padding:6px 12px; min-width:0; }
+  .node.hub { border-color:var(--cyan); }
+  .node strong { display:block; font-size:14px; color:#fff; line-height:1.3; }
+  .node .st { display:flex; align-items:center; gap:6px; font-weight:600; font-size:12px; color:var(--teal-lt); }
+  .node .st.w { color:#fcd34d; }
+  .link { flex:0 0 28px; height:2px; background:repeating-linear-gradient(90deg,var(--cyan) 0 5px,transparent 5px 9px); position:relative; }
+  .link::after { content:""; position:absolute; right:-1px; top:-4px; border-left:7px solid var(--cyan); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .rail .ep { font:11px var(--mono); color:var(--on-dark-soft); flex:none; max-width:190px; overflow-wrap:anywhere; }
+  .rail .ep code { color:var(--on-dark); font-size:11px; }
+  .rail .btn { background:var(--cyan); color:var(--ink); padding:8px 14px; flex:none; }
+  main { padding:20px 32px 48px; }
+  .tabs { display:flex; gap:0; border-bottom:2px solid var(--ink); }
+  .tabs [role=tab] { font:700 14px var(--sans); background:transparent; color:var(--fg-soft); border:0; border-bottom:4px solid transparent; margin-bottom:-2px; padding:10px 20px; cursor:pointer; }
+  .tabs [role=tab][aria-selected=true] { color:var(--ink); background:var(--panel); border-bottom-color:var(--teal); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-top:0; padding:20px; }
+  .panel[hidden] { display:none; }
+  .panel h2 { margin:0 0 2px; font-size:18px; }
+  .lead { margin:0 0 14px; color:var(--fg-soft); font-size:13px; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:middle; font-size:13px; }
+  thead th { font:700 12px var(--sans); text-transform:uppercase; letter-spacing:.5px; color:var(--fg-soft); background:#eef2f7; }
+  tbody th[scope=rowgroup] { background:#e2e8f0; font:700 12px var(--sans); text-transform:uppercase; letter-spacing:.6px; color:var(--ink); }
+  tr.on td:first-child { box-shadow:inset 3px 0 0 var(--teal); }
+  td .tag { margin-left:8px; }
+  td code { color:var(--fg-soft); }
+  .acc { background:#fff; border:1px solid var(--line); border-left:4px solid var(--ink); padding:12px; margin-bottom:10px; border-radius:2px; }
+  .acc header { display:flex; justify-content:space-between; gap:8px; }
+  .meta { color:var(--fg-soft); font-size:12px; margin:0; }
+  .acc .row { display:flex; justify-content:space-between; align-items:end; gap:8px; margin-top:6px; }
+  .tl { max-width:720px; }
+  .lic { background:#fff; border:1px solid var(--line); padding:14px; max-width:560px; }
+  .lic dl { margin:0; display:grid; grid-template-columns:140px 1fr; gap:6px 12px; }
+  .lic dt { color:var(--fg-soft); } .lic dd { margin:0; font-weight:600; }
+  .twocol { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; }
+  @media (max-width:1100px) {
+    .shell { grid-template-columns:1fr; } .wpmenu { display:none; }
+    .rail { flex-wrap:wrap; padding:12px 16px; }
+    .diagram { flex-direction:column; align-items:stretch; flex-basis:100%; }
+    .link { flex:0 0 18px; width:2px; margin:0 auto; background:repeating-linear-gradient(180deg,var(--cyan) 0 5px,transparent 5px 9px); }
+    .link::after { right:-4px; top:auto; bottom:-1px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid var(--cyan); border-bottom:0; }
+    main { padding:16px; }
+    .tabs { overflow-x:auto; } .tabs [role=tab] { padding:10px 12px; white-space:nowrap; }
+    .panel { overflow-x:auto; padding:12px; } .twocol { grid-template-columns:1fr; }
+    table { min-width:620px; }
+  }
+</style>
+</head>
+<body>
+<div class="wpbar" aria-hidden="true">Ferretería Los Andes · 3 comentarios · + Nuevo</div>
+<div class="shell">
+  <nav class="wpmenu" aria-label="Menú de WordPress">
+    <a href="#">Escritorio</a><a href="#">Entradas</a><a href="#">Páginas</a><a href="#">WooCommerce</a><a href="#">Apariencia</a><a href="#">Plugins</a><a href="#" aria-current="page">Nexo MCP</a><a href="#">Ajustes</a>
+  </nav>
+  <div>
+    <header class="rail dark" aria-labelledby="t">
+      <div class="brand id"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#fff"/><circle cx="24" cy="24" r="3.4" fill="#fff"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg><span><b>nexo</b> <span class="m">MCP</span></span></div>
+      <div class="id"><h1 id="t">Mapa de conexión</h1><p class="ver">WordPress 6.9.4 · Nexo 1.13.0</p></div>
+      <ol class="diagram" aria-label="Recorrido de la conexión">
+        <li class="node"><strong>Tu IA</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#5eead4"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#0f172a" stroke-width="1.8" fill="none"/></svg>3 clientes conectados</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node"><strong>OAuth 2.1 · PKCE</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#5eead4"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#0f172a" stroke-width="1.8" fill="none"/></svg>Las dos direcciones responden</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node hub"><strong>WordPress (tienda-losandes.cl)</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#5eead4"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#0f172a" stroke-width="1.8" fill="none"/></svg>Conector respondiendo</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node"><strong>Módulos activos 9/17</strong><span class="st w"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="#fcd34d"/><path d="M8 6v4M8 11.6v1" stroke="#0f172a" stroke-width="1.8"/></svg>2 de riesgo alto</span></li>
+      </ol>
+      <div class="ep">Endpoint: <code>/wp-json/nexo-mcp/v1/mcp</code></div>
+      <button class="btn" type="button">Conectar una IA</button>
+    </header>
+    <main>
+      <div class="tabs" role="tablist" aria-label="Secciones del panel"><button role="tab" id="tab-acc" aria-controls="p-acc" aria-selected="false" tabindex="-1" type="button">Accesos</button><button role="tab" id="tab-mod" aria-controls="p-mod" aria-selected="true" tabindex="0" type="button">Módulos</button><button role="tab" id="tab-act" aria-controls="p-act" aria-selected="false" tabindex="-1" type="button">Actividad</button><button role="tab" id="tab-lic" aria-controls="p-lic" aria-selected="false" tabindex="-1" type="button">Licencia</button></div>
+      <section class="panel" role="tabpanel" id="p-acc" aria-labelledby="tab-acc" tabindex="0" hidden>
+        <h2>Accesos vigentes</h2><p class="lead">Revocar corta el acceso en la siguiente petición.</p>
+        <div class="twocol">
+<article class="acc"><header><strong>Claude Desktop</strong><span class="meta">hace 12 min</span></header><p class="meta">María Pérez</p><div class="row"><div><span class="scope">read</span><span class="scope">content</span><span class="scope">seo</span><span class="scope">divi_library</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Claude Desktop">Revocar</button></div></article>
+<article class="acc"><header><strong>Cursor</strong><span class="meta">hace 5 h</span></header><p class="meta">Tomás Rivas</p><div class="row"><div><span class="scope">read</span><span class="scope">write</span><span class="scope">builders</span><span class="scope risky">▲ publish</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Cursor">Revocar</button></div></article>
+<article class="acc"><header><strong>Codex</strong><span class="meta">hace 2 días</span></header><p class="meta">María Pérez</p><div class="row"><div><span class="scope">read</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Codex">Revocar</button></div></article>
+</div>
+        <button class="btn-sm" type="button">Probar OAuth</button>
+      </section>
+      <section class="panel" role="tabpanel" id="p-mod" aria-labelledby="tab-mod" tabindex="0">
+        <h2>Módulos</h2><p class="lead">Apagado = ninguna IA lo usa, aunque tenga el alcance. 9 de 17 activos.</p>
+        <table><caption class="sr" style="position:absolute;left:-9999px">Módulos de Nexo MCP agrupados por familia</caption>
+        <thead><tr><th scope="col">Módulo</th><th scope="col">Alcance</th><th scope="col">Estado</th><th scope="col">Interruptor</th></tr></thead>
+        <tbody>
+<tr><th scope="rowgroup" colspan="4">Sitio</th></tr>
+<tr class="on"><th scope="row" style="font-weight:700">Contenido</th><td><code>mcp:content</code></td><td>✔ Activo</td><td><button class="switch" role="switch" aria-checked="true" aria-label="Contenido" type="button"><span class="track"></span><span class="lbl">Activo</span></button></td></tr>
+<tr class="on"><th scope="row" style="font-weight:700">SEO</th><td><code>mcp:seo</code></td><td>✔ Activo</td><td><button class="switch" role="switch" aria-checked="true" aria-label="SEO" type="button"><span class="track"></span><span class="lbl">Activo</span></button></td></tr>
+<tr class=""><th scope="row" style="font-weight:700">Comercio</th><td><code>mcp:commerce</code></td><td>○ Apagado</td><td><button class="switch" role="switch" aria-checked="false" aria-label="Comercio" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></td></tr>
+<tr><th scope="rowgroup" colspan="4">Elementor</th></tr>
+<tr class=""><th scope="row" style="font-weight:700">Constructor</th><td><code>mcp:elementor</code></td><td>○ Apagado</td><td><button class="switch" role="switch" aria-checked="false" aria-label="Constructor" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></td></tr>
+<tr><th scope="rowgroup" colspan="4">Divi 5</th></tr>
+<tr class="on"><th scope="row" style="font-weight:700">Biblioteca</th><td><code>mcp:divi_library</code></td><td>✔ Activo</td><td><button class="switch" role="switch" aria-checked="true" aria-label="Biblioteca" type="button"><span class="track"></span><span class="lbl">Activo</span></button></td></tr>
+<tr class="on"><th scope="row" style="font-weight:700">Presets</th><td><code>mcp:divi_presets</code></td><td>✔ Activo</td><td><button class="switch" role="switch" aria-checked="true" aria-label="Presets" type="button"><span class="track"></span><span class="lbl">Activo</span></button></td></tr>
+<tr class=""><th scope="row" style="font-weight:700">Theme Builder<span class="tag">▲ Cambia todo el sitio</span></th><td><code>mcp:divi_theme_builder</code></td><td>○ Apagado</td><td><button class="switch" role="switch" aria-checked="false" aria-label="Theme Builder" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></td></tr>
+<tr><th scope="rowgroup" colspan="4">Riesgo alto</th></tr>
+<tr class=""><th scope="row" style="font-weight:700">Destructivas<span class="tag">▲ Borra contenido</span></th><td><code>mcp:destructive</code></td><td>○ Apagado</td><td><button class="switch" role="switch" aria-checked="false" aria-label="Destructivas" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></td></tr>
+</tbody></table>
+        <p><a href="#">Ver los 17 módulos y sus límites</a></p>
+      </section>
+      <section class="panel" role="tabpanel" id="p-act" aria-labelledby="tab-act" tabindex="0" hidden>
+        <h2>Actividad de hoy</h2><p class="lead">De la más reciente a la más antigua.</p>
+<ol class="tl"><li><time>10:42</time> · Claude Desktop<span class="tool">edit-divi-module</span><span class="res ok">✔ OK</span> · Inicio → copia de trabajo</li><li><time>10:39</time> · Claude Desktop<span class="tool">get-page-structure</span><span class="res ok">✔ OK</span> · Inicio</li><li class=bad><time>09:15</time> · Cursor<span class="tool">set-divi-template</span><span class="res no">✖ Rechazada</span> · Falta confirm_site_wide</li><li><time>09:02</time> · Cursor<span class="tool">insert-divi-library-item</span><span class="res ok">✔ OK</span> · ítem global «Banner envíos»</li></ol><a href="#">Ver todo</a>
+      </section>
+      <section class="panel" role="tabpanel" id="p-lic" aria-labelledby="tab-lic" tabindex="0" hidden>
+        <h2>Licencia</h2><p class="lead">Datos de este sitio.</p>
+        <div class="lic"><dl><dt>Sitio</dt><dd>tienda-losandes.cl</dd><dt>Versión de Nexo</dt><dd>1.13.0</dd><dt>WordPress</dt><dd>6.9.4</dd><dt>Endpoint</dt><dd><code>/wp-json/nexo-mcp/v1/mcp</code></dd></dl></div>
+      </section>
+    </main>
+  </div>
+</div>
+<script>
+<function sw at 0x105bbcee0>var tabs=[].slice.call(document.querySelectorAll('[role=tab]'));
+function sel(t,f){tabs.forEach(function(x){var on=x===t;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;document.getElementById(x.getAttribute('aria-controls')).hidden=!on;});if(f)t.focus();}
+tabs.forEach(function(t,i){t.addEventListener('click',function(){sel(t,false);});t.addEventListener('keydown',function(e){var n=null;if(e.key==='ArrowRight')n=tabs[(i+1)%tabs.length];else if(e.key==='ArrowLeft')n=tabs[(i-1+tabs.length)%tabs.length];else if(e.key==='Home')n=tabs[0];else if(e.key==='End')n=tabs[tabs.length-1];if(n){e.preventDefault();sel(n,true);}});});
+</script>
+</body>
+</html>

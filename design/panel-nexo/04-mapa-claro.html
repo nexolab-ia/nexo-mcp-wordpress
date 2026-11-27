@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexo MCP — Mapa claro</title>
+<style>
+  :root {
+    --wp-menu:#1d2327; --ink:#0f172a; --ink-2:#1e293b; --ink-line:#334155;
+    --on-dark:#e2e8f0; --on-dark-soft:#a5b4c8; --cyan:#22d3ee; --teal-lt:#5eead4;
+    --fg:#0f172a; --fg-soft:#475569; --bg:#e9eef4; --panel:#f8fafc; --line:#c7d2de;
+    --teal:#0f766e; --indigo:#4f46e5; --ok:#047857; --warn:#92400e; --warn-bg:#fef3c7; --err:#b91c1c;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 var(--sans); color:var(--fg); background:var(--bg); }
+  a { color:var(--teal); }
+  :focus-visible { outline:3px solid var(--indigo); outline-offset:2px; }
+  .dark :focus-visible { outline-color:var(--cyan); }
+  .wpbar { height:32px; background:var(--wp-menu); color:#c3c4c7; font-size:13px; display:flex; align-items:center; padding:0 12px; }
+  .shell { display:grid; grid-template-columns:160px 1fr; }
+  .wpmenu { background:var(--wp-menu); padding:8px 0; font-size:13px; }
+  .wpmenu a { display:block; color:#f0f0f1; text-decoration:none; padding:7px 12px; }
+  .wpmenu a[aria-current] { background:#2271b1; }
+  .brand { display:flex; align-items:center; gap:10px; font-size:20px; }
+  .brand b { font-weight:800; } .brand .m { font-weight:300; }
+  .btn { font:700 14px var(--sans); border-radius:2px; padding:10px 18px; border:2px solid transparent; cursor:pointer; }
+  .btn-sm { font:700 13px var(--sans); padding:5px 10px; background:#fff; color:var(--fg); border:2px solid var(--fg-soft); border-radius:2px; cursor:pointer; }
+  .btn-rev { font:700 13px var(--sans); padding:5px 10px; background:#fff; color:var(--err); border:2px solid var(--err); border-radius:2px; cursor:pointer; }
+  .ico { width:16px; height:16px; flex:none; }
+  .scope { font:12px var(--mono); background:#e2e8f0; border:1px solid var(--line); padding:0 6px; margin:0 4px 4px 0; display:inline-block; border-radius:2px; }
+  .scope.risky { background:var(--warn-bg); color:var(--warn); border-color:#d97706; }
+  .tag { font:700 11px var(--sans); background:var(--warn-bg); color:var(--warn); border:1px solid #d97706; padding:0 6px; border-radius:2px; white-space:nowrap; }
+  code { font:12px var(--mono); }
+  .switch { display:inline-flex; align-items:center; gap:8px; background:none; border:0; padding:2px; font:700 12px var(--sans); color:var(--fg); cursor:pointer; border-radius:2px; }
+  .track { width:34px; height:20px; background:#64748b; border-radius:2px; position:relative; transition:background .15s; flex:none; }
+  .track::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; transition:transform .15s; }
+  .switch[aria-checked="true"] .track { background:var(--teal); }
+  .switch[aria-checked="true"] .track::after { transform:translateX(14px); }
+  .res { font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:4px; }
+  .res.ok { color:var(--ok); } .res.no { color:var(--err); }
+  .tl { list-style:none; margin:0; padding:0 0 0 18px; border-left:2px solid var(--ink-line); }
+  .tl li { position:relative; padding:0 0 16px 8px; }
+  .tl li::before { content:""; position:absolute; left:-26px; top:4px; width:14px; height:14px; background:var(--panel); border:2px solid var(--ink); border-radius:50%; }
+  .tl li.bad::before { border-radius:2px; transform:rotate(45deg); border-color:var(--err); }
+  .tl time { font:12px var(--mono); color:var(--fg-soft); }
+  .tl .tool { font:600 13px var(--mono); display:block; }
+  h3.sub { margin:16px 0 6px; font:700 12px var(--sans); text-transform:uppercase; letter-spacing:.6px; color:var(--fg-soft); }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; animation:none !important; } }
+
+  body { background:#fff; }
+  .band { background:var(--panel); border-bottom:1px solid var(--line); padding:24px 32px 28px; }
+  .band-top { display:flex; justify-content:space-between; align-items:center; gap:24px; flex-wrap:wrap; }
+  .brand { color:var(--ink); } .brand .m { color:var(--fg-soft); }
+  h1 { margin:16px 0 2px; font-size:24px; letter-spacing:-.2px; }
+  .band p { margin:0; color:var(--fg-soft); }
+  .btn-pri { background:var(--teal); color:#fff; }
+  .btn-pri:hover { background:#115e59; }
+  .btn-sec { background:#fff; color:var(--ink); border-color:var(--fg-soft); }
+  .diagram { list-style:none; margin:24px 0 0; padding:0; display:grid; grid-template-columns:1fr 40px 1fr 40px 1.2fr 40px 1fr; align-items:stretch; }
+  .node { background:#fff; border:1px solid var(--line); border-top:3px solid var(--cyan); border-radius:2px; padding:12px 14px; }
+  .node.hub { border-top-color:var(--teal); background:#f0fdfa; }
+  .node .k { font:12px var(--mono); color:var(--fg-soft); text-transform:uppercase; letter-spacing:.5px; }
+  .node strong { display:block; font-size:16px; margin:2px 0 6px; }
+  .node .st { display:flex; align-items:center; gap:6px; font-weight:600; font-size:13px; color:var(--ok); }
+  .node .st.w { color:var(--warn); }
+  .link { align-self:center; height:0; border-top:2px dashed var(--teal); position:relative; }
+  .link::after { content:""; position:absolute; right:-2px; top:-6px; border-left:8px solid var(--teal); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .endpoint { margin-top:14px; font:12px var(--mono); color:var(--fg-soft); }
+  .endpoint code { color:var(--ink); }
+  main { padding:28px 32px 48px; display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:40px; align-items:start; }
+  main h2 { margin:0 0 2px; font-size:18px; }
+  .lead { margin:0 0 12px; color:var(--fg-soft); font-size:13px; }
+  .group { margin:0 0 20px; }
+  .group h3 { margin:0; padding:6px 0; font:700 12px var(--sans); text-transform:uppercase; letter-spacing:.6px; color:var(--fg-soft); border-bottom:2px solid var(--ink); }
+  .rows { list-style:none; margin:0; padding:0; }
+  .rows li { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1.3fr) 130px; gap:12px; align-items:center; padding:9px 4px; border-bottom:1px solid var(--line); }
+  .rows li.on { box-shadow:inset 3px 0 0 var(--teal); padding-left:12px; }
+  .rows strong { font-size:14px; } .rows .tag { margin-left:8px; }
+  .rows code { color:var(--fg-soft); }
+  aside section { border-top:3px solid var(--teal); padding-top:12px; margin-bottom:32px; }
+  aside h2 { font-size:16px; }
+  .acc { border-bottom:1px solid var(--line); padding:10px 0; }
+  .acc header { display:flex; justify-content:space-between; gap:8px; }
+  .meta { color:var(--fg-soft); font-size:12px; margin:0; }
+  .acc .row { display:flex; justify-content:space-between; align-items:end; gap:8px; margin-top:6px; }
+  @media (max-width:1100px) {
+    .shell { grid-template-columns:1fr; } .wpmenu { display:none; }
+    .band, main { padding-left:16px; padding-right:16px; }
+    .diagram { grid-template-columns:1fr; }
+    .link { width:0; height:24px; border-top:0; border-left:2px dashed var(--teal); margin:0 auto; }
+    .link::after { right:auto; left:-6px; top:auto; bottom:-2px; border-left:5px solid transparent; border-right:5px solid transparent; border-top:8px solid var(--teal); border-bottom:0; }
+    main { grid-template-columns:1fr; }
+    .rows li { grid-template-columns:1fr auto; } .rows li code { grid-column:1; }
+  }
+</style>
+</head>
+<body>
+<div class="wpbar" aria-hidden="true">Ferretería Los Andes · 3 comentarios · + Nuevo</div>
+<div class="shell">
+  <nav class="wpmenu" aria-label="Menú de WordPress">
+    <a href="#">Escritorio</a><a href="#">Entradas</a><a href="#">Páginas</a><a href="#">WooCommerce</a><a href="#">Apariencia</a><a href="#">Plugins</a><a href="#" aria-current="page">Nexo MCP</a><a href="#">Ajustes</a>
+  </nav>
+  <div>
+    <header class="band" aria-labelledby="t">
+      <div class="band-top">
+        <div class="brand"><svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#0f172a"/><circle cx="24" cy="24" r="3.4" fill="#0f172a"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg><span><b>nexo</b> <span class="m">MCP</span></span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sec" type="button">Probar OAuth</button><button class="btn btn-pri" type="button">Conectar una IA</button></div>
+      </div>
+      <h1 id="t">Mapa de conexión</h1>
+      <p>Así llega una IA a tu sitio, de punta a punta. WordPress 6.9.4 · Nexo 1.13.0.</p>
+      <ol class="diagram" aria-label="Recorrido de la conexión">
+        <li class="node"><span class="k">Origen</span><strong>Tu IA</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#0f766e"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>3 clientes conectados</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node"><span class="k">Autorización</span><strong>OAuth 2.1 · PKCE</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#0f766e"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Las dos direcciones responden</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node hub"><span class="k">Destino</span><strong>WordPress (tienda-losandes.cl)</strong><span class="st"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#0f766e"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Conector respondiendo</span></li>
+        <li class="link" aria-hidden="true"></li>
+        <li class="node"><span class="k">Alcance</span><strong>Módulos activos 9/17</strong><span class="st w"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="#fcd34d"/><path d="M8 6v4M8 11.6v1" stroke="#0f172a" stroke-width="1.8"/></svg>8 apagados, 2 de riesgo alto</span></li>
+      </ol>
+      <div class="endpoint">Endpoint: <code>/wp-json/nexo-mcp/v1/mcp</code></div>
+    </header>
+    <main>
+      <section aria-labelledby="mod">
+        <h2 id="mod">Módulos</h2>
+        <p class="lead">Apagado = ninguna IA lo usa, aunque tenga el alcance.</p>
+        <div class="group"><h3>Sitio</h3><ul class="rows"><li class="on"><span><strong>Contenido</strong></span><code>mcp:content</code><button class="switch" role="switch" aria-checked="true" aria-label="Contenido" type="button"><span class="track"></span><span class="lbl">Activo</span></button></li><li class="on"><span><strong>SEO</strong></span><code>mcp:seo</code><button class="switch" role="switch" aria-checked="true" aria-label="SEO" type="button"><span class="track"></span><span class="lbl">Activo</span></button></li><li class=""><span><strong>Comercio</strong></span><code>mcp:commerce</code><button class="switch" role="switch" aria-checked="false" aria-label="Comercio" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></li></ul></div>
+<div class="group"><h3>Elementor</h3><ul class="rows"><li class=""><span><strong>Constructor</strong></span><code>mcp:elementor</code><button class="switch" role="switch" aria-checked="false" aria-label="Constructor" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></li></ul></div>
+<div class="group"><h3>Divi 5</h3><ul class="rows"><li class="on"><span><strong>Biblioteca</strong></span><code>mcp:divi_library</code><button class="switch" role="switch" aria-checked="true" aria-label="Biblioteca" type="button"><span class="track"></span><span class="lbl">Activo</span></button></li><li class="on"><span><strong>Presets</strong></span><code>mcp:divi_presets</code><button class="switch" role="switch" aria-checked="true" aria-label="Presets" type="button"><span class="track"></span><span class="lbl">Activo</span></button></li><li class=""><span><strong>Theme Builder</strong><span class="tag">▲ Cambia todo el sitio</span></span><code>mcp:divi_theme_builder</code><button class="switch" role="switch" aria-checked="false" aria-label="Theme Builder" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></li></ul></div>
+<div class="group"><h3>Riesgo alto</h3><ul class="rows"><li class=""><span><strong>Destructivas</strong><span class="tag">▲ Borra contenido</span></span><code>mcp:destructive</code><button class="switch" role="switch" aria-checked="false" aria-label="Destructivas" type="button"><span class="track"></span><span class="lbl">Apagado</span></button></li></ul></div>
+
+        <p><a href="#">Ver los 17 módulos y sus límites</a></p>
+      </section>
+      <aside aria-label="Accesos y actividad">
+        <section aria-labelledby="acc"><h2 id="acc">Accesos vigentes</h2><p class="lead">Revocar corta el acceso en la siguiente petición.</p>
+<article class="acc"><header><strong>Claude Desktop</strong><span class="meta">hace 12 min</span></header><p class="meta">María Pérez</p><div class="row"><div><span class="scope">read</span><span class="scope">content</span><span class="scope">seo</span><span class="scope">divi_library</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Claude Desktop">Revocar</button></div></article>
+<article class="acc"><header><strong>Cursor</strong><span class="meta">hace 5 h</span></header><p class="meta">Tomás Rivas</p><div class="row"><div><span class="scope">read</span><span class="scope">write</span><span class="scope">builders</span><span class="scope risky">▲ publish</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Cursor">Revocar</button></div></article>
+<article class="acc"><header><strong>Codex</strong><span class="meta">hace 2 días</span></header><p class="meta">María Pérez</p><div class="row"><div><span class="scope">read</span></div><button class="btn-rev" type="button" aria-label="Revocar acceso de Codex">Revocar</button></div></article>
+</section>
+        <section aria-labelledby="act"><h2 id="act">Actividad de hoy</h2><p class="lead">De la más reciente a la más antigua.</p>
+<ol class="tl"><li><time>10:42</time> · Claude Desktop<span class="tool">edit-divi-module</span><span class="res ok">✔ OK</span> · Inicio → copia de trabajo</li><li><time>10:39</time> · Claude Desktop<span class="tool">get-page-structure</span><span class="res ok">✔ OK</span> · Inicio</li><li class=bad><time>09:15</time> · Cursor<span class="tool">set-divi-template</span><span class="res no">✖ Rechazada</span> · Falta confirm_site_wide</li><li><time>09:02</time> · Cursor<span class="tool">insert-divi-library-item</span><span class="res ok">✔ OK</span> · ítem global «Banner envíos»</li></ol><a href="#">Ver todo</a></section>
+      </aside>
+    </main>
+  </div>
+</div>
+<script>
+<function sw at 0x105bbcee0></script>
+</body>
+</html>
