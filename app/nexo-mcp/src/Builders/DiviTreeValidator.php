@@ -109,6 +109,20 @@ final class DiviTreeValidator {
 	private $module_groups;
 
 	/**
+	 * Menús de navegación que existen: fn( int $id ): bool (id de término del menú). Sólo se llama con un `divi/menu`.
+	 *
+	 * @var callable
+	 */
+	private $menu_exists;
+
+	/**
+	 * Si el árbol es el de un layout del Theme Builder: admite además {@see DiviModuleCatalog::LAYOUT_MODULES}.
+	 *
+	 * @var bool
+	 */
+	private bool $layout = false;
+
+	/**
 	 * Nodos vistos en la validación en curso.
 	 *
 	 * @var int
@@ -157,12 +171,34 @@ final class DiviTreeValidator {
 	 * @param callable|null $attachment_url   fn( int $id ): string|false, URL del adjunto. Por omisión, `wp_get_attachment_url()`.
 	 * @param callable|null $presets          fn(): array, catálogo de presets (sólo se llama si un nodo lleva `preset`). Por omisión, la opción de Divi sin migrar.
 	 * @param callable|null $module_groups    fn( string $module ): array<string, string>, grupos de opciones del módulo. Por omisión, Divi.
+	 * @param callable|null $menu_exists      fn( int $id ): bool, si existe un menú de navegación con ese id. Por omisión, `wp_get_nav_menus()`; una función que lanza cuenta como «no existe».
 	 */
-	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null, ?callable $presets = null, ?callable $module_groups = null ) {
+	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null, ?callable $presets = null, ?callable $module_groups = null, ?callable $menu_exists = null ) {
 		$this->shortcode_exists = $shortcode_exists ?? static fn( string $name ): bool => shortcode_exists( $name );
 		$this->attachment_url   = $attachment_url ?? static fn( int $id ) => wp_get_attachment_url( $id );
 		$this->presets          = $presets ?? static fn(): array => (array) DiviPresetStore::divi_get_data();
 		$this->module_groups    = $module_groups ?? array( DiviPresetStore::class, 'divi_module_groups' );
+		$this->menu_exists      = $menu_exists ?? static function ( int $id ): bool {
+			foreach ( wp_get_nav_menus() as $menu ) {
+				if ( (int) $menu->term_id === $id ) {
+					return true;
+				}
+			}
+
+			return false;
+		};
+	}
+
+	/**
+	 * Copia del validador para el árbol de un layout del Theme Builder: admite también `divi/post-content`, `divi/post-title` y `divi/menu`.
+	 *
+	 * El validador original no cambia (una página sigue sin admitirlos). Quien llama decide el contexto mirando el tipo del contenido.
+	 */
+	public function with_layout(): self {
+		$copy         = clone $this;
+		$copy->layout = true;
+
+		return $copy;
 	}
 
 	/**
@@ -239,7 +275,7 @@ final class DiviTreeValidator {
 	 * @return array{content?: array<string, mixed>, design?: array<string, mixed>}|\WP_Error
 	 */
 	public function validate_patch( string $type, $patch ) {
-		if ( ! DiviModuleCatalog::has( $type ) ) {
+		if ( ! DiviModuleCatalog::has( $type, $this->layout ) ) {
 			return $this->error( 'nexo_mcp_divi_module_denied', 'type', $this->denied_reason( $type ) );
 		}
 
@@ -264,7 +300,7 @@ final class DiviTreeValidator {
 				return $this->error( 'nexo_mcp_divi_tree_invalid', $slot, __( 'debe ser un objeto de atributos.', 'nexo-mcp' ) );
 			}
 
-			$specs  = 'content' === $slot ? DiviModuleCatalog::content_paths( $type ) : DiviModuleCatalog::design_paths( $type );
+			$specs  = 'content' === $slot ? DiviModuleCatalog::content_paths( $type, $this->layout ) : DiviModuleCatalog::design_paths( $type, $this->layout );
 			$result = $this->walk_attrs( $patch[ $slot ], $specs, '', $slot );
 
 			if ( is_wp_error( $result ) ) {
@@ -624,11 +660,11 @@ final class DiviTreeValidator {
 			return $this->error( 'nexo_mcp_divi_tree_invalid', $path . '.type', __( 'indica el tipo del módulo.', 'nexo-mcp' ) );
 		}
 
-		if ( ! DiviModuleCatalog::has( $type ) ) {
+		if ( ! DiviModuleCatalog::has( $type, $this->layout ) ) {
 			return $this->error( 'nexo_mcp_divi_module_denied', $path . '.type', $this->denied_reason( $type ) );
 		}
 
-		if ( ! in_array( $type, DiviModuleCatalog::children( $parent_type ), true ) ) {
+		if ( ! in_array( $type, DiviModuleCatalog::children( $parent_type, $this->layout ), true ) ) {
 			return $this->error(
 				'nexo_mcp_divi_nesting_invalid',
 				$path . '.type',
@@ -637,7 +673,7 @@ final class DiviTreeValidator {
 					__( '«%1$s» no cabe dentro de «%2$s». Admitidos ahí: %3$s.', 'nexo-mcp' ),
 					$type,
 					$parent_type,
-					array() === DiviModuleCatalog::children( $parent_type ) ? __( 'ninguno', 'nexo-mcp' ) : implode( ', ', DiviModuleCatalog::children( $parent_type ) )
+					array() === DiviModuleCatalog::children( $parent_type, $this->layout ) ? __( 'ninguno', 'nexo-mcp' ) : implode( ', ', DiviModuleCatalog::children( $parent_type, $this->layout ) )
 				)
 			);
 		}
@@ -651,7 +687,7 @@ final class DiviTreeValidator {
 				return $this->error( 'nexo_mcp_divi_tree_invalid', $path . '.attrs', __( 'debe ser un objeto de atributos.', 'nexo-mcp' ) );
 			}
 
-			$clean = $this->walk_attrs( $attrs, array_merge( DiviModuleCatalog::content_paths( $type ), DiviModuleCatalog::design_paths( $type ) ), '', $path . '.attrs' );
+			$clean = $this->walk_attrs( $attrs, array_merge( DiviModuleCatalog::content_paths( $type, $this->layout ), DiviModuleCatalog::design_paths( $type, $this->layout ) ), '', $path . '.attrs' );
 
 			if ( is_wp_error( $clean ) ) {
 				return $clean;
@@ -976,6 +1012,10 @@ final class DiviTreeValidator {
 				return DiviModuleCatalog::is_size( $value ) ? $value : $this->invalid( $path, __( 'debe ser un tamaño con unidad (px, em, rem, %, vw, vh).', 'nexo-mcp' ) );
 			case 'size_or_empty':
 				return '' === $value || DiviModuleCatalog::is_size( $value ) ? $value : $this->invalid( $path, __( 'debe ser vacío o un tamaño con unidad (px, em, rem, %, vw, vh).', 'nexo-mcp' ) );
+			case 'menu_id':
+				return $this->check_menu_id( $value, $path );
+			case 'date_format':
+				return 1 === preg_match( '/^[A-Za-z0-9 ,.:\/\\-]{1,30}\z/', $value ) ? $value : $this->invalid( $path, __( 'debe ser un formato de fecha de PHP de hasta 30 caracteres (letras, números, espacios y , . : / - \\).', 'nexo-mcp' ) );
 			case 'onoff':
 				return 'on' === $value || 'off' === $value ? $value : $this->invalid( $path, __( 'debe ser «on» u «off».', 'nexo-mcp' ) );
 			case 'family':
@@ -987,6 +1027,32 @@ final class DiviTreeValidator {
 			default:
 				return $this->invalid( $path, __( 'tipo de valor desconocido.', 'nexo-mcp' ) );
 		}
+	}
+
+	/**
+	 * Id de un menú de navegación que existe: cadena de dígitos (Divi lo guarda así) y un menú real.
+	 *
+	 * Un id inexistente NO falla en Divi (L4 (e): cae al primer menú disponible): por eso se comprueba aquí.
+	 *
+	 * @param string $value Valor.
+	 * @param string $path  Ruta del valor.
+	 *
+	 * @return string|\WP_Error
+	 */
+	private function check_menu_id( string $value, string $path ) {
+		$reason = __( 'debe ser el id (como texto) de un menú de navegación que existe en el sitio.', 'nexo-mcp' );
+
+		if ( 1 !== preg_match( '/^[1-9][0-9]{0,9}\z/', $value ) ) {
+			return $this->invalid( $path, $reason );
+		}
+
+		try {
+			$exists = (bool) ( $this->menu_exists )( (int) $value );
+		} catch ( \Throwable $e ) {
+			$exists = false;
+		}
+
+		return $exists ? $value : $this->invalid( $path, $reason );
 	}
 
 	/**
@@ -1373,7 +1439,7 @@ final class DiviTreeValidator {
 			/* translators: 1: tipo, 2: módulos admitidos. */
 			__( '«%1$s» no está en el catálogo de módulos de Divi 5 admitidos (el código, el HTML crudo y los shortcodes nunca se crean). Admitidos: %2$s.', 'nexo-mcp' ),
 			$type,
-			implode( ', ', DiviModuleCatalog::modules() )
+			implode( ', ', DiviModuleCatalog::modules( $this->layout ) )
 		);
 	}
 

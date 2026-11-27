@@ -106,6 +106,7 @@ final class Divi5ModuleEditor {
 	 * @param callable|null             $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 * @param DiviLoopSchema|null       $loops      Esquema del bucle de consulta (las pruebas inyectan tipos y términos).
 	 * @param DiviConditionsSchema|null $conditions Esquema de las condiciones de visualización (las pruebas inyectan roles, tipos y WooCommerce).
+	 * @param callable|null             $layout_allowed fn(): bool. Permiso del Theme Builder para escribir un layout (ver {@see DiviLayoutGuard}).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -118,9 +119,10 @@ final class Divi5ModuleEditor {
 		?callable $saver = null,
 		?callable $presets_lock = null,
 		?DiviLoopSchema $loops = null,
-		?DiviConditionsSchema $conditions = null
+		?DiviConditionsSchema $conditions = null,
+		?callable $layout_allowed = null
 	) {
-		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver, $layout_allowed );
 		$this->validator    = $validator;
 		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
 		$this->loops        = $loops ?? new DiviLoopSchema();
@@ -227,6 +229,10 @@ final class Divi5ModuleEditor {
 
 		$type = (string) $node['type'];
 
+		// Un layout del Theme Builder admite además `divi/post-title` y `divi/menu` (y `divi/post-content`, sin contenido que editar).
+		$layout    = DiviLayoutGuard::is_layout( $source );
+		$validator = $layout ? $this->validator->with_layout() : $this->validator;
+
 		if ( array_key_exists( 'loop', $input ) ) {
 			return $this->prepare_loop( $blocks, $path, $block, $type, $input['loop'] );
 		}
@@ -237,7 +243,7 @@ final class Divi5ModuleEditor {
 			return $this->prepare_conditions( $blocks, $path, $block, $type, $input['conditions'], $replace_foreign );
 		}
 
-		if ( ! in_array( $type, DiviModuleCatalog::CONTENT_MODULES, true ) ) {
+		if ( ! in_array( $type, DiviModuleCatalog::CONTENT_MODULES, true ) && ! ( $layout && in_array( $type, DiviModuleCatalog::LAYOUT_MODULES, true ) ) ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_module_denied',
 				sprintf(
@@ -255,7 +261,7 @@ final class Divi5ModuleEditor {
 		$removes = null !== $dynamic && null === ( $dynamic['source'] ?? null );
 
 		// Las fuentes `loop_*` valen sólo con un bucle del conector válido (propio o de un ancestro) en el árbol de AHORA.
-		$validator = null !== $dynamic && ! $removes ? $this->validator->with_loop( $this->loop_context( $path, $blocks ) ) : $this->validator;
+		$validator = null !== $dynamic && ! $removes ? $validator->with_loop( $this->loop_context( $path, $blocks ) ) : $validator;
 
 		if ( null !== $dynamic ) {
 			$assigned = $this->dynamic_patch( $type, $dynamic, $attrs );

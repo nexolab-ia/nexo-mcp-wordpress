@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.11.0
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.12.0 =
+* Nuevo: Theme Builder de Divi 5 con scope propio `mcp:divi_theme_builder` (capacidad `nexo_mcp_divi_theme_builder` que el instalador da al administrador al actualizar a 1.12.0; interruptor `divi_theme_builder_tools_enabled` apagado por defecto). Exige además `edit_theme_options`, `edit_others_posts` y el permiso `theme_builder` de los roles de Divi, también para leer. Herramientas: `list-divi-theme-builder` (plantillas en vivo, qué plantilla gana en cada contexto y cuál tapa a cuál), `create-divi-layout` (encabezado, cuerpo o pie, publicado y sin asignar), `set-divi-template` (crea o reemplaza UNA plantilla; las nuevas nacen deshabilitadas), `delete-divi-template` y `restore-divi-template` (deshace un cambio de plantilla, también un borrado, desde su respaldo; restaurar dos veces alterna).
+* Los layouts del Theme Builder (y sus copias de trabajo) se leen y se editan con `get-page-structure`, `edit-divi-section`, `edit-divi-module` y las demás herramientas de constructores, pero con el permiso del Theme Builder y no con el de una página (`nexo_mcp_divi_layout_denied`); los demás tipos internos de Divi se rechazan siempre (`nexo_mcp_divi_post_type_denied`). En un layout se admiten además `divi/post-content`, `divi/post-title` y `divi/menu`.
+* Importante: una plantilla cambia lo que ve TODO el sitio y Divi usa UNA sola plantilla por petición (una más específica hace desaparecer el encabezado y el pie de la plantilla por defecto en esa página). Un cuerpo sin `divi/post-content` REEMPLAZA el contenido de la página (el carrito de WooCommerce, el pago, un formulario): se rechaza salvo `allow_without_post_content`. Plantillas por defecto o de sitio entero (`…:all`, `archive:all`, `404`) exigen `confirm_site_wide`; reemplazar una hecha en el Visual Builder exige `replace_foreign`.
+* Importante: un layout que no está publicado igual se muestra al público (Divi sólo omite los de la papelera), por eso se crean y se asignan sólo en `publish`. Divi manda a la papelera a los 7 días las plantillas y los layouts que no están en el Theme Builder en vivo. Al guardar se borra el CSS estático de todo el sitio y las cachés de página (Divi no lo hace, sin avisar, si el usuario no tiene `edit_posts`: la respuesta lo avisa).
+* Corrección: al restaurar una plantilla desde la papelera se quita el sufijo `__trashed` de su slug.
 
 = 1.11.0 =
 * Nuevo: condiciones de visualización de Divi 5 con scope propio `mcp:divi_conditions` (capacidad `nexo_mcp_divi_conditions` que el instalador da al administrador al actualizar a 1.11.0; interruptor `divi_conditions_tools_enabled` apagado por defecto): `list-divi-conditions` (catálogo; se lee con el permiso de constructores y no pide el interruptor) y `set-divi-conditions` (reemplaza el conjunto entero de condiciones de un módulo, en la copia de trabajo; `match` all|any es obligatorio también al quitar con `conditions: []`). Escribir exige además el permiso de constructores y `edit_post` sobre la página.

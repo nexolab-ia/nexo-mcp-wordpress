@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\WordPress\WorkingCopy;
+
 /**
  * Lee las páginas de Divi 5, guardadas como bloques `divi/*` en `post_content`.
  *
@@ -121,13 +123,46 @@ final class Divi5Adapter implements BuilderAdapter {
 	}
 
 	/**
-	 * Purga la caché que genera Divi por página.
+	 * Purga la caché que genera Divi por página (y, en un layout del Theme Builder vivo, la de todo el sitio).
 	 *
 	 * @param \WP_Post $post Contenido modificado.
 	 */
 	public function flush( \WP_Post $post ): void {
+		$this->purge( $post, true );
+	}
+
+	/**
+	 * Purga la caché de un layout del Theme Builder recién creado y sin asignar: no se muestra en ninguna página, así que
+	 * no hay CSS de todo el sitio que renovar (sólo el suyo y los plugins de caché).
+	 *
+	 * @param \WP_Post $post Layout creado.
+	 */
+	public function flush_unassigned( \WP_Post $post ): void {
+		$this->purge( $post, false );
+	}
+
+	/**
+	 * Purga la caché de un contenido.
+	 *
+	 * @param \WP_Post $post      Contenido modificado.
+	 * @param bool     $site_wide Si un layout vivo renueva también la caché de todo el sitio.
+	 */
+	private function purge( \WP_Post $post, bool $site_wide ): void {
+		// Un layout del Theme Builder vivo (no la copia de trabajo, que no está en ninguna plantilla) se muestra en todas las
+		// páginas que su plantilla cubre: el CSS de cada una lleva su id en el nombre y sólo se renueva con la marca global
+		// (L4 (c)). `remove_static_resources` no hace nada, sin avisar, si el usuario no tiene `edit_posts` y no es cron.
+		$live_layout = $site_wide && DiviLayoutGuard::is_layout( $post ) && 0 === WorkingCopy::original_of( $post );
+
 		if ( class_exists( '\ET_Core_PageResource' ) ) {
 			\ET_Core_PageResource::remove_static_resources( $post->ID, 'all' );
+
+			if ( $live_layout ) {
+				\ET_Core_PageResource::remove_static_resources( 'all', 'all' );
+			}
+		}
+
+		if ( $live_layout && function_exists( 'et_theme_builder_clear_wp_cache' ) ) {
+			et_theme_builder_clear_wp_cache( 'all' );
 		}
 
 		if ( function_exists( 'et_core_clear_wp_cache' ) ) {

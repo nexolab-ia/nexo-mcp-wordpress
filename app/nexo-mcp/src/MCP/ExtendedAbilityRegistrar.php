@@ -14,11 +14,13 @@ use NexoDev\NexoMCP\Authorization\DenialExplainer;
 use NexoDev\NexoMCP\Authorization\IrreversibleActions;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
 use NexoDev\NexoMCP\Builders\DiviConditionsSchema;
 use NexoDev\NexoMCP\Builders\DiviDesignStore;
 use NexoDev\NexoMCP\Builders\DiviPresetOperations;
+use NexoDev\NexoMCP\Builders\DiviThemeBuilderSchema;
 use NexoDev\NexoMCP\Builders\ElementorTreeValidator;
 use NexoDev\NexoMCP\Fields\FieldGateway;
 use NexoDev\NexoMCP\Support\Settings;
@@ -84,6 +86,11 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-loop',
 		'nexo-mcp/set-divi-conditions',
 		'nexo-mcp/create-divi-page',
+		'nexo-mcp/create-divi-layout',
+		'nexo-mcp/list-divi-theme-builder',
+		'nexo-mcp/set-divi-template',
+		'nexo-mcp/delete-divi-template',
+		'nexo-mcp/restore-divi-template',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -289,15 +296,18 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-page-structure',
 			'Obtener estructura de la página',
-			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
+			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Con el id de un layout del Theme Builder (encabezado, cuerpo o pie, o su copia de trabajo) pide el permiso del Theme Builder (scope mcp:divi_theme_builder) y no el de una página: nexo_mcp_divi_layout_denied sin él; los demás tipos internos de Divi se rechazan (nexo_mcp_divi_post_type_denied). Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->builders->get_structure( $input ),
-			fn( array $input ) => $this->module_read(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					(int) ( $input['id'] ?? 0 )
+				)
 			)
 		);
 		$this->ability(
@@ -773,7 +783,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_dynamic_sources( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -794,7 +804,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_conditions( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -862,6 +872,57 @@ final class ExtendedAbilityRegistrar {
 			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
+			'create-divi-layout',
+			'Crear un layout del Theme Builder de Divi 5 (publicado, sin asignar)',
+			$this->divi_layout_description(),
+			'write',
+			$this->divi_layout_schema(),
+			fn( array $input ) => $this->builders->create_divi_layout( $input ),
+			// Sin id de página: un layout se muestra en todo el sitio. Permiso de sitio del Theme Builder (no el de constructores).
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'list-divi-theme-builder',
+			'Listar las plantillas del Theme Builder de Divi 5',
+			$this->divi_template_list_description(),
+			'read',
+			array(
+				'type'                 => 'object',
+				'properties'           => array(),
+				'additionalProperties' => false,
+			),
+			fn() => $this->builders->list_divi_theme_builder(),
+			// Sin id de página: una plantilla decide lo que ve todo el sitio. Lee con el permiso del Theme Builder (como los layouts).
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'set-divi-template',
+			'Crear o reemplazar una plantilla del Theme Builder de Divi 5',
+			$this->divi_template_set_description(),
+			'write',
+			$this->divi_template_set_schema(),
+			fn( array $input ) => $this->builders->set_divi_template( $input ),
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'delete-divi-template',
+			'Sacar una plantilla del Theme Builder de Divi 5 y mandarla a la papelera',
+			$this->divi_template_delete_description(),
+			'write',
+			$this->divi_template_delete_schema(),
+			fn( array $input ) => $this->builders->delete_divi_template( $input ),
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
+			'restore-divi-template',
+			'Restaurar una plantilla del Theme Builder de Divi 5 desde su respaldo',
+			$this->divi_template_restore_description(),
+			'write',
+			$this->divi_template_restore_schema(),
+			fn( array $input ) => $this->builders->restore_divi_template( $input ),
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
 			'edit-divi-section',
 			'Reconstruir secciones de Divi 5',
 			$this->divi_section_description(),
@@ -914,11 +975,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_text_schema(),
 			fn( array $input ) => $this->builders->update_node_text( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -931,11 +995,15 @@ final class ExtendedAbilityRegistrar {
 			fn( array $input ) => $this->builders->update_node_attribute( $input ),
 			// Capacidad propia y no BUILDERS: cambiar a dónde apunta un enlace no
 			// es lo mismo que corregir una palabra, así que se concede aparte.
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDER_ATTRS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDER_ATTRS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDER_ATTRS, 'edit_theme_options' )
 			)
 		);
 		$this->ability(
@@ -945,11 +1013,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_restore_schema(),
 			fn( array $input ) => $this->builders->restore_backup( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -960,11 +1031,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_structure_schema(),
 			fn( array $input ) => $this->builders->edit_structure( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 	}
@@ -1379,12 +1453,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->confirmed_id_schema( 'restore-revision' ),
 			fn( array $input ) => $this->content->restore_revision( (int) $input['id'] ),
-			fn() => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+			fn( array $input ) => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+				// Restaurar la revisión de un layout reescribe el layout vivo (todo el sitio): además, el permiso del Theme Builder.
+				&& ( ! $this->is_layout_revision( (int) ( $input['id'] ?? 0 ) ) || $this->policy->can_write_divi_theme_builder() )
 		);
 		$this->ability(
 			'set-content-status',
 			'Cambiar estado de contenido',
-			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50.',
+			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50. La copia de trabajo de un layout del Theme Builder (encabezado, cuerpo o pie) también se publica (se fusiona en el layout vivo, que ve todo el sitio) o se descarta (trash) por aquí, pero pide además el permiso del Theme Builder (scope mcp:divi_theme_builder): nexo_mcp_divi_layout_denied sin él. El layout vivo en sí no cambia de estado por esta herramienta.',
 			'write',
 			$this->status_schema(),
 			fn( array $input ) => isset( $input['ids'] )
@@ -1395,11 +1471,14 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-working-copy-diff',
 			'Comparar copia de trabajo',
-			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post).',
+			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post). Para un layout del Theme Builder pide el permiso del Theme Builder (nexo_mcp_divi_layout_denied sin él); los demás tipos internos de Divi se rechazan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->content->get_working_copy_diff( (int) $input['id'] ),
-			fn( array $input ) => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			)
 		);
 	}
 
@@ -1412,12 +1491,44 @@ final class ExtendedAbilityRegistrar {
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 */
 	private function elementor_page_permission( array $input ): bool {
-		return $this->module_write(
-			'builders_tools_enabled',
-			Capabilities::BUILDERS,
-			'edit_post',
-			WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+		return $this->layout_gate(
+			(int) ( $input['id'] ?? 0 ),
+			fn() => $this->module_write(
+				'builders_tools_enabled',
+				Capabilities::BUILDERS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			)
 		);
+	}
+
+	/**
+	 * Indica si la revisión es de un layout del Theme Builder.
+	 *
+	 * @param int $revision_id Revisión.
+	 */
+	private function is_layout_revision( int $revision_id ): bool {
+		$revision = function_exists( 'wp_get_post_revision' ) ? wp_get_post_revision( $revision_id ) : null;
+
+		return $revision instanceof \WP_Post && DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( (int) $revision->post_parent );
+	}
+
+	/**
+	 * Capa de permiso del tipo de contenido (T5): un layout del Theme Builder pide el permiso del Theme Builder y NO el de una página.
+	 *
+	 * Para cualquier otro contenido rige `$normal`. Los demás tipos `et_*` no tienen atajo: el permiso de siempre y, al
+	 * ejecutar, el gateway los rechaza con `nexo_mcp_divi_post_type_denied` ({@see DiviLayoutGuard}).
+	 *
+	 * @param int           $post_id Contenido indicado (original o copia de trabajo).
+	 * @param callable      $normal  fn(): bool. Permiso de una página.
+	 * @param callable|null $extra   fn(): bool. Scope propio de la herramienta que también rige en un layout (sin `edit_post`).
+	 */
+	private function layout_gate( int $post_id, callable $normal, ?callable $extra = null ): bool {
+		if ( DiviLayoutGuard::KIND_LAYOUT !== DiviLayoutGuard::kind_of_id( $post_id ) ) {
+			return (bool) $normal();
+		}
+
+		return $this->policy->can_write_divi_theme_builder() && ( null === $extra || (bool) $extra() );
 	}
 
 	/**
@@ -1431,11 +1542,15 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function dynamic_tag_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_dynamic_enabled',
-				Capabilities::BUILDERS_DYNAMIC,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_dynamic_enabled',
+					Capabilities::BUILDERS_DYNAMIC,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_dynamic_enabled', Capabilities::BUILDERS_DYNAMIC, 'edit_theme_options' )
 			);
 	}
 
@@ -1461,11 +1576,15 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function component_insert_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_components_enabled',
-				Capabilities::BUILDERS_COMPONENTS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_components_enabled',
+					Capabilities::BUILDERS_COMPONENTS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_components_enabled', Capabilities::BUILDERS_COMPONENTS, 'edit_theme_options' )
 			);
 	}
 
@@ -1977,6 +2096,9 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
 				'',
+				'EN UN LAYOUT además se editan divi/post-title y divi/menu (menu.advanced.menuId: el id, como texto, de un menú que existe; uno inexistente se rechaza) y divi/post-content (sin contenido que editar).',
+				$this->divi_layout_note(),
+				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
 				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
@@ -2104,6 +2226,281 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Nota de las herramientas de edición sobre los layouts del Theme Builder.
+	 */
+	private function divi_layout_note(): string {
+		return 'LAYOUTS DEL THEME BUILDER: id puede ser el de un layout de encabezado, cuerpo o pie (o su copia de trabajo); entonces se pide el permiso del Theme Builder (scope mcp:divi_theme_builder con su interruptor y un administrador con el permiso theme_builder de Divi) y NO el de una página: sin él, nexo_mcp_divi_layout_denied. Los demás tipos internos de Divi (plantillas, biblioteca) se rechazan siempre (nexo_mcp_divi_post_type_denied). El cambio va a la copia de trabajo del layout (el layout vivo, que ve todo el sitio, no cambia): revísala con nexo-mcp-get-working-copy-diff y publícala o descártala con nexo-mcp-set-content-status (también con el permiso del Theme Builder).';
+	}
+
+	/**
+	 * Descripción de list-divi-theme-builder.
+	 */
+	private function divi_template_list_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Lista las plantillas del Theme Builder EN VIVO de Divi 5 (el que ve el sitio) con todo lo necesario para decidir un cambio; sólo lee y no crea nada. Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi, también para leer: sin él, nexo_mcp_divi_template_denied. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'POR QUÉ IMPORTA: una plantilla decide lo que ve todo el sitio (TODO, no sólo una página) y Divi elige UNA sola plantilla por petición, no las fusiona: gana la de use_on con mayor prioridad (las deshabilitadas y las que cumplen alguna exclude_from se descartan) y, si ninguna aplica, la plantilla por defecto habilitada. Una plantilla más específica (por ejemplo una por id de página) hace desaparecer el encabezado y el pie de la por defecto en esa página.',
+				'',
+				'SALIDA: live {id, exists} (el Theme Builder en vivo; si no existe, set-divi-template lo crea), draft {exists, id?, note?} (un borrador auto-draft del Visual Builder: se ignora; WordPress lo barre a los 7 días y un Visual Builder abierto pisa el mapeo en vivo al guardar), truncated (true si el mapeo tiene más de 50 plantillas y sólo se leyeron las primeras 50), templates (en el orden del mapeo: id, status, ours, title, enabled, default, site_wide, use_on y exclude_from como listas de {id, supported, priority} —los ids que el catálogo no conoce se conservan con supported: false y los textos libres no se muestran—, y header, body y footer con {layout_id, enabled, status del layout —publish, draft…, missing o wrong_type—, y en body has_post_content}), default_template (el id de la plantilla por defecto habilitada), contexts (cada contexto en uso con su priority, el winner —el id de la plantilla que gana si la petición sólo cumple ese contexto— y los templates que lo usan), shadows (qué plantilla tapa a cuál: {template, context, priority, covered_by, by_context, by_priority}), catalog (los contextos válidos con su prioridad, si son de sitio entero y si necesitan WooCommerce; WooCommerce sólo si está activo), limits y warnings.',
+				'',
+				'ours: true si el conector puede representar la plantilla por completo y reescribirla sin perder nada; false si es ajena o rara (hecha en el Visual Builder con metas que el conector no entiende): reemplazarla exige replace_foreign: true en set-divi-template. warnings: [{code, message, …}] con body_replaces_content (un cuerpo sin divi/post-content REEMPLAZA el contenido de las páginas a las que se asigna), layout_not_published (un layout que no es publish también lo ve el público), layout_trashed (un layout en la papelera: Divi no lo muestra), mapping_truncated (el mapeo tiene más de 50 plantillas y sólo se leen las primeras 50), layout_invalid (no existe o es de otro tipo), scheduled_for_trash (Divi marcó la plantilla o el layout como sin uso y a los 7 días los manda a la papelera), template_trashed, orphan_mapping y multiple_defaults.',
+			)
+		);
+	}
+
+	/**
+	 * Descripción de set-divi-template.
+	 */
+	private function divi_template_set_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea o REEMPLAZA UNA plantilla del Theme Builder EN VIVO de Divi 5 (la que ve el sitio): qué encabezado, cuerpo y pie se muestran y dónde. Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él, antes de mirar la entrada. Requiere Divi 5 activo (nexo_mcp_divi5_required). Antes lee con nexo-mcp-list-divi-theme-builder; los layouts salen de nexo-mcp-create-divi-layout (publish).',
+				'',
+				'EFECTO EN TODO EL SITIO: una plantilla decide lo que ve todo el sitio y Divi elige UNA sola plantilla por petición, no las fusiona: gana la de use_on con mayor prioridad (las deshabilitadas y las que cumplen alguna exclude_from se descartan) y, si ninguna aplica, la plantilla por defecto habilitada. Una plantilla más específica (por ejemplo una por id de página) hace desaparecer el encabezado y el pie de la plantilla por defecto en esa página. Un encabezado o pie reemplaza al del tema (se pierden su menú, buscador y carrito). Un cuerpo sin divi/post-content REEMPLAZA el contenido de la página (el carrito de WooCommerce, el pago, un formulario dejan de verse).',
+				'',
+				'NUEVAS DESHABILITADAS: una plantilla nueva se crea SIEMPRE con enabled: false, también si pides enabled: true, y no cambia nada en el sitio; la respuesta trae needs_enable y el aviso. Para activarla haz una segunda llamada con su id y enabled: true. Reemplazar es reemplazar: lo que no pases vuelve a su valor por defecto (listas vacías, ranuras sin layout propio, default false), así que enabled es obligatorio y conviene releer la plantilla antes.',
+				'',
+				'ENTRADA: id (opcional: si se pasa reemplaza esa plantilla del Theme Builder en vivo; sin id crea una; un id que no es una plantilla en vivo da nexo_mcp_divi_template_not_found y nunca crea otra), title (1 a 100 caracteres, sin < >), enabled, default (la plantilla del sitio entero: sólo UNA, nexo_mcp_divi_template_default_exists si ya hay otra), use_on y exclude_from (de 0 a 20 contextos cada una, sin repetir ni estar en las dos), header, body y footer: {layout_id, enabled}; layout_id es el id entero de un layout PUBLISH del tipo de esa ranura (uno en borrador, privado o de otro tipo se rechaza: Divi lo recortaría a 0 en silencio) y null no pone layout propio en esa área; enabled: false en una ranura oculta esa área. Contextos (catálogo cerrado, ver nexo-mcp-list-divi-theme-builder): homepage, 404, search, singular:post_type:<tipo>:all, singular:post_type:<tipo>:id:<id>, singular:taxonomy:<tax>:term:id:<id>, archive:all, archive:post_type:<tipo>, archive:taxonomy:<tax>:all, archive:taxonomy:<tax>:term:id:<id>, archive:user:all, archive:user:id:<id>, archive:date:all y woocommerce:shop|cart|checkout|my_account sólo con WooCommerce activo; los ids deben existir y los contenidos estar publish; no se admiten roles de autor ni children:id. Cualquier otra cosa da nexo_mcp_divi_template_invalid con data.path.',
+				'',
+				'CONFIRMACIONES: confirm_site_wide: true es obligatorio si la plantilla es por defecto o su use_on incluye un …:all, archive:all o 404 (nexo_mcp_divi_template_site_wide), y también para cambiar o quitarle eso a una plantilla que ya lo tiene; la respuesta explica el efecto y qué plantillas más específicas la tapan (shadowed_by) o tapa (shadows). Un cuerpo sin divi/post-content asignado al inicio, a un singular, a WooCommerce o a la plantilla por defecto se rechaza (nexo_mcp_divi_template_body_replaces_content) salvo allow_without_post_content: true. replace_foreign: true es obligatorio para reemplazar una plantilla que no es del conector (hecha en el Visual Builder con ajustes que no representa): nexo_mcp_divi_template_foreign con el resumen en data.summary; las metas de Divi que el esquema no entiende se quitan, quedan en el respaldo y la salida trae replaced.',
+				'',
+				'RESPALDO Y CACHÉ: antes de cada cambio se guarda un respaldo de la plantilla (metas, título, estado y su fila del Theme Builder; una sola copia, la del último cambio) y sólo se toca la fila de ESTA plantilla del mapeo, nunca se reescribe todo. DESHACER: nexo-mcp-restore-divi-template con el id de la plantilla la devuelve a ese respaldo (nexo-mcp-restore-builder-backup NO acepta plantillas); la salida trae además previous (el resumen de lo que había: con esos valores también se puede volver a llamar a set-divi-template con el id). El respaldo completo queda en la meta _nexo_mcp_template_backup de la propia plantilla. Después se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\'), primer render lento) y las cachés de página (et_theme_builder_clear_wp_cache): Divi no borra el CSS, sin avisar, si el usuario de la conexión no tiene edit_posts (la respuesta lo avisa). Una plantilla o layout que no está en el Theme Builder en vivo lo manda Divi a la papelera a los 7 días.',
+				'',
+				'SALIDA: id, created, title, enabled, default, site_wide, effect (texto del efecto si es de sitio entero), ours, use_on, exclude_from, header, body, footer, shadowed_by, shadows, live_theme_builder, previous (el resumen de lo que había antes, null al crear), backup {operation, captured_at, existed}, cache {css, page_cache}, warnings, needs_enable (sólo al crear) y replaced (sólo al reemplazar una ajena).',
+				'',
+				'ERRORES (no escriben nada): nexo_mcp_divi_template_denied, nexo_mcp_divi5_required, nexo_mcp_divi_template_invalid (con data.path), nexo_mcp_divi_template_site_wide, nexo_mcp_divi_template_body_replaces_content, nexo_mcp_divi_template_foreign, nexo_mcp_divi_template_not_found, nexo_mcp_divi_template_default_exists, nexo_mcp_divi_template_too_many (50 plantillas), nexo_mcp_divi_template_backup_failed, nexo_mcp_divi_template_unavailable, nexo_mcp_busy (otra llamada sobre el Theme Builder en curso: reintenta) y nexo_mcp_divi_template_save_failed (si falla tras escribir, la plantilla vuelve a su estado anterior).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de set-divi-template.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_template_set_schema(): array {
+		$contexts = static fn( string $description ): array => array(
+			'type'        => 'array',
+			'maxItems'    => DiviThemeBuilderSchema::MAX_CONTEXTS,
+			'items'       => array(
+				'type'      => 'string',
+				'minLength' => 1,
+				'maxLength' => 200,
+			),
+			'description' => $description,
+		);
+		$slot     = static fn( string $description ): array => array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'layout_id' => array(
+					'type'        => array( 'integer', 'null' ),
+					'minimum'     => 1,
+					'description' => 'Id del layout PUBLISH del tipo de esta ranura, o null para no poner layout propio en esa área.',
+				),
+				'enabled'   => array(
+					'type'        => 'boolean',
+					'description' => 'false oculta esa área (por omisión true).',
+				),
+			),
+			'additionalProperties' => false,
+			'description'          => $description,
+		);
+		$flag     = static fn( string $description ): array => array(
+			'type'        => 'boolean',
+			'description' => $description,
+		);
+
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'                         => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Plantilla del Theme Builder en vivo que se reemplaza. Sin id se crea una nueva (siempre deshabilitada).',
+				),
+				'title'                      => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => DiviThemeBuilderSchema::MAX_TITLE,
+					'description' => 'Nombre de la plantilla.',
+				),
+				'enabled'                    => $flag( 'Si la plantilla está habilitada. Una plantilla NUEVA se crea con false aunque pidas true; se activa con una segunda llamada con su id.' ),
+				'default'                    => $flag( 'Plantilla por defecto: se aplica a TODO el sitio donde no gane otra. Sólo una; exige confirm_site_wide.' ),
+				'use_on'                     => $contexts( 'Contextos donde se aplica (catálogo de nexo-mcp-list-divi-theme-builder). Una plantilla gana por la prioridad de su contexto.' ),
+				'exclude_from'               => $contexts( 'Contextos donde NO se aplica aunque use_on lo cubra.' ),
+				'header'                     => $slot( 'Encabezado: {layout_id, enabled}.' ),
+				'body'                       => $slot( 'Cuerpo: {layout_id, enabled}. Sin divi/post-content REEMPLAZA el contenido de la página.' ),
+				'footer'                     => $slot( 'Pie: {layout_id, enabled}.' ),
+				'confirm_site_wide'          => $flag( 'Confirma que la plantilla cambia todo el sitio (por defecto, …:all, archive:all o 404).' ),
+				'replace_foreign'            => $flag( 'Confirma reemplazar una plantilla que no es del conector (se guarda un respaldo).' ),
+				'allow_without_post_content' => $flag( 'Permite un cuerpo sin divi/post-content en un contexto que muestra contenido (REEMPLAZA ese contenido).' ),
+			),
+			'required'             => array( 'title', 'enabled' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de delete-divi-template.
+	 */
+	private function divi_template_delete_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Saca UNA plantilla del Theme Builder EN VIVO de Divi 5 y la manda a la papelera (como Divi; no hay pantalla de WordPress para recuperarla: se restaura con nexo-mcp-restore-divi-template). Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él. Requiere Divi 5 activo (nexo_mcp_divi5_required).',
+				'',
+				'EFECTO EN TODO EL SITIO: quitar una plantilla cambia lo que ve todo el sitio donde ganaba (Divi elige UNA sola plantilla por petición: la siguiente en prioridad, o la por defecto, pasa a mandar). Si es la plantilla por defecto o su use_on incluye un …:all, archive:all o 404 hay que pasar confirm_site_wide: true (nexo_mcp_divi_template_site_wide). Una plantilla que no es del conector (hecha en el Visual Builder) exige replace_foreign: true (nexo_mcp_divi_template_foreign con el resumen en data.summary). Un id que no es una plantilla del Theme Builder en vivo da nexo_mcp_divi_template_not_found.',
+				'',
+				'ENTRADA: id (de nexo-mcp-list-divi-theme-builder), confirm_site_wide y replace_foreign (opcionales).',
+				'',
+				'RESPALDO Y CACHÉ: antes se guarda un respaldo (metas, título, estado y fila del Theme Builder) y sólo se quita la fila de ESTA plantilla del mapeo. DESHACER: nexo-mcp-restore-divi-template con el id de la plantilla borrada la saca de la papelera y la devuelve tal cual estaba, con su fila del Theme Builder (nexo-mcp-restore-builder-backup NO acepta plantillas); la salida trae además previous (el resumen de lo que había). El respaldo completo (metas, título, estado y fila del Theme Builder) queda en la meta _nexo_mcp_template_backup de la plantilla en la papelera. Después se borra el CSS estático de todo el sitio y las cachés de página, como el guardado en vivo de Divi (sin edit_posts Divi no borra el CSS, sin avisar: la respuesta lo avisa). Los layouts de la plantilla NO se borran, pero Divi los marca como sin uso y a los 7 días los manda a la papelera.',
+				'',
+				'SALIDA: id, deleted, status (trash), title, was_default, site_wide, layouts (los ids de sus layouts), live_theme_builder, previous (el resumen de lo que había), backup, cache {css, page_cache} y warnings.',
+				'',
+				'ERRORES (no escriben nada): nexo_mcp_divi_template_denied, nexo_mcp_divi5_required, nexo_mcp_divi_template_invalid (con data.path), nexo_mcp_divi_template_not_found, nexo_mcp_divi_template_site_wide, nexo_mcp_divi_template_foreign, nexo_mcp_divi_template_backup_failed, nexo_mcp_busy (otra llamada sobre el Theme Builder en curso: reintenta) y nexo_mcp_divi_template_save_failed (si la papelera falla, la plantilla vuelve al Theme Builder).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de delete-divi-template.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_template_delete_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'                => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Plantilla del Theme Builder en vivo.',
+				),
+				'confirm_site_wide' => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma quitar una plantilla por defecto o de sitio entero (…:all, archive:all, 404).',
+				),
+				'replace_foreign'   => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma borrar una plantilla que no es del conector (se guarda un respaldo).',
+				),
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de restore-divi-template.
+	 */
+	private function divi_template_restore_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Devuelve UNA plantilla del Theme Builder EN VIVO de Divi 5 al estado de su respaldo (la meta _nexo_mcp_template_backup de la propia plantilla): sus metas, título, estado y su fila del Theme Builder. Sirve para deshacer set-divi-template y también tras delete-divi-template (la plantilla borrada está en la papelera, sin pantalla en WordPress: se saca de la papelera y vuelve a su fila). Requiere el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: nexo_mcp_divi_template_denied sin él, antes de mirar la entrada. Requiere Divi 5 activo (nexo_mcp_divi5_required). nexo-mcp-restore-builder-backup NO acepta plantillas.',
+				'',
+				'EFECTO EN TODO EL SITIO: restaurar cambia lo que ve todo el sitio donde esa plantilla gane (Divi elige UNA sola plantilla por petición). Si la plantilla de ahora o la respaldada es la por defecto o su use_on incluye un …:all, archive:all o 404 hay que pasar confirm_site_wide: true (nexo_mcp_divi_template_site_wide). Si la plantilla de ahora está en el Theme Builder en vivo y no es del conector (hecha en el Visual Builder) hay que pasar replace_foreign: true (nexo_mcp_divi_template_foreign con el resumen en data.summary): lo que tiene ahora se pierde, aunque queda en el respaldo nuevo. Restaurar una plantilla borrada no puede pasar de 50 plantillas (nexo_mcp_divi_template_too_many) ni duplicar la por defecto (nexo_mcp_divi_template_default_exists). El respaldo de una CREACIÓN la manda a la papelera y la saca del Theme Builder en vivo.',
+				'',
+				'ENTRADA: id (de nexo-mcp-list-divi-theme-builder o de la salida de delete-divi-template), confirm_site_wide y replace_foreign (opcionales).',
+				'',
+				'RESPALDO Y CACHÉ: antes de escribir se guarda un respaldo del estado de ahora (sin él no se escribe: nexo_mcp_divi_template_backup_failed), así que restaurar dos veces alterna entre los dos estados. Sólo se toca la fila de ESTA plantilla del mapeo. Los layouts que vuelven a una ranura pierden la marca de «sin uso» de Divi (si no, a los 7 días los manda a la papelera). Después se borra el CSS estático de todo el sitio (primer render lento) y las cachés de página, como el guardado en vivo de Divi (sin edit_posts Divi no borra el CSS, sin avisar: la respuesta lo avisa). Si algo falla a medias la plantilla vuelve a su estado anterior.',
+				'',
+				'SALIDA: id, restored, title, status (publish, o trash si el respaldo era de una creación), mapped (si queda en el Theme Builder en vivo), enabled, default, site_wide, effect (texto del efecto si es de sitio entero), ours, use_on, exclude_from, header, body, footer, previous (el resumen de lo que había antes de restaurar), restored_from {operation, captured_at, existed} (el respaldo usado), backup {operation, captured_at, existed} (el respaldo nuevo del estado anterior), live_theme_builder, cache {css, page_cache} y warnings (por ejemplo un layout que ya no está publicado).',
+				'',
+				'ERRORES (no escriben nada): nexo_mcp_divi_template_denied, nexo_mcp_divi5_required, nexo_mcp_divi_template_invalid (con data.path), nexo_mcp_divi_template_not_found (no es una plantilla), nexo_mcp_divi_template_no_backup (no hay respaldo), nexo_mcp_divi_template_unavailable (no hay Theme Builder en vivo), nexo_mcp_divi_template_site_wide, nexo_mcp_divi_template_foreign, nexo_mcp_divi_template_too_many, nexo_mcp_divi_template_default_exists, nexo_mcp_divi_template_backup_failed, nexo_mcp_busy (otra llamada sobre el Theme Builder en curso: reintenta) y nexo_mcp_divi_template_save_failed (la plantilla vuelve a su estado anterior).',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de restore-divi-template.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_template_restore_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'                => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Plantilla del Theme Builder con un respaldo (también una borrada, en la papelera).',
+				),
+				'confirm_site_wide' => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma restaurar una plantilla por defecto o de sitio entero (…:all, archive:all, 404), la de ahora o la respaldada.',
+				),
+				'replace_foreign'   => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma reemplazar la plantilla de ahora si no es del conector (se guarda un respaldo).',
+				),
+			),
+			'required'             => array( 'id' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Descripción de create-divi-layout.
+	 */
+	private function divi_layout_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea un layout del Theme Builder de Divi 5 (encabezado, cuerpo o pie) con módulos reales, PUBLICADO y SIN ASIGNAR a ninguna plantilla (inerte hasta enlazarlo). Requiere Divi 5 activo (nexo_mcp_divi5_required) y el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: un layout se muestra en todo el sitio, así que NO basta el permiso de constructores ni el edit_post de una página (nexo_mcp_divi_layout_denied, se comprueba antes que la entrada).',
+				'',
+				'EFECTO EN TODO EL SITIO: crear no cambia el sitio, pero asignar el layout a una plantilla sí (afecta a todas las páginas que esa plantilla cubra). Un layout se crea en publish a propósito: uno en borrador, privado o pendiente lo ve igualmente el público. Un layout sin asignar lo marca Divi como sin uso y lo manda a la papelera a los 7 días: asígnalo antes. Un encabezado o pie reemplaza al del tema (se pierden su menú, buscador y carrito). Un cuerpo sin divi/post-content REEMPLAZA el contenido de las páginas a las que se asigne (se pierden el texto de la página y, en WooCommerce, el carrito y el pago): se crea igual, pero la respuesta lo avisa.',
+				'',
+				'ENTRADA: type (header | body | footer), title y sections: la lista de secciones (sólo divi/section en la raíz; el divi/placeholder que envuelve el contenido lo pone el plugin).',
+				$this->divi_tree_help(),
+				'EN UN LAYOUT además se admiten, siempre como hijos de una columna: divi/post-content (el contenido de la página o entrada que muestra la plantilla; sin atributos; imprescindible en un cuerpo), divi/post-title (título de la entrada: interruptores on/off en title.advanced.showTitle, meta.advanced.showMeta|showAuthor|showDate|showCategories|showCommentsCount, image.advanced.enabled y meta.advanced.dateFormat, un formato de fecha de PHP de hasta 30 caracteres) y divi/menu (menu.advanced.menuId: el id del menú, como TEXTO, de un menú que existe en el sitio —uno inexistente se rechaza porque Divi lo cambiaría en silencio por el primero—, logo.innerContent {src, alt, linkUrl, linkTarget}, cartIcon.advanced.show y searchIcon.advanced.show en on/off). Una página no los admite.',
+				'',
+				'SALIDA: id, type, post_type (et_header_layout, et_body_layout o et_footer_layout), status (publish), assigned (false), nodes (lista plana de {path, type, fingerprint} con la ruta de cada nodo; úsala con nexo-mcp-edit-divi-section y nexo-mcp-edit-divi-module, que aceptan el id del layout con este mismo permiso) y warnings (el de sin asignar y, en un cuerpo sin divi/post-content, el de que reemplazaría el contenido). Al crear se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\')): Divi no hace nada, sin avisar, si el usuario de la conexión no tiene edit_posts; los plugins de caché de página se vacían con et_theme_builder_clear_wp_cache.',
+				'',
+				'ERRORES (no crean nada; si falla el guardado el layout a medias se elimina): nexo_mcp_divi_layout_denied, nexo_mcp_divi_layout_type_invalid, nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-divi-layout.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_layout_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'type'     => array(
+					'type'        => 'string',
+					'enum'        => array( 'header', 'body', 'footer' ),
+					'description' => 'Qué layout es: encabezado, cuerpo o pie.',
+				),
+				'title'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'sections' => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Secciones: lista de nodos {type: "divi/section", attrs?, children?}. Ver la descripción de la herramienta (en un layout, además divi/post-content, divi/post-title y divi/menu dentro de una columna).',
+					'items'       => array(
+						'type'                 => 'object',
+						'additionalProperties' => true,
+					),
+				),
+			),
+			'required'             => array( 'type', 'title', 'sections' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Descripción de edit-divi-section.
 	 */
 	private function divi_section_description(): string {
@@ -2119,7 +2516,10 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete) y dropped_conditions (sólo con replace o delete, si el subárbol reemplazado o borrado tenía módulos con condiciones de visualización: lista de {path, type, summary}, con el path del módulo antes del cambio y summary el resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]}, sin valores crudos; la escritura se hace igual: replace no puede conservarlas porque los árboles no las admiten, así que vuelve a ponerlas con nexo-mcp-set-divi-conditions). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
+				'EN UN LAYOUT (ver abajo) replace y delete avisan de lo que se pierde también con dropped_post_content (lista de {path, type: divi/post-content} del subárbol reemplazado o borrado, con el path antes del cambio) y, si un CUERPO se queda sin ningún divi/post-content, con warnings (un cuerpo sin él REEMPLAZA el contenido de las páginas a las que se asigne); la escritura se hace igual. En un layout además se admiten divi/post-content, divi/post-title y divi/menu como hijos de una columna (ver nexo-mcp-create-divi-layout).',
+				$this->divi_layout_note(),
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_layout_denied, nexo_mcp_divi_post_type_denied, nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
 			)
 		);
 	}
@@ -2338,6 +2738,14 @@ final class ExtendedAbilityRegistrar {
 	 * @param string   $status   Estado pedido.
 	 */
 	private function can_set_copy_status( \WP_Post $copy, int $original, string $status ): bool {
+		// La copia de un layout del Theme Builder cambia lo que ve todo el sitio al publicarla: el permiso del Theme Builder
+		// (no el `edit_post` de una página), el módulo de publicación y poder publicar.
+		if ( DiviLayoutGuard::is_layout( $copy ) ) {
+			return $this->policy->can_write_divi_theme_builder()
+				&& $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'read' )
+				&& ( 'publish' !== $status || current_user_can( 'publish_posts' ) );
+		}
+
 		$target = get_post( $original ) instanceof \WP_Post ? $original : (int) $copy->ID;
 
 		if ( ! $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'edit_post', $target ) ) {
@@ -2751,7 +3159,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset', 'set-divi-template', 'delete-divi-template', 'restore-divi-template' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),

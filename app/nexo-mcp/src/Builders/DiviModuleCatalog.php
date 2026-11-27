@@ -57,6 +57,17 @@ final class DiviModuleCatalog {
 	);
 
 	/**
+	 * Módulos que sólo se admiten dentro de un layout del Theme Builder (hojas de columna; D9 de `divi-theme-builder.md`).
+	 *
+	 * Rutas verificadas en Divi 5.19.1 (L4 (e)). Una página, un preset o el catálogo dinámico NO los conocen: `has()`,
+	 * `modules()`, `children()` y las rutas sólo los incluyen con `$layout = true`. Quedan fuera los de ancho completo
+	 * (`divi/fullwidth-post-content|post-title|menu`).
+	 *
+	 * @var array<int, string>
+	 */
+	public const LAYOUT_MODULES = array( 'divi/post-content', 'divi/post-title', 'divi/menu' );
+
+	/**
 	 * Esquemas de URL admitidos (las rutas relativas deben empezar por `/`, `#` o `?`).
 	 *
 	 * @var array<int, string>
@@ -69,46 +80,57 @@ final class DiviModuleCatalog {
 	 * - plain: texto sin marcado. rich: HTML con lista corta de etiquetas.
 	 * - link: URL de enlace (vacía = sin enlace). media_url: URL http/https o relativa, no vacía. src: id de adjunto o media_url.
 	 * - color, size, size_or_empty, onoff, family, weight, icon_unicode.
+	 * - menu_id: id de un menú de navegación que existe (cadena de dígitos; sólo `divi/menu`). date_format: formato de fecha de PHP (hasta 30 caracteres).
 	 *
 	 * @var array<int, string>
 	 */
-	public const SCALARS = array( 'plain', 'rich', 'link', 'media_url', 'src', 'color', 'size', 'size_or_empty', 'onoff', 'family', 'weight', 'icon_unicode' );
+	public const SCALARS = array( 'plain', 'rich', 'link', 'media_url', 'src', 'color', 'size', 'size_or_empty', 'onoff', 'family', 'weight', 'icon_unicode', 'menu_id', 'date_format' );
 
 	/**
 	 * Nombres de bloque de los módulos de contenido que admite una columna.
 	 *
+	 * @param bool $layout Con true, también los módulos de layout del Theme Builder.
+	 *
 	 * @return array<int, string>
 	 */
-	private static function column_children(): array {
-		return array_values( array_diff( self::CONTENT_MODULES, array( 'divi/icon-list-item' ) ) );
+	private static function column_children( bool $layout = false ): array {
+		$children = array_values( array_diff( self::CONTENT_MODULES, array( 'divi/icon-list-item' ) ) );
+
+		return $layout ? array_merge( $children, self::LAYOUT_MODULES ) : $children;
 	}
 
 	/**
 	 * Todos los módulos del catálogo.
 	 *
+	 * @param bool $layout Con true, también los módulos de layout del Theme Builder.
+	 *
 	 * @return array<int, string>
 	 */
-	public static function modules(): array {
-		return array_merge( self::STRUCTURE, self::CONTENT_MODULES );
+	public static function modules( bool $layout = false ): array {
+		$modules = array_merge( self::STRUCTURE, self::CONTENT_MODULES );
+
+		return $layout ? array_merge( $modules, self::LAYOUT_MODULES ) : $modules;
 	}
 
 	/**
 	 * Indica si el módulo está en el catálogo.
 	 *
-	 * @param string $type Nombre de bloque (`divi/text`).
+	 * @param string $type   Nombre de bloque (`divi/text`).
+	 * @param bool   $layout Con true, también los módulos de layout del Theme Builder.
 	 */
-	public static function has( string $type ): bool {
-		return in_array( $type, self::modules(), true );
+	public static function has( string $type, bool $layout = false ): bool {
+		return in_array( $type, self::modules( $layout ), true );
 	}
 
 	/**
 	 * Hijos que admite un padre (`ROOT` para la lista raíz); vacío para hojas y tipos desconocidos.
 	 *
-	 * @param string $type Nombre de bloque del padre.
+	 * @param string $type   Nombre de bloque del padre.
+	 * @param bool   $layout Con true, la columna admite además los módulos de layout del Theme Builder.
 	 *
 	 * @return array<int, string>
 	 */
-	public static function children( string $type ): array {
+	public static function children( string $type, bool $layout = false ): array {
 		switch ( $type ) {
 			case self::ROOT:
 				return array( 'divi/placeholder', 'divi/section' );
@@ -119,7 +141,7 @@ final class DiviModuleCatalog {
 			case 'divi/row':
 				return array( 'divi/column' );
 			case 'divi/column':
-				return self::column_children();
+				return self::column_children( $layout );
 			case 'divi/icon-list':
 				return array( 'divi/icon-list-item' );
 			default:
@@ -130,12 +152,13 @@ final class DiviModuleCatalog {
 	/**
 	 * Rutas de contenido de un módulo y la especificación de su valor.
 	 *
-	 * @param string $type Nombre de bloque.
+	 * @param string $type   Nombre de bloque.
+	 * @param bool   $layout Con true, también las rutas de los módulos de layout del Theme Builder.
 	 *
 	 * @return array<string, mixed>
 	 */
-	public static function content_paths( string $type ): array {
-		if ( ! self::has( $type ) ) {
+	public static function content_paths( string $type, bool $layout = false ): array {
+		if ( ! self::has( $type, $layout ) ) {
 			return array();
 		}
 
@@ -214,7 +237,31 @@ final class DiviModuleCatalog {
 				$paths['content.innerContent'] = 'plain';
 				$paths['icon.innerContent']    = self::icon_glyph();
 				break;
+			case 'divi/post-title':
+				$paths['title.advanced.showTitle']        = 'onoff';
+				$paths['meta.advanced.showMeta']          = 'onoff';
+				$paths['meta.advanced.showAuthor']        = 'onoff';
+				$paths['meta.advanced.showDate']          = 'onoff';
+				$paths['meta.advanced.showCategories']    = 'onoff';
+				$paths['meta.advanced.showCommentsCount'] = 'onoff';
+				$paths['meta.advanced.dateFormat']        = 'date_format';
+				$paths['image.advanced.enabled']          = 'onoff';
+				break;
+			case 'divi/menu':
+				$paths['menu.advanced.menuId']     = 'menu_id';
+				$paths['logo.innerContent']        = array(
+					'object' => array(
+						'src'        => 'src',
+						'alt'        => 'plain',
+						'linkUrl'    => 'link',
+						'linkTarget' => 'onoff',
+					),
+				);
+				$paths['cartIcon.advanced.show']   = 'onoff';
+				$paths['searchIcon.advanced.show'] = 'onoff';
+				break;
 			default:
+				// `divi/post-content` no tiene contenido que editar: sólo la etiqueta del administrador.
 				break;
 		}
 
@@ -224,12 +271,13 @@ final class DiviModuleCatalog {
 	/**
 	 * Rutas de diseño (valor de escritorio) de un módulo y la especificación de su valor.
 	 *
-	 * @param string $type Nombre de bloque.
+	 * @param string $type   Nombre de bloque.
+	 * @param bool   $layout Con true, también las rutas de los módulos de layout del Theme Builder.
 	 *
 	 * @return array<string, mixed>
 	 */
-	public static function design_paths( string $type ): array {
-		if ( ! self::has( $type ) || 'divi/placeholder' === $type || 'divi/icon-list-item' === $type ) {
+	public static function design_paths( string $type, bool $layout = false ): array {
+		if ( ! self::has( $type, $layout ) || 'divi/placeholder' === $type || 'divi/icon-list-item' === $type ) {
 			return array();
 		}
 
@@ -290,6 +338,13 @@ final class DiviModuleCatalog {
 			case 'divi/icon-list':
 				$paths['icon.advanced.color'] = 'color';
 				$paths['icon.advanced.size']  = 'size';
+				break;
+			case 'divi/post-title':
+				$paths['title.decoration.font.font'] = self::font( true );
+				$paths['module.advanced.text.text']  = array( 'object' => array( 'color' => array( 'enum' => array( 'light', 'dark' ) ) ) );
+				break;
+			case 'divi/menu':
+				$paths['module.advanced.text.text'] = array( 'object' => array( 'color' => array( 'enum' => array( 'light', 'dark' ) ) ) );
 				break;
 			default:
 				break;
