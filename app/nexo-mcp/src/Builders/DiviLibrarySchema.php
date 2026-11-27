@@ -283,6 +283,28 @@ final class DiviLibrarySchema {
 	}
 
 	/**
+	 * Bloque raíz del ítem si se puede referenciar con `divi/global-layout`: existe, es de la biblioteca, está publicado (Divi no
+	 * renderiza un global en borrador, privado o en la papelera, L2), es global y es una sección, una fila o un módulo. Si no, null.
+	 *
+	 * @param int $id Ítem.
+	 */
+	public function global_block( int $id ): ?string {
+		$post = get_post( $id );
+
+		if ( ! $post instanceof \WP_Post || self::POST_TYPE !== $post->post_type || 'publish' !== $post->post_status || ! $this->is_global( $id ) ) {
+			return null;
+		}
+
+		$read = $this->read( $id );
+
+		if ( 'section' === $read['type'] || 'row' === $read['type'] ) {
+			return 'divi/' . $read['type'];
+		}
+
+		return 'module' === $read['type'] && DiviModuleCatalog::has( $read['module_type'] ) ? $read['module_type'] : null;
+	}
+
+	/**
 	 * La alternativa de Divi para globales importados de Divi 4, a partir de las dos metas.
 	 *
 	 * @param mixed $module_type      `_et_pb_module_type`.

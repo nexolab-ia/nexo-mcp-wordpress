@@ -14,7 +14,7 @@ namespace NexoDev\NexoMCP\Builders;
  * {@see DiviTreeValidator::validate_tree()} a bloques con la forma de `parse_blocks()`.
  *
  * Cada módulo lleva `builderVersion` (la versión de Divi instalada) primero en sus atributos,
- * salvo `divi/placeholder`, que Divi guarda sin atributos. Los hijos se separan con saltos de
+ * salvo `divi/placeholder` y la referencia `divi/global-layout`, que Divi guarda sin él. Los hijos se separan con saltos de
  * línea, como el contenido que escribe Divi.
  */
 final class Divi5BlockBuilder {
@@ -46,7 +46,7 @@ final class Divi5BlockBuilder {
 		foreach ( $nodes as $node ) {
 			$attrs = isset( $node['attrs'] ) && is_array( $node['attrs'] ) ? $node['attrs'] : array();
 
-			if ( '' !== $version && 'divi/placeholder' !== $node['type'] ) {
+			if ( '' !== $version && ! in_array( $node['type'], array( 'divi/placeholder', DiviModuleCatalog::GLOBAL_REF ), true ) ) {
 				$attrs = array_merge( array( 'builderVersion' => $version ), $attrs );
 			}
 
