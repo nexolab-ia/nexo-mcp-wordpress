@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.14.0
+Stable tag: 1.14.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,9 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.14.1 =
+* Correcciones visuales y de pruebas del panel de Nexo MCP; sin cambio funcional. El chip «Riesgo alto» ya no se parte bajo el nombre del módulo en el Resumen, los nombres de herramienta largos no se cortan en la tabla de Actividad, el estilo de los pasos de Conectar sólo alcanza esa lista y la pantalla de autorización usa variables de color.
 
 = 1.14.0 =
 * Cambio visual, sin cambio funcional: el panel de Nexo MCP se rediseñó con identidad propia. Arriba queda fija la banda del mapa (Tu IA · OAuth 2.1 · PKCE · WordPress · módulos activos) con el estado en texto e icono y los botones «Conectar una IA» y «Probar OAuth». Las pestañas pasan a cinco: Resumen (módulos agrupados, accesos y actividad reciente), Conectar, Accesos, Módulos y Sistema (actividad, licencia, actualizaciones, endpoint y soporte).
