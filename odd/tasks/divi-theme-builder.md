@@ -26,8 +26,8 @@ Fase D8, la última del soporte de Divi 5 (ver `odd/tasks/divi-5.md`, S2). Rama 
 - [x] T7 (S1-S3) Docs (README/EQUIVALENCIAS/readme.txt con los avisos: una plantilla gana, cuerpo sin contenido, layouts no `publish`, 7 días, roles de Divi), e2e en `prueba_adaptadores.sh` sección 7j (SKIP sin Divi 5; anónimo contra 5594/404/`?s=`/categoría, carrito con y sin `divi/post-content`, restauración como L2) y versión 1.12.0 + prueba de coincidencia. Ruta: worker. Risk: bajo.
 - [x] T8 (S2) [D8b] Scope `mcp:divi_library` + `PermissionPolicy::can_write_divi_library( id )` (mismo patrón que T4). Ruta: padre inline. Risk: item 2. Commit: a5b3c00.
 - [x] T9 (S1, S3) [D8b] `DiviLibrarySchema` + `list-/get-/save-/delete-divi-library-item` (alta por `et_pb_create_layout`, metas y términos como los del VB: `layout_type`, `scope`, `module_width`, `_et_pb_template_type`, `_et_pb_module_type`, `_et_pb_use_divi_5`, `_et_pb_excluded_global_options`). Ruta: worker (context backstop). Risk: item 1. Commit: 63c8005, 2321ced, 14c7a62, d9cf56a, 45018fb, d458bb9.
-- [ ] T10 (S1, S3) [D8b] `insert-divi-library-item` (copia/referencia global, con el validador ampliado para `divi/global-layout`), edición de ítems globales con `confirm_global`, lista de páginas afectadas y respaldo; sin importar/exportar. Ruta: worker + review nativa del padre. Risk: alto (un ítem global cambia muchas páginas sin tocarlas).
-- [ ] T11 (S1-S3) [D8b] Docs, e2e 7k (ítem global compartido por dos páginas, edición, borrado que despega, restauración), versión 1.13.0 con prueba de coincidencia que exija > 1.12.0 y mencione `mcp:divi_library` en el changelog (aviso R3-001 de `review-fdb16298ee4e671f`: sin esa subida, los sitios en 1.12.0 no reciben la capacidad); avisos de T9 en L14: probar en el VB la forma guardada de filas y módulos, y el duplicado de categoría por slug). Ruta: worker. Risk: bajo.
+- [x] T10 (S1, S3) [D8b] `insert-divi-library-item` (copia/referencia global, con el validador ampliado para `divi/global-layout`), edición de ítems globales con `confirm_global`, lista de páginas afectadas y respaldo; sin importar/exportar. Ruta: worker + review nativa del padre. Risk: alto (un ítem global cambia muchas páginas sin tocarlas). Commit: 4284502, 9663b15, 987dbc8, 1185a68, 90f045b, 7789eb5.
+- [ ] T11 (S1-S3) [D8b] Docs, e2e 7k (ítem global compartido por dos páginas, edición, borrado que despega, restauración), versión 1.13.0 con prueba de coincidencia que exija > 1.12.0 y mencione `mcp:divi_library` en el changelog (aviso R3-001 de `review-fdb16298ee4e671f`: sin esa subida, los sitios en 1.12.0 no reciben la capacidad); avisos de T9 en L14: probar en el VB la forma guardada de filas y módulos, y el duplicado de categoría por slug); avisos de T10 en L15: ocultar el título de `affected_pages` sin `read_post`, un solo escaneo de uso por llamada, y la lista de lo que la 7k debe probar en vivo). Ruta: worker. Risk: bajo.
 
 ## Log
 
@@ -119,3 +119,36 @@ Fase D8, la última del soporte de Divi 5 (ver `odd/tasks/divi-5.md`, S2). Rama 
   - `divi/global-layout` no pasa el validador actual.
 
   Comprobaciones del padre en el docker: PHPUnit 2860 OK (1 deprecación), PHPCS 0, PHPStan sin errores. Siguiente: T10.
+- L15 (2026-11-26): T10 hecha por un worker. Commits:
+  - 4284502: el validador acepta `divi/global-layout` `{globalModule, blockName}` sólo hacia globales publicados de tipo sección, fila o módulo.
+  - 9663b15: `DiviLibraryUsage`, para saber qué páginas usan un global.
+  - 987dbc8: save, delete y restore de globales con `confirm_global` y `affected_pages`.
+  - 1185a68: `insert-divi-library-item` (modo copia o global; va por `Divi5SectionEditor`, la copia de trabajo, el bloqueo y el respaldo; permiso en dos capas).
+  - 90f045b: deja escrito por qué no pedimos `edit_global_library` para todos los ítems (aviso 3 de L13). La ruta de Divi no sabe qué ítem toca y nosotros sí.
+
+  Decisión sobre el borrado: confiamos en el despegue que ya hace Divi (`pre_trash_post` → `GlobalLayout::preserve_instances_before_delete`), con estas guardas: `pages_forbidden`, `detach_unavailable`, `detach_failed`, reversión y `still_referenced`.
+
+  Verificación en vivo del worker en el docker: dos páginas, edición con confirm_global y borrado con despegue, todo OK. INCIDENTE: su primer script de limpieza borró de la base del docker los posts con ID < 62 (`post_parent IN (0)` con la lista vacía). Se perdieron los posts de ejemplo de WP y las páginas de WooCommerce. El worker recreó las de Woo (tienda 6714, carrito 6715, finalizar compra 6716, mi cuenta 6718, reembolso 6717 en borrador) y actualizó las opciones. Los posts de ejemplo de WP no se recuperaron. Decidir antes de la e2e de T11 si se reconstruye el docker.
+
+  Verificador independiente: sin bloqueos; sus avisos los cierra 7789eb5:
+  - A1: un error del escaneo cuenta como uso desconocido (`nexo_mcp_divi_library_usage_unknown`) y no se escribe nada;
+  - A2: un borrado o un guardado fallido no pierde el respaldo anterior;
+  - A3: las descripciones aclaran que sin copia de trabajo por defecto se escribe en vivo y cómo queda un borrado a medias;
+  - A4: la caché se vacía en lotes hasta 500 páginas y se informa `cache_not_cleared`;
+  - la verificación previa al borrado cubre papelera, revisiones y auto-drafts, como el despegue real de Divi;
+  - borrar un ítem no global no revisa el uso, porque las páginas tienen una copia.
+
+  Review nativa `review-d7a0210acf1a07a4` (e5c2de3..7789eb5; lentes riesgo, resiliencia y fiabilidad; escalada item 1): aprobada y confirmada. Sus avisos pasan a T11:
+  - R1: `affected_pages` muestra títulos de posts privados o en borrador sin comprobar `read_post`;
+  - R4: el escaneo de uso se repite con el bloqueo tomado; usar un solo escaneo y traer sólo el ID de las filas que no coinciden.
+
+  Lo que la 7k debe probar en vivo, según el worker y el verificador:
+  - un global en dos páginas: edición y borrado con despegue;
+  - `pages_forbidden`;
+  - los filtros SQL reales;
+  - insertar en la copia de trabajo y publicar;
+  - un global privado, en borrador o en la papelera deja de mostrarse;
+  - restaurar no vuelve a enlazar;
+  - el CSS después de editar un global.
+
+  Comprobaciones del padre en el docker: PHPUnit 2939 OK (1 deprecación), PHPCS 0, PHPStan sin errores. Siguiente: T11.

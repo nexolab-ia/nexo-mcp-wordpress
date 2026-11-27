@@ -52,7 +52,7 @@ final class DiviLibrarySchema {
 	 */
 	public const LIVE_STATUSES = array( 'publish', 'draft', 'private', 'pending', 'future' );
 
-	private const KEYS = array( 'id', 'title', 'type', 'scope', 'nodes', 'categories', 'replace_foreign' );
+	private const KEYS = array( 'id', 'title', 'type', 'scope', 'nodes', 'categories', 'replace_foreign', 'confirm_global' );
 
 	/**
 	 * Términos del ítem: fn( int $id, string $taxonomy ): array<int, string>|\WP_Error (nombres o slugs).
@@ -96,7 +96,7 @@ final class DiviLibrarySchema {
 	 * @param mixed                                   $input   Entrada recibida.
 	 * @param array{type: string, scope: string}|null $current Lo que ya tiene el ítem, o null en un alta.
 	 *
-	 * @return array{title: string|null, type: string, scope: string, categories: array<int, string>|null, nodes: mixed, replace_foreign: bool}|\WP_Error
+	 * @return array{title: string|null, type: string, scope: string, categories: array<int, string>|null, nodes: mixed, replace_foreign: bool, confirm_global: bool}|\WP_Error
 	 */
 	public function parse_save( $input, ?array $current = null ) {
 		if ( ! is_array( $input ) ) {
@@ -139,6 +139,12 @@ final class DiviLibrarySchema {
 			return $this->error( 'replace_foreign', __( 'debe ser true o false.', 'nexo-mcp' ) );
 		}
 
+		$confirm = $input['confirm_global'] ?? false;
+
+		if ( ! is_bool( $confirm ) ) {
+			return $this->error( 'confirm_global', __( 'debe ser true o false.', 'nexo-mcp' ) );
+		}
+
 		$has_nodes = array_key_exists( 'nodes', $input );
 
 		if ( null === $current && ! $has_nodes ) {
@@ -156,6 +162,7 @@ final class DiviLibrarySchema {
 			'categories'      => $categories,
 			'nodes'           => $input['nodes'] ?? null,
 			'replace_foreign' => $flag,
+			'confirm_global'  => $confirm,
 		);
 	}
 
@@ -280,6 +287,28 @@ final class DiviLibrarySchema {
 		}
 
 		return ! is_array( $scopes ) || in_array( 'global', $scopes, true ) || $this->meta_global( $id );
+	}
+
+	/**
+	 * Bloque raíz del ítem si se puede referenciar con `divi/global-layout`: existe, es de la biblioteca, está publicado (Divi no
+	 * renderiza un global en borrador, privado o en la papelera, L2), es global y es una sección, una fila o un módulo. Si no, null.
+	 *
+	 * @param int $id Ítem.
+	 */
+	public function global_block( int $id ): ?string {
+		$post = get_post( $id );
+
+		if ( ! $post instanceof \WP_Post || self::POST_TYPE !== $post->post_type || 'publish' !== $post->post_status || ! $this->is_global( $id ) ) {
+			return null;
+		}
+
+		$read = $this->read( $id );
+
+		if ( 'section' === $read['type'] || 'row' === $read['type'] ) {
+			return 'divi/' . $read['type'];
+		}
+
+		return 'module' === $read['type'] && DiviModuleCatalog::has( $read['module_type'] ) ? $read['module_type'] : null;
 	}
 
 	/**

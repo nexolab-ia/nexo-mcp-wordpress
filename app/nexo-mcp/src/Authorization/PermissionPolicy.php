@@ -233,6 +233,14 @@ final class PermissionPolicy {
 	 * (o, como Divi, un módulo con `_et_pb_excluded_global_options`: un global importado de Divi 4) pide `edit_global_library`,
 	 * porque cambiarlo cambia todas las páginas que lo usan.
 	 *
+	 * NO se alinea con la ruta `/divi-library/save` de Divi 5.19.1, que pide `edit_global_library` para CUALQUIER ítem
+	 * (`DiviLibraryController::save_permission`): esa ruta es la del guardado del Visual Builder, compartida con los módulos
+	 * globales, y no distingue qué ítem toca. Aquí sí se sabe (los términos y metas del ítem, fallando cerrado si no se pueden
+	 * leer), y cambiar un ítem NO global sólo afecta a ese ítem (las páginas llevan una copia), así que el permiso global se
+	 * pide exactamente donde hay efecto sobre otras páginas: actualizar, borrar o restaurar un global, y también insertarlo
+	 * (por copia o por referencia) con `insert-divi-library-item`. Pedirlo siempre sólo dejaría sin editar sus propios ítems a
+	 * los roles que Divi sí deja usar `divi_library`/`save_library`; los ítems no globales siguen exigiendo `edit_post`.
+	 *
 	 * @param int|null $item_id Ítem de la biblioteca, o null para dar de alta uno nuevo.
 	 */
 	public function can_write_divi_library( ?int $item_id = null ): bool {

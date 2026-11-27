@@ -49,7 +49,7 @@ final class DiviLibrarySaveToolTest extends NexoTestCase implements DiviLibraryI
 		$this->assertFalse( $tool['meta']['annotations']['readonly'] );
 		$this->assertTrue( $tool['meta']['annotations']['destructive'], 'actualizar reemplaza el contenido' );
 		$this->assertFalse( $tool['input_schema']['additionalProperties'] );
-		$this->assertSame( array( 'id', 'title', 'type', 'scope', 'nodes', 'categories', 'replace_foreign' ), array_keys( $tool['input_schema']['properties'] ) );
+		$this->assertSame( array( 'id', 'title', 'type', 'scope', 'nodes', 'categories', 'replace_foreign', 'confirm_global' ), array_keys( $tool['input_schema']['properties'] ) );
 		$this->assertSame( array( 'layout', 'section', 'row', 'module' ), $tool['input_schema']['properties']['type']['enum'] );
 		$this->assertSame( array( 'non_global', 'global' ), $tool['input_schema']['properties']['scope']['enum'] );
 		$this->assertSame( 100, $tool['input_schema']['properties']['title']['maxLength'] );

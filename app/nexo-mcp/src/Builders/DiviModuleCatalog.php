@@ -68,6 +68,14 @@ final class DiviModuleCatalog {
 	public const LAYOUT_MODULES = array( 'divi/post-content', 'divi/post-title', 'divi/menu' );
 
 	/**
+	 * Referencia a un ítem global de la biblioteca (T10): `<!-- wp:divi/global-layout {"globalModule":"<id>","blockName":"<módulo>"} /-->`.
+	 *
+	 * NO es un módulo del catálogo: `has()`, `modules()` y las rutas la ignoran y sólo
+	 * {@see DiviTreeValidator::with_global_refs()} la admite, con una forma cerrada.
+	 */
+	public const GLOBAL_REF = 'divi/global-layout';
+
+	/**
 	 * Esquemas de URL admitidos (las rutas relativas deben empezar por `/`, `#` o `?`).
 	 *
 	 * @var array<int, string>
@@ -147,6 +155,26 @@ final class DiviModuleCatalog {
 			default:
 				return array();
 		}
+	}
+
+	/**
+	 * Padres donde cabe la referencia global a un bloque raíz (`divi/section`, `divi/row` o un módulo de contenido); vacío si
+	 * el bloque no se puede referenciar.
+	 *
+	 * @param string $block_name Bloque del ítem global (`blockName` de la referencia).
+	 *
+	 * @return array<int, string>
+	 */
+	public static function global_ref_parents( string $block_name ): array {
+		if ( 'divi/section' === $block_name ) {
+			return array( self::ROOT, 'divi/placeholder' );
+		}
+
+		if ( 'divi/row' === $block_name ) {
+			return array( 'divi/section' );
+		}
+
+		return in_array( $block_name, self::column_children(), true ) ? array( 'divi/column' ) : array();
 	}
 
 	/**

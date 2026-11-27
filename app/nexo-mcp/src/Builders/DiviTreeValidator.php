@@ -116,6 +116,21 @@ final class DiviTreeValidator {
 	private $menu_exists;
 
 	/**
+	 * Ítem global publicado de la biblioteca: fn( int $id ): ?string (su bloque raíz, o null si no es uno usable). Sólo se llama con
+	 * una referencia `divi/global-layout` y {@see self::with_global_refs()}; una función que lanza cuenta como «no existe».
+	 *
+	 * @var callable
+	 */
+	private $global_item;
+
+	/**
+	 * Si se admiten referencias `divi/global-layout` (T10).
+	 *
+	 * @var bool
+	 */
+	private bool $global_refs = false;
+
+	/**
 	 * Si el árbol es el de un layout del Theme Builder: admite además {@see DiviModuleCatalog::LAYOUT_MODULES}.
 	 *
 	 * @var bool
@@ -172,12 +187,14 @@ final class DiviTreeValidator {
 	 * @param callable|null $presets          fn(): array, catálogo de presets (sólo se llama si un nodo lleva `preset`). Por omisión, la opción de Divi sin migrar.
 	 * @param callable|null $module_groups    fn( string $module ): array<string, string>, grupos de opciones del módulo. Por omisión, Divi.
 	 * @param callable|null $menu_exists      fn( int $id ): bool, si existe un menú de navegación con ese id. Por omisión, `wp_get_nav_menus()`; una función que lanza cuenta como «no existe».
+	 * @param callable|null $global_item      fn( int $id ): ?string, bloque raíz de un ítem global publicado de la biblioteca. Por omisión, {@see DiviLibrarySchema::global_block()}.
 	 */
-	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null, ?callable $presets = null, ?callable $module_groups = null, ?callable $menu_exists = null ) {
+	public function __construct( ?callable $shortcode_exists = null, ?callable $attachment_url = null, ?callable $presets = null, ?callable $module_groups = null, ?callable $menu_exists = null, ?callable $global_item = null ) {
 		$this->shortcode_exists = $shortcode_exists ?? static fn( string $name ): bool => shortcode_exists( $name );
 		$this->attachment_url   = $attachment_url ?? static fn( int $id ) => wp_get_attachment_url( $id );
 		$this->presets          = $presets ?? static fn(): array => (array) DiviPresetStore::divi_get_data();
 		$this->module_groups    = $module_groups ?? array( DiviPresetStore::class, 'divi_module_groups' );
+		$this->global_item      = $global_item ?? static fn( int $id ): ?string => ( new DiviLibrarySchema() )->global_block( $id );
 		$this->menu_exists      = $menu_exists ?? static function ( int $id ): bool {
 			foreach ( wp_get_nav_menus() as $menu ) {
 				if ( (int) $menu->term_id === $id ) {
@@ -197,6 +214,20 @@ final class DiviTreeValidator {
 	public function with_layout(): self {
 		$copy         = clone $this;
 		$copy->layout = true;
+
+		return $copy;
+	}
+
+	/**
+	 * Copia del validador que admite además referencias `divi/global-layout` a ítems globales de la biblioteca (T10).
+	 *
+	 * La forma es la que escribe Divi 5.19.1 (L2/L4 de `divi-theme-builder.md`): `{globalModule: "<id>", blockName: "<bloque>"}`, sin
+	 * `localAttrs`, hijos ni preset. El ítem debe existir, ser global y estar publicado (si no, Divi no lo renderiza), y su bloque
+	 * raíz debe ser `blockName`. El validador original no cambia.
+	 */
+	public function with_global_refs(): self {
+		$copy              = clone $this;
+		$copy->global_refs = true;
 
 		return $copy;
 	}
@@ -660,6 +691,10 @@ final class DiviTreeValidator {
 			return $this->error( 'nexo_mcp_divi_tree_invalid', $path . '.type', __( 'indica el tipo del módulo.', 'nexo-mcp' ) );
 		}
 
+		if ( $this->global_refs && DiviModuleCatalog::GLOBAL_REF === $type ) {
+			return $this->walk_global_ref( $node, $path, $parent_type );
+		}
+
 		if ( ! DiviModuleCatalog::has( $type, $this->layout ) ) {
 			return $this->error( 'nexo_mcp_divi_module_denied', $path . '.type', $this->denied_reason( $type ) );
 		}
@@ -728,6 +763,77 @@ final class DiviTreeValidator {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Valida una referencia `divi/global-layout`: forma cerrada, ítem global publicado y lugar donde cabe su bloque.
+	 *
+	 * @param array<string, mixed> $node        Nodo (ya con las claves de nodo comprobadas).
+	 * @param string               $path        Ruta del nodo.
+	 * @param string               $parent_type Padre.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function walk_global_ref( array $node, string $path, string $parent_type ) {
+		$code = 'nexo_mcp_divi_global_ref_invalid';
+
+		foreach ( array( 'children', 'preset' ) as $key ) {
+			if ( array_key_exists( $key, $node ) ) {
+				return $this->error( $code, $path . '.' . $key, __( 'una referencia a un ítem global no lleva hijos ni preset.', 'nexo-mcp' ) );
+			}
+		}
+
+		$attrs = $node['attrs'] ?? null;
+
+		$keys = is_array( $attrs ) ? array_map( 'strval', array_keys( $attrs ) ) : array();
+
+		sort( $keys );
+
+		if ( ! is_array( $attrs ) || array( 'blockName', 'globalModule' ) !== $keys ) {
+			return $this->error( $code, $path . '.attrs', __( 'debe ser exactamente {globalModule, blockName}: el id del ítem global y su bloque (divi/text, divi/row, divi/section…).', 'nexo-mcp' ) );
+		}
+
+		$id    = $attrs['globalModule'];
+		$block = $attrs['blockName'];
+
+		if ( ( ! is_int( $id ) && ! is_string( $id ) ) || ! ctype_digit( (string) $id ) || (int) $id <= 0 || ! is_string( $block ) ) {
+			return $this->error( $code, $path . '.attrs', __( 'globalModule debe ser el id entero positivo de un ítem global de la biblioteca y blockName un texto.', 'nexo-mcp' ) );
+		}
+
+		try {
+			$actual = ( $this->global_item )( (int) $id );
+		} catch ( \Throwable $e ) {
+			$actual = null;
+		}
+
+		if ( ! is_string( $actual ) || '' === $actual ) {
+			return $this->error( $code, $path . '.attrs', __( 'el ítem no existe, no es global o no está publicado (Divi no renderiza un global que no esté publicado).', 'nexo-mcp' ) );
+		}
+
+		if ( $actual !== $block ) {
+			return $this->error( $code, $path . '.attrs', sprintf( /* translators: %s: bloque del ítem. */ __( 'blockName no coincide con el bloque del ítem (%s).', 'nexo-mcp' ), $actual ) );
+		}
+
+		if ( ! in_array( $parent_type, DiviModuleCatalog::global_ref_parents( $block ), true ) ) {
+			return $this->error(
+				'nexo_mcp_divi_nesting_invalid',
+				$path . '.type',
+				sprintf(
+					/* translators: 1: bloque, 2: padre. */
+					__( 'una referencia a «%1$s» no cabe dentro de «%2$s».', 'nexo-mcp' ),
+					$block,
+					$parent_type
+				)
+			);
+		}
+
+		return array(
+			'type'  => DiviModuleCatalog::GLOBAL_REF,
+			'attrs' => array(
+				'globalModule' => (string) (int) $id,
+				'blockName'    => $block,
+			),
+		);
 	}
 
 	/**

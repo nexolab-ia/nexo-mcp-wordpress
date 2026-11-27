@@ -716,7 +716,16 @@ function wp_update_post( $data, $wp_error = false ) {
 
 if ( ! function_exists( 'has_filter' ) ) {
 	function has_filter( $hook, $callback = false ) {
-		return 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ? 10 : false;
+		if ( 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ) {
+			return 10;
+		}
+		// Los filtros que la prueba registró con `add_filter()`.
+		foreach ( WP_Test_State::$hooks as $registered ) {
+			if ( $registered[0] === $hook && $registered[1] === $callback ) {
+				return $registered[2];
+			}
+		}
+		return false;
 	}
 }
 if ( ! function_exists( 'kses_remove_filters' ) ) {
@@ -747,6 +756,15 @@ function wp_trash_post( $post_id ) {
 	}
 	if ( ! isset( WP_Test_State::$posts[ (int) $post_id ] ) ) {
 		return false;
+	}
+	// Como WordPress: un filtro `pre_trash_post` que devuelve algo distinto de null corta el borrado con ese valor.
+	foreach ( WP_Test_State::$hooks as $registered ) {
+		if ( 'pre_trash_post' === $registered[0] ) {
+			$check = call_user_func( $registered[1], null, WP_Test_State::$posts[ (int) $post_id ] );
+			if ( null !== $check ) {
+				return $check;
+			}
+		}
 	}
 	WP_Test_State::$posts[ (int) $post_id ]->post_status = 'trash';
 	return WP_Test_State::$posts[ (int) $post_id ];

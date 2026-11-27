@@ -62,6 +62,15 @@ final class DiviLibraryBackup {
 	}
 
 	/**
+	 * Quita el respaldo (sólo para dejar el ítem como estaba cuando una operación falla y antes no había ninguno).
+	 *
+	 * @param int $id Ítem.
+	 */
+	public function forget( int $id ): void {
+		delete_post_meta( $id, self::META_KEY );
+	}
+
+	/**
 	 * Lee el respaldo; null si no hay o no es un respaldo válido.
 	 *
 	 * @param int $id Ítem.

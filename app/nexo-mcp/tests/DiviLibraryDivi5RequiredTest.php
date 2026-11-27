@@ -36,6 +36,7 @@ final class DiviLibraryDivi5RequiredTest extends NexoTestCase implements DiviLib
 			'delete'  => array( 'delete-divi-library-item', array( 'id' => self::SECTION ) ),
 			'restore' => array( 'restore-divi-library-item', array( 'id' => self::SECTION ) ),
 			'update' => array( 'save-divi-library-item', array( 'id' => self::SECTION, 'title' => 'Nuevo' ) ),
+			'insert' => array( 'insert-divi-library-item', array( 'id' => self::SECTION, 'post_id' => self::PAGE, 'path' => '0', 'fingerprint' => 'x', 'position' => 'after' ) ),
 		);
 	}
 
