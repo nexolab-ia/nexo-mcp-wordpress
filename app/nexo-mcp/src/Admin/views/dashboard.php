@@ -1225,7 +1225,7 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 									<tr>
 										<td class="nexo-mcp-table__date"><?php echo esc_html( (string) $entry->occurred_at ); ?></td>
 										<td class="nexo-mcp-table__user"><?php echo esc_html( $entry->user_id ? '#' . (string) $entry->user_id : '—' ); ?></td>
-										<td><code><?php echo esc_html( (string) $entry->tool ); ?></code></td>
+										<td class="nexo-mcp-log__tool"><code><?php echo esc_html( (string) $entry->tool ); ?></code></td>
 										<td class="nexo-mcp-log__detail"><?php echo esc_html( '' !== $entry_detail ? $entry_detail : '—' ); ?></td>
 										<td><span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( $entry_status ) ); ?>"><span aria-hidden="true"><?php echo esc_html( $entry_label[1] ); ?></span> <?php echo esc_html( $entry_label[0] ); ?></span></td>
 									</tr>
