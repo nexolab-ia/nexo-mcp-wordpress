@@ -961,7 +961,7 @@ final class ExtendedAbilityRegistrar {
 			'Mandar un ítem de la biblioteca de Divi 5 a la papelera',
 			DiviLibraryToolSpec::delete_description(),
 			'write',
-			DiviLibraryToolSpec::id_schema( 'Ítem de la biblioteca que se manda a la papelera.' ),
+			DiviLibraryToolSpec::id_confirm_schema( 'Ítem de la biblioteca que se manda a la papelera.' ),
 			fn( array $input ) => $this->builders->delete_divi_library_item( $input ),
 			// Mandar a la papelera es delete_post, además de poder editar el ítem.
 			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
@@ -972,7 +972,7 @@ final class ExtendedAbilityRegistrar {
 			'Restaurar un ítem de la biblioteca de Divi 5 desde su respaldo',
 			DiviLibraryToolSpec::restore_description(),
 			'write',
-			DiviLibraryToolSpec::id_schema( 'Ítem de la biblioteca con un respaldo (también uno borrado, en la papelera).' ),
+			DiviLibraryToolSpec::id_confirm_schema( 'Ítem de la biblioteca con un respaldo (también uno borrado, en la papelera).' ),
 			fn( array $input ) => $this->builders->restore_divi_library_item( $input ),
 			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
 		);

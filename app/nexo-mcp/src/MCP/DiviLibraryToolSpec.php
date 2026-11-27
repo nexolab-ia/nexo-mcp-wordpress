@@ -131,13 +131,13 @@ final class DiviLibraryToolSpec {
 				'',
 				'ALTA (sin id): title (1 a 100 caracteres, sin < >), type (layout: una o más secciones; section: exactamente una sección; row: exactamente una fila; module: exactamente un módulo del catálogo) y nodes (lista de nodos como en nexo-mcp-create-divi-page: {type, attrs?, children?, preset?}; el árbol se guarda bajo un divi/placeholder y pasa por el mismo validador de Divi 5 que las páginas, sin los módulos del Theme Builder). Opcionales: scope (non_global por omisión, o global), categories (hasta 10 nombres, sin comas; se crean si no existen). El ítem nace publicado.',
 				'',
-				'ACTUALIZACIÓN (con id): se cambia lo que se pase entre title, nodes (reemplaza TODO el contenido) y categories (la lista completa; [] las quita); type y scope no se pueden cambiar (si se pasan deben coincidir). Un ítem GLOBAL no se actualiza (nexo_mcp_divi_library_global_blocked): cambiarlo cambia todas las páginas que lo usan y eso no lo hace el conector todavía. Si el contenido actual trae módulos que el conector no sabe representar (nexo-mcp-get-divi-library-item los lista en foreign), reemplazarlo exige replace_foreign: true (nexo_mcp_divi_library_foreign) y queda en el respaldo.',
+				'ACTUALIZACIÓN (con id): se cambia lo que se pase entre title, nodes (reemplaza TODO el contenido) y categories (la lista completa; [] las quita); type y scope no se pueden cambiar (si se pasan deben coincidir). Un ítem GLOBAL cambia todas las páginas que lo usan SIN tocarlas (Divi lo lee al renderizar): sin confirm_global: true no se actualiza (nexo_mcp_divi_library_global_blocked); con él se actualiza y la respuesta trae affected_pages ({count, pages [{id, title, post_type, status, working_copy_of?, editable}], truncated}: los publicados, borradores, privados y copias de trabajo que lo referencian), además del respaldo; hace falta también el permiso edit_global_library de Divi. Si el contenido actual trae módulos que el conector no sabe representar (nexo-mcp-get-divi-library-item los lista en foreign), reemplazarlo exige replace_foreign: true (nexo_mcp_divi_library_foreign) y queda en el respaldo.',
 				'',
 				'RESPALDO: antes de actualizar se guarda el estado anterior (título, estado, contenido, categorías y módulo; una sola copia, la del último cambio) en la meta _nexo_mcp_library_backup del ítem; sin respaldo no se escribe (nexo_mcp_divi_library_backup_failed). DESHACER: nexo-mcp-restore-divi-library-item con el id. Si la escritura falla a medias el ítem vuelve a su estado anterior (nexo_mcp_divi_library_save_failed); un alta a medias se borra.',
 				'',
-				'SALIDA: id, created, title, status, type, scope, categories, module_type, modified, nodes [{path, type, fingerprint}], previous ({title, categories} de antes; null al crear), backup ({operation, captured_at}; null al crear) y warnings.',
+				'SALIDA: id, created, title, status, type, scope, categories, module_type, modified, nodes [{path, type, fingerprint}], previous ({title, categories} de antes; null al crear), backup ({operation, captured_at}; null al crear), warnings y, si el ítem es global, affected_pages.',
 				'',
-				'ERRORES (no escriben nada, salvo que se diga): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), los de forma del árbol de Divi (nexo_mcp_divi_tree_invalid, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_module_unknown…), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_foreign (con data.foreign), nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
+				'ERRORES (no escriben nada, salvo que se diga): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path; también un confirm_global que no es true o false), los de forma del árbol de Divi (nexo_mcp_divi_tree_invalid, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_module_unknown…), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_foreign (con data.foreign), nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
 			)
 		);
 	}
@@ -192,6 +192,7 @@ final class DiviLibraryToolSpec {
 					'type'        => 'boolean',
 					'description' => 'Confirma reemplazar contenido que el conector no sabe representar (queda en el respaldo).',
 				),
+				'confirm_global'  => self::confirm_property(),
 			),
 			'additionalProperties' => false,
 		);
@@ -206,15 +207,15 @@ final class DiviLibraryToolSpec {
 			array(
 				'Manda UN ítem de la biblioteca de Divi 5 a la papelera de WordPress (no lo elimina) tras guardar un respaldo. ' . self::access(),
 				'',
-				'SÓLO ítems no globales: uno global (nexo_mcp_divi_library_global_blocked) lo usan otras páginas por referencia y borrarlo las cambia; eso no lo hace el conector todavía, hazlo en el Visual Builder. Si la papelera de WordPress está desactivada (EMPTY_TRASH_DAYS = 0) borrar sería permanente y no se hace (nexo_mcp_divi_library_trash_disabled).',
+				'ÍTEMS GLOBALES: los usan otras páginas por referencia. Sin confirm_global: true no se borra (nexo_mcp_divi_library_global_blocked). Con él, ANTES de mandarlo a la papelera Divi despega las instancias (su filtro pre_trash_post incrusta el contenido del ítem en cada página, como en el Visual Builder), así que las páginas conservan su contenido; el conector sólo lo permite si ese filtro existe (nexo_mcp_divi_library_detach_unavailable), si puedes editar TODAS las páginas que lo usan (nexo_mcp_divi_library_pages_forbidden, con data.pages) y comprueba después que no queda ninguna referencia (si queda, devuelve el ítem y da nexo_mcp_divi_library_detach_failed con data.pages). Restaurar el ítem después NO vuelve a enlazar las páginas despegadas. Hace falta además edit_global_library. Si la papelera de WordPress está desactivada (EMPTY_TRASH_DAYS = 0) borrar sería permanente y no se hace (nexo_mcp_divi_library_trash_disabled).',
 				'',
 				'ENTRADA: id (de nexo-mcp-list-divi-library).',
 				'',
 				'RESPALDO: antes de borrar se guarda el estado (título, estado, contenido, categorías y módulo; una sola copia) en la meta _nexo_mcp_library_backup del ítem; sin respaldo no se borra (nexo_mcp_divi_library_backup_failed). DESHACER: nexo-mcp-restore-divi-library-item con el id lo saca de la papelera y lo deja como estaba. Si la papelera falla el ítem queda como estaba (nexo_mcp_divi_library_save_failed).',
 				'',
-				'SALIDA: id, deleted, status (trash), title, type, scope, backup ({operation, captured_at}) y warnings.',
+				'SALIDA: id, deleted, status (trash), title, type, scope, backup ({operation, captured_at}), warnings y, si el ítem es global, affected_pages (las páginas que lo usaban, antes de despegarlas) y still_referenced (0).',
 				'',
-				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_trash_disabled, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
+				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_pages_forbidden, nexo_mcp_divi_library_detach_unavailable, nexo_mcp_divi_library_detach_failed, nexo_mcp_divi_library_trash_disabled, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
 			)
 		);
 	}
@@ -228,11 +229,11 @@ final class DiviLibraryToolSpec {
 			array(
 				'Devuelve UN ítem de la biblioteca de Divi 5 al estado de su respaldo (la meta _nexo_mcp_library_backup del propio ítem: título, estado, contenido, categorías y módulo). Sirve para deshacer nexo-mcp-save-divi-library-item y también tras nexo-mcp-delete-divi-library-item (el ítem borrado está en la papelera y se saca de ahí). Antes de escribir se guarda el estado de ahora como respaldo nuevo, así que restaurar dos veces alterna entre los dos estados. ' . self::access(),
 				'',
-				'SÓLO ítems no globales (nexo_mcp_divi_library_global_blocked). Sin respaldo, nexo_mcp_divi_library_no_backup. El tipo y el alcance no cambian.',
+				'Un ítem GLOBAL sólo se restaura con confirm_global: true (nexo_mcp_divi_library_global_blocked sin él): cambia todas las páginas que lo usan; la respuesta trae affected_pages. Sin respaldo, nexo_mcp_divi_library_no_backup. El tipo y el alcance no cambian.',
 				'',
 				'ENTRADA: id (de nexo-mcp-list-divi-library o de la salida de nexo-mcp-delete-divi-library-item).',
 				'',
-				'SALIDA: id, restored, title, status, type, scope, categories, module_type, modified, nodes, previous ({title, categories, status} de antes de restaurar), restored_from ({operation, captured_at} del respaldo usado), backup (el respaldo nuevo del estado anterior) y warnings. Si algo falla a medias el ítem vuelve a su estado anterior (nexo_mcp_divi_library_save_failed).',
+				'SALIDA: id, restored, title, status, type, scope, categories, module_type, modified, nodes, previous ({title, categories, status} de antes de restaurar), restored_from ({operation, captured_at} del respaldo usado), backup (el respaldo nuevo del estado anterior), warnings y, si el ítem es global, affected_pages. Si algo falla a medias el ítem vuelve a su estado anterior (nexo_mcp_divi_library_save_failed).',
 				'',
 				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_no_backup, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
 			)
@@ -258,6 +259,32 @@ final class DiviLibraryToolSpec {
 			),
 			'required'             => array( 'id' ),
 			'additionalProperties' => false,
+		);
+	}
+
+	/**
+	 * Esquema de una herramienta que recibe el id de un ítem y `confirm_global` (borrar y restaurar).
+	 *
+	 * @param string $description Descripción del id.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function id_confirm_schema( string $description ): array {
+		$schema                                 = self::id_schema( $description );
+		$schema['properties']['confirm_global'] = self::confirm_property();
+
+		return $schema;
+	}
+
+	/**
+	 * Propiedad `confirm_global`.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function confirm_property(): array {
+		return array(
+			'type'        => 'boolean',
+			'description' => 'Confirma cambiar un ítem GLOBAL, que cambia todas las páginas que lo usan sin tocarlas. Sin él, un ítem global se rechaza (nexo_mcp_divi_library_global_blocked).',
 		);
 	}
 }

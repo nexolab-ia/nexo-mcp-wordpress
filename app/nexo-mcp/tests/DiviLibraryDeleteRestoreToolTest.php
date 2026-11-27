@@ -40,7 +40,7 @@ final class DiviLibraryDeleteRestoreToolTest extends NexoTestCase implements Div
 			$this->assertFalse( $tool['meta']['annotations']['readonly'] );
 			$this->assertTrue( $tool['meta']['annotations']['destructive'], $name );
 			$this->assertFalse( $tool['input_schema']['additionalProperties'] );
-			$this->assertSame( array( 'id' ), array_keys( $tool['input_schema']['properties'] ) );
+			$this->assertSame( array( 'id', 'confirm_global' ), array_keys( $tool['input_schema']['properties'] ) );
 			$this->assertSame( array( 'id' ), $tool['input_schema']['required'] );
 
 			foreach ( array( 'mcp:divi_library', 'nexo_mcp_divi_library_denied', 'nexo_mcp_divi5_required', 'nexo_mcp_divi_library_global_blocked', 'nexo_mcp_divi_library_backup_failed', 'nexo_mcp_divi_library_save_failed', 'nexo_mcp_busy', '_nexo_mcp_library_backup', 'papelera' ) as $needle ) {
