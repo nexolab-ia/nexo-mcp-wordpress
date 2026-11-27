@@ -837,7 +837,29 @@ document.addEventListener('DOMContentLoaded', () => {
     '.nexo-mcp-discovery-alert__status'
   );
 
+  // Espejo del descubrimiento en el nodo OAuth de la banda del mapa. Sin
+  // HTTPS no hay nada que comprobar y el nodo conserva su aviso.
+  const mapDiscovery = document.querySelector('.nexo-mcp-map__discovery');
+
+  const paintMapDiscovery = (tone) => {
+    const text = mapDiscovery?.querySelector('.nexo-mcp-map__discovery-text');
+
+    if (!mapDiscovery || !text || '1' !== mapDiscovery.dataset.nexoHttps) {
+      return;
+    }
+
+    const painted = {
+      online: ['ok', nexoMcpAdmin.mapDiscoveryReady],
+      offline: ['warn', nexoMcpAdmin.mapDiscoveryBlocked],
+    }[tone] || ['wait', nexoMcpAdmin.mapDiscoveryUnknown];
+
+    mapDiscovery.dataset.state = painted[0];
+    text.textContent = painted[1];
+  };
+
   const paintDiscovery = (tone, label, hint) => {
+    paintMapDiscovery(tone);
+
     const state = discoveryCard?.querySelector('.nexo-mcp-discovery__state');
     const note = discoveryCard?.querySelector('.nexo-mcp-discovery__hint');
 
@@ -1190,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         announce(result.data.message);
-        button.closest('.nexo-mcp-credential-card')?.remove();
+        button.closest('.nexo-mcp-conn-card, .nexo-mcp-credential-card')?.remove();
       } catch (error) {
         announce(nexoMcpAdmin.genericError);
         button.disabled = false;
@@ -1529,16 +1551,33 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', id);
       url.searchParams.delete('settings-updated');
-      url.hash = '';
+      // Un enlace a una sección de otra pestaña (Sistema#…) conserva su ancla.
+      url.hash = link.hash;
       window.history.replaceState(null, '', url);
 
-      // Un enlace dentro del contenido (p. ej. «Empezar») deja la vista
-      // a media página; se sube hasta las pestañas.
-      if (!link.classList.contains('nexo-mcp-tab')) {
+      const section = link.hash.length > 1
+        ? document.getElementById(link.hash.slice(1))
+        : null;
+
+      if (section) {
+        section.scrollIntoView({ block: 'start' });
+      } else if (!link.classList.contains('nexo-mcp-tab')) {
+        // Un enlace dentro del contenido (p. ej. «Empezar») deja la vista
+        // a media página; se sube hasta las pestañas.
         nav?.scrollIntoView({ block: 'nearest' });
       }
     });
   });
+
+  // Un enlace antiguo (?tab=endpoint, ?tab=actividad…) llega con Sistema ya
+  // abierto por PHP y la sección a mostrar en `data-nexo-section`.
+  const legacySection = document.querySelector('[data-nexo-section]');
+
+  if (legacySection && window.location.hash.length < 2) {
+    document
+      .getElementById(legacySection.dataset.nexoSection)
+      ?.scrollIntoView({ block: 'start' });
+  }
 
   // Un ancla a algo que vive en otra pestaña (#nexo-mcp-reportar) la abre.
   if (window.location.hash.length > 1) {

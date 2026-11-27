@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "chosen": "04-mapa-claro.html",
+  "handoffs": {
+    "04-mapa-claro.html": {
+      "status": "implemented",
+      "queued": false,
+      "sentAt": "2026-11-27T13:39:12.486Z",
+      "startedAt": "2026-11-27T13:39:19.788Z",
+      "implementedAt": "2026-11-27T15:21:35.393Z",
+      "note": "Implementado en feat/panel-nexo (T1-T10, v1.14.0): banda del mapa, 5 pestañas, módulos, accesos, conectar, sistema, activación y autorización OAuth.",
+      "previewUrl": "http://localhost:8080/wp-admin/"
+    }
+  }
+}

@@ -3,52 +3,49 @@
  *
  * Todo cuelga de .nexo-mcp-admin (la pantalla) o .nexo-mcp-secret-dialog
  * (el diálogo, que vive fuera del contenedor) para no tocar el resto de
- * wp-admin. Tipografía Inter local: nada se pide a servidores externos.
+ * wp-admin. Tipografía del sistema: nada se pide a servidores externos.
  */
-
-@font-face {
-	font-family: "Inter";
-	font-style: normal;
-	font-weight: 400 600;
-	font-display: swap;
-	src: url("../fonts/inter-latin.woff2") format("woff2");
-}
 
 /* ------------------------------------------------------------------ Tokens */
 
 .nexo-mcp-admin,
 .nexo-mcp-secret-dialog {
-	--nexo-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--nexo-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 	--nexo-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-	--nexo-fg: #121212;
-	--nexo-fg-soft: #3a3a3a;
+	--nexo-fg: #0f172a;
+	--nexo-fg-soft: #334155;
 	--nexo-bg: #fff;
-	--nexo-muted: #f5f5f5;
-	--nexo-muted-soft: #fafafa;
-	--nexo-muted-fg: #6e6e6e;
-	--nexo-muted-fg-strong: #5c5c5c;
-	--nexo-border: #ebebeb;
-	--nexo-input: #d9d9d9;
+	--nexo-muted: #f1f5f9;
+	--nexo-muted-soft: #f8fafc;
+	--nexo-muted-fg: #475569;
+	--nexo-muted-fg-strong: #334155;
+	--nexo-border: #c7d2de;
+	--nexo-input: #64748b;
+	--nexo-primary: #0f766e;
+	--nexo-primary-hover: #115e59;
+	--nexo-primary-soft: #f0fdfa;
+	--nexo-accent: #22d3ee;
+	--nexo-accent-lt: #5eead4;
+	--nexo-focus: #4f46e5;
 	--nexo-ok: #047857;
-	--nexo-ok-dot: #10b981;
-	--nexo-ok-bg: #e7f7f2;
-	--nexo-ok-line: #b7eada;
-	--nexo-warn: #b45309;
-	--nexo-warn-dot: #f59e0b;
-	--nexo-warn-bg: #fef5e7;
-	--nexo-warn-soft: #fffaf3;
-	--nexo-warn-line: #fce2b6;
-	--nexo-err: #dc2626;
+	--nexo-ok-dot: #0f766e;
+	--nexo-ok-bg: #ecfdf5;
+	--nexo-ok-line: #6ee7b7;
+	--nexo-warn: #92400e;
+	--nexo-warn-dot: #d97706;
+	--nexo-warn-bg: #fef3c7;
+	--nexo-warn-soft: #fffbeb;
+	--nexo-warn-line: #d97706;
+	--nexo-err: #b91c1c;
 	--nexo-err-text: #b91c1c;
-	--nexo-err-bg: #fce9e9;
-	--nexo-err-soft: #fdf4f4;
-	--nexo-err-line: #f5bebe;
-	--nexo-radius: 16px;
-	--nexo-radius-md: 12px;
-	--nexo-gradient: linear-gradient(90deg, #22d3ee 0%, #3b82f6 35%, #6366f1 65%, #14b8a6 100%);
-	--nexo-hover: linear-gradient(120deg, #1e3a8a 0%, #4338ca 50%, #0f766e 100%);
-	--nexo-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.08);
-	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #121212;
+	--nexo-err-bg: #fee2e2;
+	--nexo-err-soft: #fef2f2;
+	--nexo-err-line: #fca5a5;
+	--nexo-radius: 8px;
+	--nexo-radius-md: 6px;
+	--nexo-hover: #115e59;
+	--nexo-shadow: none;
+	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #4f46e5;
 }
 
 /* -------------------------------------------------------------------- Base */
@@ -136,60 +133,167 @@
 	font-style: normal;
 }
 
-/* ------------------------------------------------------------------ Header */
+/* ----------------------------------------------------- Banda del mapa */
 
-.nexo-mcp-header {
-	position: relative;
+.nexo-mcp-map {
+	padding: 24px 32px 28px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-map__top {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-end;
+	align-items: center;
 	justify-content: space-between;
-	gap: 24px;
-	padding: 32px;
-	overflow: hidden;
-	border-radius: var(--nexo-radius);
-	background: var(--nexo-fg);
-	color: #fff;
+	gap: 16px 24px;
 }
 
-.nexo-mcp-header::after {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	height: 4px;
-	background: var(--nexo-gradient);
-	content: "";
-}
-
-.nexo-mcp-admin .nexo-mcp-header__brand {
+.nexo-mcp-admin .nexo-mcp-map__brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	margin: 0;
 	padding: 0;
-	line-height: 0;
+	color: var(--nexo-fg);
+	font-size: 22px;
+	line-height: 1.2;
 }
 
-.nexo-mcp-header__brand img {
-	display: block;
-	width: auto;
-	height: 32px;
+.nexo-mcp-map__brand b {
+	font-weight: 800;
 }
 
-.nexo-mcp-admin .nexo-mcp-header__meta {
+.nexo-mcp-map__brand-mark {
+	color: var(--nexo-muted-fg);
+	font-weight: 300;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__meta {
+	margin: 6px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
+}
+
+.nexo-mcp-map__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__action {
 	margin: 0;
-	text-align: right;
 }
 
-.nexo-mcp-header__meta span {
-	display: block;
-	font-size: 10px;
-	letter-spacing: 0.18em;
-	opacity: 0.6;
+.nexo-mcp-map__diagram {
+	display: grid;
+	grid-template-columns: 1fr 40px 1fr 40px 1.2fr 40px 1fr;
+	align-items: stretch;
+	margin: 24px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-map__node {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px 14px;
+	border: 1px solid var(--nexo-border);
+	border-top: 3px solid var(--nexo-accent);
+	border-radius: 2px;
+	background: var(--nexo-bg);
+}
+
+.nexo-mcp-map__node--hub {
+	border-top-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+}
+
+.nexo-mcp-map__kind {
+	color: var(--nexo-muted-fg);
+	font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	letter-spacing: 0.5px;
 	text-transform: uppercase;
 }
 
-.nexo-mcp-header__meta strong {
-	font-size: 18px;
-	font-weight: 500;
+.nexo-mcp-map__node strong {
+	margin: 2px 0 6px;
+	font-size: 16px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-map__state {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--nexo-ok);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.nexo-mcp-map__state[data-state='warn'] {
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-map__state[data-state='off'] {
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-map__state[data-state='wait'] {
+	color: var(--nexo-muted-fg-strong);
+}
+
+.nexo-mcp-map__ico {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	background: center / contain no-repeat;
+}
+
+.nexo-mcp-map__state[data-state='ok'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3Cpath d='M4.5 8.2 7 10.5l4.5-5' stroke='%23fff' stroke-width='1.8' fill='none'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='warn'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5 15 14H1z' fill='%23fcd34d' stroke='%2392400e'/%3E%3Cpath d='M8 6v4M8 11.6v1' stroke='%230f172a' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='off'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23b91c1c'/%3E%3Cpath d='M5 5l6 6M11 5l-6 6' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='wait'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='%23fff' stroke='%23475569' stroke-width='1.6'/%3E%3Cpath d='M5 8h6' stroke='%23475569' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__hint {
+	margin-top: 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* Líneas decorativas entre nodos: la flecha apunta hacia el destino. */
+.nexo-mcp-map__link {
+	position: relative;
+	align-self: center;
+	height: 0;
+	margin: 0;
+	border-top: 2px dashed var(--nexo-primary);
+}
+
+.nexo-mcp-map__link::after {
+	content: '';
+	position: absolute;
+	top: -6px;
+	right: -2px;
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	border-left: 8px solid var(--nexo-primary);
 }
 
 .nexo-mcp-admin .wp-header-end {
@@ -209,19 +313,21 @@
 	flex-wrap: wrap;
 	gap: 2px;
 	margin: 24px 0;
-	padding: 4px;
-	border-radius: var(--nexo-radius-md);
-	background: rgba(0, 0, 0, 0.05);
+	padding: 0;
+	border-bottom: 1px solid var(--nexo-border);
+	background: none;
 }
 
 .nexo-mcp-admin .nexo-mcp-tab {
 	display: inline-flex;
 	align-items: center;
-	padding: 6px 12px;
-	border-radius: 9px;
+	margin-bottom: -1px;
+	padding: 8px 14px;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
 	color: var(--nexo-muted-fg-strong);
-	font-size: 12px;
-	font-weight: 500;
+	font-size: 13px;
+	font-weight: 600;
 	line-height: 1.5;
 	text-decoration: none;
 	white-space: nowrap;
@@ -233,12 +339,13 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-tab[aria-current="page"] {
-	background: var(--nexo-bg);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	border-bottom-color: var(--nexo-primary);
+	background: none;
 	color: var(--nexo-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-tab:focus-visible {
+	border-radius: var(--nexo-radius-md);
 	box-shadow: var(--nexo-ring);
 }
 
@@ -311,13 +418,13 @@
 	gap: 6px;
 	padding: 2px 8px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
+	border-radius: 4px;
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-muted-fg);
 	font-family: var(--nexo-font);
 	font-size: 11px;
 	font-style: normal;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.5;
 	white-space: nowrap;
 }
@@ -377,7 +484,7 @@
 	box-shadow: none;
 	color: var(--nexo-fg);
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.4;
 	text-align: center;
 	text-decoration: none;
@@ -411,8 +518,8 @@
 .nexo-mcp-secret-dialog .button.button-primary,
 .nexo-mcp-secret-dialog .button.button-primary:focus,
 .nexo-mcp-secret-dialog .button.button-primary:active {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-fg);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary);
 	color: #fff;
 }
 
@@ -424,13 +531,18 @@
 	color: var(--nexo-err-text);
 }
 
-/* El hover degradado Nexo del diseño, en tonos que mantienen el contraste AA. */
+/* Hover: el secundario se tiñe de teal claro; el primario, de teal oscuro (AA). */
 .nexo-mcp-admin .button:hover,
+.nexo-mcp-secret-dialog .button:hover {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-fg);
+}
+
 .nexo-mcp-admin .button.button-primary:hover,
-.nexo-mcp-secret-dialog .button:hover,
 .nexo-mcp-secret-dialog .button.button-primary:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
+	border-color: var(--nexo-primary-hover);
+	background: var(--nexo-primary-hover);
 	color: #fff;
 }
 
@@ -520,12 +632,6 @@
 
 /* ---------------------------------------------------------- Resumen: estado */
 
-.nexo-mcp-status-grid {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 16px;
-}
-
 .nexo-mcp-status-card {
 	min-width: 0;
 	padding: 20px;
@@ -595,13 +701,276 @@
 	font-size: 12px;
 }
 
-/* --------------------------------------------------------- Resumen: tarjetas */
+/* ------------------------------------------- Resumen: módulos y costado */
 
-.nexo-mcp-summary {
+.nexo-mcp-overview {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-	gap: 16px;
+	grid-template-columns: minmax(0, 1fr) 360px;
+	gap: 40px;
 	align-items: start;
+}
+
+.nexo-mcp-admin .nexo-mcp-overview h2 {
+	margin: 0 0 2px;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 18px;
+}
+
+.nexo-mcp-overview__lead {
+	margin: 0 0 12px;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
+}
+
+.nexo-mcp-overview__group {
+	margin: 0 0 20px;
+}
+
+.nexo-mcp-admin .nexo-mcp-overview__group h3 {
+	margin: 0;
+	padding: 6px 0;
+	border-bottom: 2px solid var(--nexo-fg);
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.6px;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-modrows {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-modrow {
+	display: grid;
+	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+	gap: 12px;
+	align-items: center;
+	margin: 0;
+	padding: 9px 4px 9px 12px;
+	border-bottom: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-modrow--on {
+	box-shadow: inset 3px 0 0 var(--nexo-primary);
+}
+
+.nexo-mcp-modrow__name strong {
+	font-size: 14px;
+}
+
+.nexo-mcp-modrow__name .nexo-mcp-tag {
+	margin-left: 8px;
+}
+
+.nexo-mcp-modrow__scopes code,
+.nexo-mcp-asidecard__scopes code {
+	margin: 0 4px 4px 0;
+	padding: 0 6px;
+	border: 1px solid var(--nexo-border);
+	border-radius: 2px;
+	background: #e2e8f0;
+	font: 12px/1.6 var(--nexo-mono);
+}
+
+.nexo-mcp-modrow__scopes code {
+	border: 0;
+	background: none;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-modrow__state {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.nexo-mcp-modstate {
+	display: inline-flex;
+	gap: 4px;
+	align-items: center;
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.nexo-mcp-modstate .nexo-mcp-icon {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: none;
+}
+
+.nexo-mcp-modstate--on {
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-modstate--off {
+	color: var(--nexo-muted-fg-strong);
+}
+
+.nexo-mcp-modrow__link {
+	font-size: 12px;
+}
+
+.nexo-mcp-overview__block {
+	margin: 0 0 32px;
+	padding-top: 12px;
+	border-top: 3px solid var(--nexo-primary);
+}
+
+.nexo-mcp-asidecard {
+	padding: 10px 0;
+	border-bottom: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-asidecard header {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nexo-mcp-overview__meta {
+	margin: 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-asidecard__scopes {
+	margin: 6px 0 0;
+}
+
+.nexo-mcp-overview__empty {
+	margin: 0;
+	padding: 10px 0;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-timeline {
+	margin: 0 0 12px;
+	padding: 0 0 0 18px;
+	border-left: 2px solid #334155;
+	list-style: none;
+}
+
+.nexo-mcp-timeline__item {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0;
+	padding: 0 0 16px 8px;
+}
+
+.nexo-mcp-timeline__item::before {
+	content: "";
+	position: absolute;
+	top: 4px;
+	left: -26px;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--nexo-fg);
+	border-radius: 50%;
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-timeline__item--bad::before {
+	border-color: var(--nexo-err);
+	border-radius: 2px;
+	transform: rotate(45deg);
+}
+
+.nexo-mcp-timeline time {
+	color: var(--nexo-muted-fg);
+	font: 12px var(--nexo-mono);
+}
+
+.nexo-mcp-timeline__tool {
+	font: 600 13px var(--nexo-mono);
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-sistema__section {
+	display: grid;
+	gap: 24px;
+	scroll-margin-top: 48px;
+}
+
+/* Índice de secciones de Sistema (04): numerado, con las mismas etiquetas. */
+.nexo-mcp-admin .nexo-mcp-sysnav {
+	margin-bottom: 24px;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	counter-reset: sysnav;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__list li {
+	margin: 0;
+	counter-increment: sysnav;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 6px 14px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-fg);
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: none;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link::before {
+	content: counter(sysnav, decimal-leading-zero);
+	color: var(--nexo-primary);
+	font: 600 11px var(--nexo-mono);
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link:hover {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-primary-hover);
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: 2px;
+	box-shadow: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-sistema__section > .nexo-mcp-card,
+.nexo-mcp-admin .nexo-mcp-sistema__section > .nexo-mcp-discovery {
+	border-top: 3px solid var(--nexo-primary);
+}
+
+.nexo-mcp-sistema__section + .nexo-mcp-sistema__section {
+	margin-top: 32px;
+}
+
+@media (max-width: 1099px) {
+	.nexo-mcp-admin .nexo-mcp-sysnav__list {
+		flex-direction: column;
+	}
+
+	.nexo-mcp-admin .nexo-mcp-sysnav__link {
+		display: flex;
+	}
 }
 
 .nexo-mcp-admin .nexo-mcp-rows {
@@ -633,9 +1002,10 @@
 
 /* ------------------------------------------------------- Conectar: pasos */
 
+/* Secuencia vertical: círculo numerado y hilo que une un paso con el siguiente. */
 .nexo-mcp-admin .nexo-mcp-steps {
 	display: grid;
-	gap: 32px;
+	gap: 0;
 	margin: 0;
 	padding: 0;
 	counter-reset: nexo-step;
@@ -643,19 +1013,50 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-steps > li {
+	position: relative;
 	min-width: 0;
 	margin: 0;
+	padding: 0 0 32px 44px;
+	counter-increment: nexo-step;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li:last-child {
+	padding-bottom: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li::before {
+	content: counter(nexo-step);
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: grid;
+	width: 28px;
+	height: 28px;
+	place-items: center;
+	border: 1px solid var(--nexo-primary);
+	border-radius: 50%;
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-primary-hover);
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li:not(:last-child)::after {
+	content: "";
+	position: absolute;
+	top: 34px;
+	bottom: 6px;
+	left: 13px;
+	width: 2px;
+	background: var(--nexo-border);
 }
 
 .nexo-mcp-admin .nexo-mcp-step__title {
-	margin: 0 0 4px;
+	margin: 3px 0 4px;
+	color: var(--nexo-fg);
 	font-size: 14px;
-	font-weight: 500;
-}
-
-.nexo-mcp-step__title::before {
-	content: counter(nexo-step) ". ";
-	counter-increment: nexo-step;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-step__hint {
@@ -694,9 +1095,11 @@
 	background: var(--nexo-muted-soft);
 }
 
+/* Elegido: borde teal doble, fondo teñido y marca de verificación (no sólo color). */
 .nexo-mcp-client-card:has(input:checked) {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-muted-soft);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-primary);
 }
 
 .nexo-mcp-client-card:has(input:focus-visible) {
@@ -719,11 +1122,12 @@
 	height: 32px;
 	flex: none;
 	place-items: center;
-	border-radius: 8px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
 	background: var(--nexo-muted);
-	color: var(--nexo-muted-fg);
+	color: var(--nexo-muted-fg-strong);
 	font-size: 10px;
-	font-weight: 600;
+	font-weight: 700;
 }
 
 .nexo-mcp-client-card__mark img {
@@ -741,7 +1145,7 @@
 .nexo-mcp-client-card__copy strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 	line-height: 1.3;
 }
 
@@ -753,15 +1157,18 @@
 }
 
 .nexo-mcp-client-card__check {
-	width: 16px;
-	height: 16px;
+	width: 18px;
+	height: 18px;
 	flex: none;
+	padding: 2px;
+	border-radius: 50%;
+	background: var(--nexo-primary);
 	fill: none;
 	opacity: 0;
-	stroke: currentColor;
+	stroke: #fff;
 	stroke-linecap: round;
 	stroke-linejoin: round;
-	stroke-width: 2;
+	stroke-width: 3;
 }
 
 .nexo-mcp-client-card:has(input:checked) .nexo-mcp-client-card__check {
@@ -776,11 +1183,12 @@
 	gap: 12px;
 }
 
+/* Tarjeta-radio: el círculo (::before) se rellena al elegir; el texto de la
+   tarjeta y la etiqueta «Recomendado» / «Sensible» dicen lo mismo con palabras. */
 .nexo-mcp-profile-card {
 	position: relative;
 	display: flex;
 	align-items: flex-start;
-	justify-content: space-between;
 	gap: 12px;
 	padding: 16px;
 	border: 1px solid var(--nexo-border);
@@ -790,13 +1198,40 @@
 	transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.nexo-mcp-profile-card::before {
+	content: "";
+	width: 16px;
+	height: 16px;
+	flex: none;
+	margin-top: 2px;
+	border: 2px solid var(--nexo-input);
+	border-radius: 50%;
+	background: var(--nexo-bg);
+	box-sizing: border-box;
+}
+
+.nexo-mcp-profile-card__copy {
+	flex: 1;
+	min-width: 0;
+}
+
+.nexo-mcp-profile-card .nexo-mcp-tag {
+	flex: none;
+}
+
 .nexo-mcp-profile-card:hover {
 	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-profile-card:has(input:checked) {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-muted-soft);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-primary);
+}
+
+.nexo-mcp-profile-card:has(input:checked)::before {
+	border-color: var(--nexo-primary);
+	background: radial-gradient(circle, var(--nexo-primary) 0 3px, var(--nexo-bg) 3.5px);
 }
 
 .nexo-mcp-profile-card:has(input:focus-visible) {
@@ -806,6 +1241,17 @@
 .nexo-mcp-profile-card--sensitive:has(input:checked) {
 	border-color: var(--nexo-err);
 	background: var(--nexo-err-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-err);
+}
+
+.nexo-mcp-profile-card--sensitive:has(input:checked)::before {
+	border-color: var(--nexo-err);
+	background: radial-gradient(circle, var(--nexo-err) 0 3px, var(--nexo-bg) 3.5px);
+}
+
+.nexo-mcp-profile-card--sensitive:has(input:focus-visible),
+.nexo-mcp-profile-card:has(input:checked:focus-visible) {
+	box-shadow: var(--nexo-ring);
 }
 
 .nexo-mcp-profile-card:has(input:disabled) {
@@ -816,7 +1262,7 @@
 .nexo-mcp-profile-card__copy strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-profile-card__copy small {
@@ -849,50 +1295,38 @@
 	justify-content: space-between;
 	gap: 12px;
 	padding: 12px 16px;
+	border-bottom: 1px solid var(--nexo-border);
+	background: var(--nexo-muted-soft);
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
+/* Banda de la acción principal: clara, con filete teal al borde. */
 .nexo-mcp-recipe-band {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
 	padding: 16px;
-	background: var(--nexo-fg);
-	color: #fff;
+	border-left: 3px solid var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-recipe-band strong {
 	display: block;
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band p {
 	margin: 2px 0 0;
-	color: rgba(255, 255, 255, 0.8);
+	color: var(--nexo-muted-fg-strong);
 	font-size: 12px;
 }
 
-/* Botón claro sobre la banda oscura (variante secondary del diseño). */
-.nexo-mcp-admin .nexo-mcp-recipe-band .button,
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus,
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:active {
+.nexo-mcp-admin .nexo-mcp-recipe-band .button {
 	flex: none;
-	border-color: var(--nexo-muted);
-	background: var(--nexo-muted);
-	color: var(--nexo-fg);
-}
-
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
-	color: #fff;
-}
-
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus-visible {
-	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px #fff;
 }
 
 /* Codex: la banda lleva pasos y el comando del puente. */
@@ -910,10 +1344,13 @@
 .nexo-mcp-codex-native__mark {
 	flex: none;
 	padding: 3px 8px;
-	border: 1px solid rgba(255, 255, 255, 0.25);
-	border-radius: 8px;
+	border: 1px solid var(--nexo-primary);
+	border-radius: 4px;
+	background: var(--nexo-bg);
+	color: var(--nexo-primary-hover);
+	font-family: var(--nexo-mono);
 	font-size: 10px;
-	font-weight: 600;
+	font-weight: 700;
 	letter-spacing: 0.08em;
 }
 
@@ -939,10 +1376,12 @@
 	height: 20px;
 	flex: none;
 	place-items: center;
-	border: 1px solid rgba(255, 255, 255, 0.3);
+	border: 1px solid var(--nexo-primary);
 	border-radius: 50%;
+	background: var(--nexo-bg);
+	color: var(--nexo-primary-hover);
 	font-size: 11px;
-	font-weight: 500;
+	font-weight: 700;
 }
 
 .nexo-mcp-admin .nexo-mcp-codex-native__steps p {
@@ -961,17 +1400,24 @@
 	gap: 12px;
 }
 
+/* Comandos y configuración: superficie de código clara, mono, borde fino. */
+.nexo-mcp-admin .nexo-mcp-codex-native__actions code,
+.nexo-mcp-admin .nexo-mcp-copyfield--block code {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-fg-soft);
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
 .nexo-mcp-admin .nexo-mcp-codex-native__actions code {
 	flex: 1;
 	min-width: 0;
-	margin: 0;
-	padding: 8px 10px;
-	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.08);
-	color: rgba(255, 255, 255, 0.8);
-	font-size: 11px;
-	line-height: 1.5;
-	overflow-wrap: anywhere;
 }
 
 /* Prueba de OAuth (sólo Codex). */
@@ -987,7 +1433,7 @@
 .nexo-mcp-oauth-diagnostic strong {
 	display: block;
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic p {
@@ -999,6 +1445,7 @@
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic__status {
 	grid-column: 1 / -1;
 	margin: 0;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic[data-state="running"] .nexo-mcp-oauth-diagnostic__status {
@@ -1023,13 +1470,19 @@
 	padding: 12px 16px;
 	color: var(--nexo-muted-fg-strong);
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 	cursor: pointer;
 }
 
 .nexo-mcp-manual-details > summary:hover,
 .nexo-mcp-compat-fallback > summary:hover {
 	color: var(--nexo-fg);
+}
+
+.nexo-mcp-manual-details > summary:focus-visible,
+.nexo-mcp-compat-fallback > summary:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: -2px;
 }
 
 .nexo-mcp-manual-details__body {
@@ -1051,14 +1504,8 @@
 .nexo-mcp-admin .nexo-mcp-copyfield--block code {
 	display: block;
 	width: 100%;
-	margin: 0;
 	padding: 12px 14px;
-	border-radius: var(--nexo-radius-md);
-	background: var(--nexo-fg);
-	color: #f5f5f5;
-	font-size: 12px;
-	line-height: 1.6;
-	overflow-wrap: anywhere;
+	background: var(--nexo-muted-soft);
 	white-space: pre-wrap;
 }
 
@@ -1103,13 +1550,16 @@
 
 .nexo-mcp-conn-list {
 	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 12px;
 }
 
 .nexo-mcp-conn-card {
-	padding: 16px;
+	min-width: 0;
+	padding: 14px 16px;
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
 }
 
 .nexo-mcp-conn-card__top {
@@ -1126,12 +1576,13 @@
 .nexo-mcp-conn-name {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 700;
 	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-conn-meta {
 	display: block;
+	margin-top: 2px;
 	color: var(--nexo-muted-fg);
 	font-size: 12px;
 }
@@ -1140,24 +1591,68 @@
 	content: " · ";
 }
 
-.nexo-mcp-conn-scopes {
+.nexo-mcp-admin .nexo-mcp-conn-scopes {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-	margin-top: 12px;
+	margin: 12px 0 0;
+	padding: 0;
+	list-style: none;
 }
 
-.nexo-mcp-admin .nexo-mcp-conn-scopes code {
+.nexo-mcp-admin .nexo-mcp-scope {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
 	margin: 0;
-	padding: 2px 8px;
+	padding: 1px 6px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
-	background: var(--nexo-muted-soft);
-	color: var(--nexo-muted-fg);
-	font-family: var(--nexo-font);
+	border-radius: 2px;
+	background: var(--nexo-muted);
+	color: var(--nexo-fg-soft);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope code {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	color: inherit;
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope--risky {
+	border-color: var(--nexo-warn-line);
+	background: var(--nexo-warn-bg);
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-scope__flag {
 	font-size: 11px;
-	font-weight: 500;
-	line-height: 1.5;
+	font-weight: 700;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth {
+	flex: none;
+	min-height: 32px;
+	border: 1px solid var(--nexo-err-line);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-err-text);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:hover {
+	background: var(--nexo-err-soft);
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: 2px;
 }
 
 /* ------------------------------------------------------ Módulos y límites */
@@ -1166,34 +1661,62 @@
 	margin-bottom: 20px;
 }
 
-.nexo-mcp-toggles > * + *,
-.nexo-mcp-proxy {
-	border-top: 1px solid var(--nexo-border);
+.nexo-mcp-modules-lead {
+	margin: 0 0 16px;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
 }
 
-.nexo-mcp-toggle {
-	position: relative;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	margin: 0 -8px;
-	padding: 12px 8px;
-	border-radius: 10px;
-	cursor: pointer;
+/* Cada grupo: título en versalitas con filete grueso y filas finas debajo. */
+.nexo-mcp-modset {
+	margin: 0 0 24px;
+}
+
+.nexo-mcp-modset > h3 {
+	margin: 0;
+	padding: 6px 0;
+	border-bottom: 2px solid var(--nexo-fg);
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.6px;
+	text-transform: uppercase;
 }
 
 /*
- * Opciones sensibles: las que amplían lo que la IA puede hacer. Todas llevan
- * el mismo tinte y la etiqueta «Sensible»; el resto de las filas queda neutro.
+ * La fila es la propia etiqueta del interruptor: nombre y descripción,
+ * alcance en mono, interruptor y su estado en texto.
+ */
+.nexo-mcp-toggle {
+	position: relative;
+	display: grid;
+	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 44px 64px;
+	gap: 12px;
+	align-items: center;
+	padding: 10px 4px 10px 12px;
+	border-bottom: 1px solid var(--nexo-border);
+	cursor: pointer;
+}
+
+.nexo-mcp-toggle:has(input:checked) {
+	box-shadow: inset 3px 0 0 var(--nexo-primary);
+}
+
+.nexo-mcp-toggle:has(input:focus-visible) {
+	outline: 3px solid var(--nexo-focus);
+	outline-offset: -3px;
+}
+
+/*
+ * Opciones sensibles: las que amplían lo que la IA puede hacer. Llevan un
+ * tinte suave y la etiqueta en texto; el resto de las filas queda neutro.
  */
 .nexo-mcp-toggle--sensitive {
 	background: var(--nexo-err-soft);
 }
 
-.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive {
-	margin-left: 6px;
-	vertical-align: 1px;
+.nexo-mcp-toggle--sensitive:has(input:checked) {
+	box-shadow: inset 3px 0 0 var(--nexo-err);
 }
 
 .nexo-mcp-toggle__text {
@@ -1203,7 +1726,17 @@
 .nexo-mcp-toggle__text strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
+}
+
+.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive {
+	margin-left: 6px;
+	vertical-align: 1px;
+}
+
+.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive::before {
+	content: "\25B2";
+	font-size: 9px;
 }
 
 .nexo-mcp-toggle__text small {
@@ -1214,18 +1747,33 @@
 	line-height: 1.5;
 }
 
+.nexo-mcp-toggle__scopes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 8px;
+	min-width: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-toggle__scopes code {
+	margin: 0;
+	padding: 0;
+	background: none;
+	color: var(--nexo-muted-fg);
+	font: 12px/1.6 var(--nexo-mono);
+	overflow-wrap: anywhere;
+}
+
 /*
- * La casilla real queda encima del interruptor, invisible: recibe el clic y
- * el foco, y el <i> sólo la dibuja.
+ * La casilla real cubre toda la fila, invisible: recibe el clic y el foco, y
+ * el <i> sólo la dibuja.
  */
 .nexo-mcp-admin .nexo-mcp-toggle input[type="checkbox"] {
 	position: absolute;
-	top: 50%;
-	right: 8px;
+	inset: 0;
 	z-index: 1;
-	width: 44px;
-	height: 24px;
-	margin: -12px 0 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
 	opacity: 0;
 	cursor: pointer;
 }
@@ -1235,8 +1783,8 @@
 	width: 44px;
 	height: 24px;
 	flex: none;
-	border-radius: 999px;
-	background: #e0e0e0;
+	border-radius: 4px;
+	background: #64748b;
 	transition: background-color 0.2s ease;
 }
 
@@ -1246,15 +1794,15 @@
 	left: 2px;
 	width: 20px;
 	height: 20px;
-	border-radius: 50%;
+	border-radius: 2px;
 	background: #fff;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+	box-shadow: none;
 	content: "";
 	transition: transform 0.2s ease;
 }
 
 .nexo-mcp-toggle input:checked + i {
-	background: var(--nexo-fg);
+	background: var(--nexo-primary);
 }
 
 .nexo-mcp-toggle input:checked + i::after {
@@ -1269,6 +1817,48 @@
 
 .nexo-mcp-toggle input:focus-visible + i {
 	box-shadow: var(--nexo-ring);
+}
+
+/* Estado en texto: sigue a la casilla, sin JavaScript. */
+.nexo-mcp-toggle__state {
+	color: var(--nexo-muted-fg-strong);
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.nexo-mcp-toggle__on,
+.nexo-mcp-toggle input:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__off {
+	display: none;
+}
+
+.nexo-mcp-toggle input:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__on {
+	display: inline;
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-toggle input[data-nexo-risk="on"]:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__on,
+.nexo-mcp-toggle input[data-nexo-risk="off"]:not(:checked) ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__off {
+	color: var(--nexo-err-text);
+}
+
+@media (max-width: 1100px) {
+	.nexo-mcp-toggle {
+		grid-template-columns: minmax(0, 1fr) 44px 64px;
+	}
+
+	.nexo-mcp-toggle__scopes {
+		grid-column: 1;
+		grid-row: 2;
+	}
+
+	.nexo-mcp-toggle__text {
+		grid-column: 1;
+	}
+
+	.nexo-mcp-toggle > i,
+	.nexo-mcp-toggle__state {
+		grid-row: 1 / span 2;
+	}
 }
 
 .nexo-mcp-admin .nexo-mcp-proxy-field {
@@ -1323,25 +1913,25 @@
 .nexo-mcp-admin input[type="url"]:focus,
 .nexo-mcp-admin input[type="email"]:focus,
 .nexo-mcp-admin textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 	outline: none;
 }
 
 .nexo-mcp-admin input::placeholder,
 .nexo-mcp-admin textarea::placeholder {
-	color: #9a9a9a;
+	color: #64748b;
 }
 
 /* Radios nativos de WordPress, recoloreados. */
 .nexo-mcp-admin input[type="radio"]:checked::before {
-	background-color: var(--nexo-fg);
+	background-color: var(--nexo-primary);
 }
 
 .nexo-mcp-admin input[type="radio"]:focus,
 .nexo-mcp-admin input[type="checkbox"]:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 /* ---------------------------------------- Sitio y cupos / Actualizaciones */
@@ -1353,8 +1943,9 @@
 	gap: 16px;
 	padding: 16px;
 	border: 1px solid var(--nexo-border);
+	border-left: 3px solid var(--nexo-primary);
 	border-radius: var(--nexo-radius-md);
-	background: #fcfcfc;
+	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-box > div {
@@ -1477,15 +2068,29 @@
 }
 
 .nexo-mcp-table__user {
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+	white-space: nowrap;
+}
+
+.nexo-mcp-log__detail {
+	min-width: 140px;
+	color: var(--nexo-fg-soft);
+	font-size: 13px;
+	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-admin .nexo-mcp-table code {
 	margin: 0;
-	padding: 2px 6px;
-	border-radius: 6px;
-	background: var(--nexo-muted);
+	padding: 0;
+	background: transparent;
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+}
+
+.nexo-mcp-log tbody tr:hover td {
+	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-table__empty {
@@ -1648,7 +2253,7 @@
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
 	background: var(--nexo-bg);
-	box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
 	color: var(--nexo-fg);
 	font-size: 13px;
 	font-weight: 500;
@@ -1667,7 +2272,7 @@
 
 .nexo-mcp-admin .nexo-mcp-credit {
 	margin: 32px 0 0;
-	color: #8a8a8a;
+	color: #64748b;
 	font-size: 12px;
 	text-align: center;
 }
@@ -1692,7 +2297,7 @@
 	border: 0;
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 	font-family: var(--nexo-font);
 	font-size: 14px;
@@ -1785,8 +2390,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-secret-field input:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-secret-visibility {
@@ -1911,8 +2516,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-setup textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-setup .nexo-mcp-setup__note {
@@ -1937,7 +2542,7 @@
 	border-top: 4px solid var(--nexo-err);
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 }
 
@@ -2030,24 +2635,14 @@
 }
 
 .nexo-mcp-onboarding__aside {
-	position: relative;
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
 	gap: 32px;
 	padding: 32px;
-	background: var(--nexo-fg);
-	color: #fff;
-}
-
-.nexo-mcp-onboarding__aside::after {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	height: 4px;
-	background: var(--nexo-gradient);
-	content: "";
+	border-right: 1px solid var(--nexo-border);
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-onboarding__brand {
@@ -2056,24 +2651,23 @@
 	gap: 10px;
 }
 
-.nexo-mcp-onboarding__brand img {
-	display: block;
-	width: auto;
-	height: 28px;
+.nexo-mcp-onboarding__brand svg {
+	flex: none;
 }
 
-/* Marca antigua de la vista de registro por email (sin uso hoy). */
-.nexo-mcp-onboarding__brand span {
-	font-size: 18px;
-	font-weight: 600;
+.nexo-mcp-onboarding__wordmark {
+	color: var(--nexo-fg);
+	font-size: 22px;
+	line-height: 1.2;
 }
 
-.nexo-mcp-admin .nexo-mcp-onboarding__product {
-	margin: 8px 0 0;
-	font-size: 10px;
-	letter-spacing: 0.18em;
-	opacity: 0.6;
-	text-transform: uppercase;
+.nexo-mcp-onboarding__wordmark b {
+	font-weight: 800;
+}
+
+.nexo-mcp-onboarding__wordmark span {
+	color: var(--nexo-muted-fg);
+	font-weight: 300;
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__steps {
@@ -2088,36 +2682,50 @@
 	display: flex;
 	gap: 12px;
 	margin: 0;
-	opacity: 0.55;
+	color: var(--nexo-muted-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__steps li.is-current {
-	opacity: 1;
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-onboarding__steps span {
-	padding-top: 2px;
+	flex: none;
+	align-self: flex-start;
+	min-width: 28px;
+	padding: 2px 0;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	font-family: var(--nexo-mono);
 	font-size: 11px;
-	font-weight: 500;
-	letter-spacing: 0.1em;
+	font-weight: 600;
+	text-align: center;
+}
+
+.nexo-mcp-onboarding__steps li.is-current span {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary);
+	color: #fff;
 }
 
 .nexo-mcp-onboarding__steps strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-onboarding__steps small {
 	display: block;
+	color: var(--nexo-muted-fg);
 	font-size: 12px;
-	opacity: 0.75;
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__version {
 	margin: 0;
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
 	font-size: 11px;
-	opacity: 0.5;
 }
 
 .nexo-mcp-onboarding__main {
@@ -2158,6 +2766,12 @@
 	letter-spacing: 0.06em;
 }
 
+.nexo-mcp-admin .nexo-mcp-registration__form input:focus-visible {
+	border-color: var(--nexo-focus);
+	box-shadow: var(--nexo-ring);
+	outline: 2px solid transparent;
+}
+
 .nexo-mcp-registration__consent {
 	display: flex;
 	align-items: flex-start;
@@ -2195,16 +2809,49 @@
 /* ------------------------------------------------------------ Responsive */
 
 @media (max-width: 1100px) {
-	.nexo-mcp-status-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	.nexo-mcp-map__diagram {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-map__link {
+		width: 0;
+		height: 24px;
+		margin: 0 auto;
+		border-top: 0;
+		border-left: 2px dashed var(--nexo-primary);
+	}
+
+	.nexo-mcp-map__link::after {
+		top: auto;
+		right: auto;
+		bottom: -2px;
+		left: -6px;
+		border-top: 8px solid var(--nexo-primary);
+		border-right: 5px solid transparent;
+		border-bottom: 0;
+		border-left: 5px solid transparent;
+	}
+
+	.nexo-mcp-overview {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+	}
+
+	.nexo-mcp-modrow {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.nexo-mcp-modrow__scopes {
+		grid-column: 1;
+	}
+
+	.nexo-mcp-modrow__state {
+		grid-column: 2;
+		grid-row: 1 / span 2;
 	}
 }
 
 @media (max-width: 960px) {
-	.nexo-mcp-summary {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
 	.nexo-mcp-client-grid,
 	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2217,12 +2864,8 @@
 		margin: 16px 12px 40px 0;
 	}
 
-	.nexo-mcp-header {
-		padding: 24px;
-	}
-
-	.nexo-mcp-header__brand img {
-		height: 28px;
+	.nexo-mcp-map {
+		padding: 20px 16px 24px;
 	}
 
 	.nexo-mcp-tabs {
@@ -2322,6 +2965,8 @@
 
 	.nexo-mcp-onboarding__aside {
 		padding: 24px;
+		border-right: 0;
+		border-bottom: 1px solid var(--nexo-border);
 	}
 
 	.nexo-mcp-onboarding__main {
@@ -2343,18 +2988,8 @@
 		grid-template-columns: minmax(0, 1fr);
 	}
 
-	.nexo-mcp-header__meta {
-		display: none;
-	}
-
 	.nexo-mcp-confirm__actions .button {
 		flex: 1 1 0;
-	}
-}
-
-@media (max-width: 380px) {
-	.nexo-mcp-status-grid {
-		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
@@ -2402,4 +3037,26 @@
 
 .nexo-mcp-admin .nexo-mcp-api-missing .nexo-mcp-callout {
 	margin: 12px 0;
+}
+
+/* Accesos y Actividad: una columna bajo 1100px. */
+@media (max-width: 1099px) {
+	.nexo-mcp-conn-list {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth,
+	.nexo-mcp-log tbody tr td {
+		transition: none;
+	}
+}
+
+/* Conectar: bajo 1100px los clientes y los pasos de Codex pasan a dos columnas. */
+@media (max-width: 1099px) {
+	.nexo-mcp-client-grid,
+	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
 }

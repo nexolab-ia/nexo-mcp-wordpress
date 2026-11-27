@@ -331,7 +331,9 @@ final class DiviLibraryPermissionTest extends NexoTestCase {
 		$this->assertSame( $header[1], $stable[1], 'cabecera y Stable tag coinciden' );
 		$this->assertTrue( version_compare( $header[1], '1.12.0', '>' ), 'maybe_upgrade sólo concede la capacidad si la versión cambia respecto a la instalada (1.12.0, que no la tiene)' );
 		$this->assertStringContainsString( '= ' . $header[1] . ' =', $readme, 'el changelog documenta esta versión' );
-		$this->assertStringContainsString( 'mcp:divi_library', substr( $readme, (int) strpos( $readme, '= ' . $header[1] . ' =' ), 600 ), 'y menciona el scope nuevo' );
+		// El scope nació en 1.13.0: su entrada del changelog lo menciona (las versiones posteriores no tienen por qué).
+		$this->assertStringContainsString( '= 1.13.0 =', $readme, 'el changelog documenta la versión que introdujo el scope' );
+		$this->assertStringContainsString( 'mcp:divi_library', substr( $readme, (int) strpos( $readme, '= 1.13.0 =' ), 600 ), 'y menciona el scope nuevo' );
 	}
 
 	public function test_un_sitio_en_1_12_0_sin_la_capacidad_la_recibe_al_actualizar(): void {

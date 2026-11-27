@@ -264,27 +264,43 @@ $oauth_clients = array(
  * que lo contiene.
  */
 $panel_tabs = array(
-	'resumen'         => __( 'Resumen', 'nexo-mcp' ),
-	'conectar'        => __( 'Conectar', 'nexo-mcp' ),
-	'accesos'         => __( 'Accesos (OAuth)', 'nexo-mcp' ),
-	'modulos'         => __( 'Módulos y límites', 'nexo-mcp' ),
+	'resumen'  => __( 'Resumen', 'nexo-mcp' ),
+	'conectar' => __( 'Conectar', 'nexo-mcp' ),
+	'accesos'  => __( 'Accesos', 'nexo-mcp' ),
+	'modulos'  => __( 'Módulos', 'nexo-mcp' ),
+	'sistema'  => __( 'Sistema', 'nexo-mcp' ),
+);
+
+/*
+ * Pestañas que ya no existen y ahora son secciones de Sistema, en el orden en
+ * que se muestran. Los enlaces antiguos (`?tab=endpoint` de los metadatos OAuth,
+ * marcadores, correos) abren Sistema y llevan hasta su sección.
+ */
+$system_sections = array(
+	'actividad'       => __( 'Actividad', 'nexo-mcp' ),
 	'licencia'        => __( 'Licencia y sitio', 'nexo-mcp' ),
 	'actualizaciones' => __( 'Actualizaciones', 'nexo-mcp' ),
 	'endpoint'        => __( 'Endpoint MCP', 'nexo-mcp' ),
-	'actividad'       => __( 'Actividad', 'nexo-mcp' ),
 	'soporte'         => __( 'Soporte', 'nexo-mcp' ),
 );
-$panel_url  = admin_url( 'admin.php?page=' . \NexoDev\NexoMCP\Admin\AdminPage::PAGE_SLUG );
+
+$panel_url = admin_url( 'admin.php?page=' . \NexoDev\NexoMCP\Admin\AdminPage::PAGE_SLUG );
 
 // Sólo elige qué pestaña se ve; no cambia nada, por eso no lleva nonce.
 // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 $requested_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
 
+$active_section = '';
+
 if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 	$active_tab = $requested_tab;
+} elseif ( isset( $system_sections[ $requested_tab ] ) ) {
+	$active_tab     = 'sistema';
+	$active_section = 'nexo-mcp-sec-' . $requested_tab;
 } elseif ( null !== $report_notice ) {
-	// Vuelta del formulario de reporte: su aviso vive en esa pestaña.
-	$active_tab = 'soporte';
+	// Vuelta del formulario de reporte: su aviso vive en Soporte, dentro de Sistema.
+	$active_tab     = 'sistema';
+	$active_section = 'nexo-mcp-sec-soporte';
 } elseif ( isset( $_GET['settings-updated'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	// Vuelta de options.php: el único formulario que lo usa es el de módulos.
 	$active_tab = 'modulos';
@@ -293,19 +309,118 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 }
 ?>
 <div class="wrap nexo-mcp-admin">
-	<header class="nexo-mcp-header">
-		<h1 class="nexo-mcp-header__brand">
-			<img
-				src="<?php echo esc_url( $images_url . 'logo-nexo.svg' ); ?>"
-				alt="<?php esc_attr_e( 'Nexo MCP', 'nexo-mcp' ); ?>"
-				width="175"
-				height="32"
-			>
-		</h1>
-		<p class="nexo-mcp-header__meta">
-			<span><?php esc_html_e( 'Versión', 'nexo-mcp' ); ?></span>
-			<strong><?php echo esc_html( NEXO_MCP_VERSION ); ?></strong>
-		</p>
+	<?php
+	/*
+	 * Banda del mapa: cómo llega una IA a este sitio, de punta a punta.
+	 *
+	 * Los conteos salen de ConnectionMap; el estado del descubrimiento OAuth
+	 * sólo lo conoce el navegador, así que su texto nace en «Comprobando» y
+	 * admin.js lo completa junto con la tarjeta `.nexo-mcp-discovery`.
+	 * Cada estado va en texto con su icono: nunca sólo por color.
+	 */
+	$connection_map = \NexoDev\NexoMCP\Admin\ConnectionMap::summarize( $settings, $oauth_connections, $is_woocommerce );
+	$map_site       = '' !== $site_host ? $site_host : (string) get_bloginfo( 'name' );
+	$map_ai_ready   = $connection_map['connections'] > 0;
+	$map_risk       = $connection_map['risk_active'];
+
+	if ( $is_local_http ) {
+		$map_https = __( 'HTTP local permitido', 'nexo-mcp' );
+	} elseif ( $is_https ) {
+		$map_https = __( 'HTTPS activo', 'nexo-mcp' );
+	} else {
+		$map_https = __( 'Sin HTTPS', 'nexo-mcp' );
+	}
+	?>
+	<header class="nexo-mcp-map" aria-labelledby="nexo-mcp-map-title">
+		<div class="nexo-mcp-map__top">
+			<div class="nexo-mcp-map__id">
+				<h1 class="nexo-mcp-map__brand" id="nexo-mcp-map-title">
+					<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#0f172a"/><circle cx="24" cy="24" r="3.4" fill="#0f172a"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg>
+					<span><b>nexo</b> <span class="nexo-mcp-map__brand-mark">MCP</span></span>
+				</h1>
+				<p class="nexo-mcp-map__meta">
+					<?php
+					printf(
+						/* translators: 1: dominio del sitio, 2: versión de WordPress, 3: versión de Nexo MCP. */
+						esc_html__( '%1$s · WordPress %2$s · Nexo %3$s', 'nexo-mcp' ),
+						esc_html( $map_site ),
+						esc_html( (string) get_bloginfo( 'version' ) ),
+						esc_html( NEXO_MCP_VERSION )
+					);
+					?>
+				</p>
+			</div>
+			<div class="nexo-mcp-map__actions">
+				<a class="button nexo-mcp-map__action" href="<?php echo esc_url( add_query_arg( 'tab', 'conectar', $panel_url ) ); ?>" data-nexo-tab="conectar"><?php esc_html_e( 'Probar OAuth', 'nexo-mcp' ); ?></a>
+				<a class="button button-primary nexo-mcp-map__action" href="<?php echo esc_url( add_query_arg( 'tab', 'conectar', $panel_url ) ); ?>" data-nexo-tab="conectar"><?php esc_html_e( 'Conectar una IA', 'nexo-mcp' ); ?></a>
+			</div>
+		</div>
+
+		<ol class="nexo-mcp-map__diagram" aria-label="<?php esc_attr_e( 'Recorrido de la conexión', 'nexo-mcp' ); ?>">
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Origen', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'Tu IA', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $map_ai_ready ? 'ok' : 'wait'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php
+					echo esc_html(
+						$map_ai_ready
+							/* translators: %d: número de clientes OAuth autorizados. */
+							? sprintf( _n( '%d cliente autorizado', '%d clientes autorizados', $connection_map['connections'], 'nexo-mcp' ), $connection_map['connections'] )
+							: __( 'Ninguna IA conectada', 'nexo-mcp' )
+					);
+					?>
+				</span>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Autorización', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'OAuth 2.1 · PKCE', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state nexo-mcp-map__discovery" data-nexo-https="<?php echo $is_https ? '1' : '0'; ?>" data-state="<?php echo $is_https ? 'wait' : 'warn'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<span class="nexo-mcp-map__discovery-text"><?php echo esc_html( $is_https ? __( 'Comprobando', 'nexo-mcp' ) : $map_https ); ?></span>
+				</span>
+				<?php if ( $is_https ) : ?>
+					<small class="nexo-mcp-map__hint"><?php echo esc_html( $map_https ); ?></small>
+				<?php else : ?>
+					<small class="nexo-mcp-map__hint"><?php esc_html_e( 'Las conexiones remotas serán bloqueadas.', 'nexo-mcp' ); ?></small>
+				<?php endif; ?>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node nexo-mcp-map__node--hub">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Destino', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'WordPress', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $is_server_ready ? 'ok' : 'off'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php echo esc_html( $is_server_ready ? __( 'Conector respondiendo', 'nexo-mcp' ) : __( 'Conector inactivo', 'nexo-mcp' ) ); ?>
+				</span>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Alcance', 'nexo-mcp' ); ?></span>
+				<strong>
+					<?php
+					printf(
+						/* translators: 1: módulos activos, 2: módulos disponibles. */
+						esc_html__( 'Módulos activos %1$d/%2$d', 'nexo-mcp' ),
+						(int) $connection_map['modules_active'],
+						(int) $connection_map['modules_total']
+					);
+					?>
+				</strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $map_risk > 0 ? 'warn' : 'ok'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php
+					echo esc_html(
+						$map_risk > 0
+							/* translators: %d: módulos de riesgo alto que están encendidos. */
+							? sprintf( _n( '%d de riesgo alto activo', '%d de riesgo alto activos', $map_risk, 'nexo-mcp' ), $map_risk )
+							: __( 'Ninguno de riesgo alto', 'nexo-mcp' )
+					);
+					?>
+				</span>
+			</li>
+		</ol>
 	</header>
 
 	<?php
@@ -364,6 +479,21 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 	</nav>
 
 	<?php /* ------------------------------------------------------------ Resumen */ ?>
+	<?php
+	/*
+	 * Vista de la 04 bajo el mapa: a la izquierda los módulos agrupados con su
+	 * estado (sólo lectura: el formulario único de ajustes vive en Módulos), y
+	 * al costado los accesos y la actividad más recientes. Ni el descubrimiento
+	 * OAuth ni el entorno viven aquí: lo primero se comprueba en la banda y en
+	 * Sistema > Endpoint, lo segundo en la banda.
+	 */
+	$summary_groups      = \NexoDev\NexoMCP\Admin\ConnectionMap::module_groups( $is_woocommerce );
+	$summary_connections = array_slice( $oauth_connections, 0, 3 );
+	$summary_audit       = array_slice( $audit_entries, 0, 5 );
+	$modules_url         = add_query_arg( 'tab', 'modulos', $panel_url );
+	$accesos_url         = add_query_arg( 'tab', 'accesos', $panel_url );
+	$activity_url        = add_query_arg( 'tab', 'sistema', $panel_url ) . '#nexo-mcp-sec-actividad';
+	?>
 	<section
 		id="nexo-mcp-panel-resumen"
 		class="nexo-mcp-tabpanel"
@@ -388,106 +518,139 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 				</div>
 				<a
 					class="button button-primary"
-					href="<?php echo esc_url( add_query_arg( 'tab', 'actualizaciones', $panel_url ) ); ?>"
-					data-nexo-tab="actualizaciones"
+					href="<?php echo esc_url( add_query_arg( 'tab', 'sistema', $panel_url ) . '#nexo-mcp-sec-actualizaciones' ); ?>"
+					data-nexo-tab="sistema"
 				><?php esc_html_e( 'Ver actualización', 'nexo-mcp' ); ?></a>
 			</div>
 		<?php endif; ?>
 
-		<div class="nexo-mcp-status-grid" role="group" aria-label="<?php esc_attr_e( 'Estado del conector', 'nexo-mcp' ); ?>">
-			<article class="nexo-mcp-status-card">
-				<span class="nexo-mcp-status-card__label"><?php esc_html_e( 'Servidor MCP', 'nexo-mcp' ); ?></span>
-				<strong class="nexo-mcp-status <?php echo $is_server_ready ? 'nexo-mcp-status--online' : 'nexo-mcp-status--offline'; ?>">
-					<span aria-hidden="true"></span>
-					<?php echo esc_html( $is_server_ready ? __( 'Activo', 'nexo-mcp' ) : __( 'Inactivo', 'nexo-mcp' ) ); ?>
-				</strong>
-				<small><?php esc_html_e( 'Expone módulos independientes mediante una allowlist estricta.', 'nexo-mcp' ); ?></small>
-			</article>
+		<div class="nexo-mcp-overview">
+			<section class="nexo-mcp-overview__main" aria-labelledby="nexo-mcp-overview-modules">
+				<h2 id="nexo-mcp-overview-modules"><?php esc_html_e( 'Módulos', 'nexo-mcp' ); ?></h2>
+				<p class="nexo-mcp-overview__lead"><?php esc_html_e( 'Apagado = ninguna IA lo usa, aunque tenga el alcance.', 'nexo-mcp' ); ?></p>
 
-			<article class="nexo-mcp-status-card">
-				<span class="nexo-mcp-status-card__label"><?php esc_html_e( 'HTTPS', 'nexo-mcp' ); ?></span>
-				<strong class="nexo-mcp-status <?php echo $is_https ? 'nexo-mcp-status--online' : 'nexo-mcp-status--warning'; ?>">
-					<span aria-hidden="true"></span>
-					<?php echo esc_html( $is_local_http ? __( 'Local sin HTTPS', 'nexo-mcp' ) : ( $is_https ? __( 'Disponible', 'nexo-mcp' ) : __( 'No detectado', 'nexo-mcp' ) ) ); ?>
-				</strong>
-				<small>
-					<?php echo esc_html( $is_local_http ? __( 'Permitido sólo en este entorno local (NEXO_MCP_ALLOW_INSECURE_LOCAL).', 'nexo-mcp' ) : ( $is_https ? __( 'El sitio usa una URL segura.', 'nexo-mcp' ) : __( 'Las conexiones remotas serán bloqueadas.', 'nexo-mcp' ) ) ); ?>
-				</small>
-			</article>
-
-			<article class="nexo-mcp-status-card">
-				<span class="nexo-mcp-status-card__label"><?php esc_html_e( 'WooCommerce', 'nexo-mcp' ); ?></span>
-				<strong class="nexo-mcp-status <?php echo $is_woocommerce ? 'nexo-mcp-status--online' : 'nexo-mcp-status--neutral'; ?>">
-					<span aria-hidden="true"></span>
-					<?php echo esc_html( $is_woocommerce ? __( 'Detectado', 'nexo-mcp' ) : __( 'No instalado', 'nexo-mcp' ) ); ?>
-				</strong>
-				<small><?php esc_html_e( 'El módulo seguirá siendo completamente opcional.', 'nexo-mcp' ); ?></small>
-			</article>
-
-			<?php
-			/*
-			 * El descubrimiento vive en /.well-known/, fuera del alcance de WordPress.
-			 * Hay servidores que sirven ese directorio como archivos estáticos y la
-			 * petición nunca llega a PHP: el conector queda mudo aunque esté activo.
-			 * Sólo se puede saber pidiendo las direcciones desde fuera, así que la
-			 * tarjeta nace en blanco y la completa el navegador.
-			 */
-			?>
-			<article class="nexo-mcp-status-card nexo-mcp-discovery"
-				data-resource-metadata="<?php echo esc_url( $oauth_resource_url ); ?>"
-				data-authorization-metadata="<?php echo esc_url( $oauth_server_url ); ?>"
-			>
-				<span class="nexo-mcp-status-card__label"><?php esc_html_e( 'Descubrimiento OAuth', 'nexo-mcp' ); ?></span>
-				<strong class="nexo-mcp-status nexo-mcp-status--neutral nexo-mcp-discovery__state">
-					<span aria-hidden="true"></span>
-					<?php esc_html_e( 'Comprobando', 'nexo-mcp' ); ?>
-				</strong>
-				<small class="nexo-mcp-discovery__hint"><?php esc_html_e( 'Las direcciones que tu IA consulta antes de pedir permiso.', 'nexo-mcp' ); ?></small>
-			</article>
-		</div>
-
-		<div class="nexo-mcp-summary">
-			<section class="nexo-mcp-card nexo-mcp-meta" aria-labelledby="nexo-mcp-meta-title">
-				<div class="nexo-mcp-card__head">
-					<div>
-						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Sistema', 'nexo-mcp' ); ?></p>
-						<h2 class="nexo-mcp-card__title" id="nexo-mcp-meta-title"><?php esc_html_e( 'Entorno', 'nexo-mcp' ); ?></h2>
+				<?php foreach ( $summary_groups as $group_label => $group_modules ) : ?>
+					<?php if ( array() === $group_modules ) : ?>
+						<?php continue; ?>
+					<?php endif; ?>
+					<div class="nexo-mcp-overview__group">
+						<h3><?php echo esc_html( $group_label ); ?></h3>
+						<ul class="nexo-mcp-modrows">
+							<?php foreach ( $group_modules as $module ) : ?>
+								<?php $module_on = ! empty( $settings[ $module['key'] ] ); ?>
+								<li class="nexo-mcp-modrow<?php echo $module_on ? ' nexo-mcp-modrow--on' : ''; ?>">
+									<span class="nexo-mcp-modrow__name">
+										<strong><?php echo esc_html( $module['label'] ); ?></strong>
+										<?php if ( $module['risk'] && 'Riesgo alto' !== $group_label ) : ?>
+											<span class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Riesgo alto', 'nexo-mcp' ); ?></span>
+										<?php endif; ?>
+									</span>
+									<span class="nexo-mcp-modrow__scopes">
+										<?php foreach ( $module['scopes'] as $module_scope ) : ?>
+											<code><?php echo esc_html( $module_scope ); ?></code>
+										<?php endforeach; ?>
+									</span>
+									<span class="nexo-mcp-modrow__state">
+										<?php if ( $module_on ) : ?>
+											<span class="nexo-mcp-modstate nexo-mcp-modstate--on"><svg class="nexo-mcp-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg><?php esc_html_e( 'Activo', 'nexo-mcp' ); ?></span>
+										<?php else : ?>
+											<span class="nexo-mcp-modstate nexo-mcp-modstate--off"><svg class="nexo-mcp-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 8h6" stroke="currentColor" stroke-width="1.8"/></svg><?php esc_html_e( 'Apagado', 'nexo-mcp' ); ?></span>
+										<?php endif; ?>
+										<a class="nexo-mcp-modrow__link" href="<?php echo esc_url( $modules_url ); ?>" data-nexo-tab="modulos">
+											<?php esc_html_e( 'Cambiar en Módulos', 'nexo-mcp' ); ?>
+											<span class="screen-reader-text"><?php echo esc_html( ': ' . $module['label'] ); ?></span>
+										</a>
+									</span>
+								</li>
+							<?php endforeach; ?>
+						</ul>
 					</div>
-				</div>
-				<dl class="nexo-mcp-rows">
-					<div>
-						<dt><?php esc_html_e( 'Plugin', 'nexo-mcp' ); ?></dt>
-						<dd><?php echo esc_html( NEXO_MCP_VERSION ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'WordPress', 'nexo-mcp' ); ?></dt>
-						<dd><?php echo esc_html( get_bloginfo( 'version' ) ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'PHP', 'nexo-mcp' ); ?></dt>
-						<dd><?php echo esc_html( PHP_VERSION ); ?></dd>
-					</div>
-					<div>
-						<dt><?php esc_html_e( 'MCP Adapter', 'nexo-mcp' ); ?></dt>
-						<dd><?php echo esc_html( $adapter_version ); ?></dd>
-					</div>
-				</dl>
+				<?php endforeach; ?>
 			</section>
 
-			<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-start-title">
-				<div class="nexo-mcp-card__head">
-					<div>
-						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Primeros pasos', 'nexo-mcp' ); ?></p>
-						<h2 class="nexo-mcp-card__title" id="nexo-mcp-start-title"><?php esc_html_e( 'Conecta tu sitio en un minuto', 'nexo-mcp' ); ?></h2>
-					</div>
-					<a
-						class="button button-primary"
-						href="<?php echo esc_url( add_query_arg( 'tab', 'conectar', $panel_url ) ); ?>"
-						data-nexo-tab="conectar"
-					><?php esc_html_e( 'Empezar', 'nexo-mcp' ); ?></a>
-				</div>
-				<p class="nexo-mcp-muted"><?php esc_html_e( 'Elige tu IA, define qué podrá hacer y autoriza el acceso desde el navegador. Sin contraseñas ni tokens manuales.', 'nexo-mcp' ); ?></p>
-			</section>
+			<aside class="nexo-mcp-overview__aside" aria-label="<?php esc_attr_e( 'Accesos y actividad', 'nexo-mcp' ); ?>">
+				<section class="nexo-mcp-overview__block" aria-labelledby="nexo-mcp-overview-access">
+					<h2 id="nexo-mcp-overview-access"><?php esc_html_e( 'Accesos', 'nexo-mcp' ); ?></h2>
+					<p class="nexo-mcp-overview__lead"><?php esc_html_e( 'Las conexiones más recientes. Revocar se hace en Accesos.', 'nexo-mcp' ); ?></p>
+					<?php if ( array() === $summary_connections ) : ?>
+						<p class="nexo-mcp-overview__empty"><?php esc_html_e( 'Todavía no hay accesos vigentes.', 'nexo-mcp' ); ?></p>
+					<?php else : ?>
+						<?php foreach ( $summary_connections as $summary_connection ) : ?>
+							<?php
+							$summary_user = get_userdata( (int) $summary_connection['user_id'] );
+							$summary_name = '' !== (string) $summary_connection['client_name']
+								? (string) $summary_connection['client_name']
+								: (string) $summary_connection['client_id'];
+							$summary_used = (string) $summary_connection['last_used_at'];
+							$summary_seen = '' !== $summary_used && '0000-00-00 00:00:00' !== $summary_used;
+							?>
+							<article class="nexo-mcp-asidecard">
+								<header>
+									<strong><?php echo esc_html( $summary_name ); ?></strong>
+									<span class="nexo-mcp-overview__meta">
+										<?php
+										echo esc_html(
+											$summary_seen
+												/* translators: %s: fecha del último uso en UTC. */
+												? sprintf( __( 'Último uso: %s UTC', 'nexo-mcp' ), $summary_used )
+												: __( 'Sin uso todavía', 'nexo-mcp' )
+										);
+										?>
+									</span>
+								</header>
+								<p class="nexo-mcp-overview__meta">
+									<?php
+									printf(
+										/* translators: %s: nombre de usuario de WordPress. */
+										esc_html__( 'En nombre de %s', 'nexo-mcp' ),
+										esc_html( false !== $summary_user ? $summary_user->user_login : (string) $summary_connection['user_id'] )
+									);
+									?>
+								</p>
+								<p class="nexo-mcp-asidecard__scopes">
+									<?php foreach ( explode( ' ', (string) $summary_connection['scope'] ) as $summary_scope ) : ?>
+										<?php if ( '' !== $summary_scope ) : ?>
+											<code><?php echo esc_html( $summary_scope ); ?></code>
+										<?php endif; ?>
+									<?php endforeach; ?>
+								</p>
+							</article>
+						<?php endforeach; ?>
+						<p><a href="<?php echo esc_url( $accesos_url ); ?>" data-nexo-tab="accesos"><?php esc_html_e( 'Ver todos', 'nexo-mcp' ); ?></a></p>
+					<?php endif; ?>
+				</section>
+
+				<section class="nexo-mcp-overview__block" aria-labelledby="nexo-mcp-overview-activity">
+					<h2 id="nexo-mcp-overview-activity"><?php esc_html_e( 'Actividad reciente', 'nexo-mcp' ); ?></h2>
+					<p class="nexo-mcp-overview__lead"><?php esc_html_e( 'De la más reciente a la más antigua.', 'nexo-mcp' ); ?></p>
+					<?php
+					$result_labels = array(
+						'success' => array( __( 'Correcto', 'nexo-mcp' ), '✓' ),
+						'error'   => array( __( 'Error', 'nexo-mcp' ), '✕' ),
+						'denied'  => array( __( 'Denegado', 'nexo-mcp' ), '⊘' ),
+						'limited' => array( __( 'Limitado', 'nexo-mcp' ), '!' ),
+					);
+					?>
+					<?php if ( array() === $summary_audit ) : ?>
+						<p class="nexo-mcp-overview__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></p>
+					<?php else : ?>
+						<ol class="nexo-mcp-timeline">
+							<?php foreach ( $summary_audit as $summary_entry ) : ?>
+								<?php
+								$entry_ok    = 'success' === (string) $summary_entry->status;
+								$entry_label = $result_labels[ (string) $summary_entry->status ] ?? array( (string) $summary_entry->status, '•' );
+								?>
+								<li class="nexo-mcp-timeline__item<?php echo $entry_ok ? '' : ' nexo-mcp-timeline__item--bad'; ?>">
+									<time><?php echo esc_html( (string) $summary_entry->occurred_at ); ?> UTC</time>
+									<code class="nexo-mcp-timeline__tool"><?php echo esc_html( (string) $summary_entry->tool ); ?></code>
+									<span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( (string) $summary_entry->status ) ); ?>"><span aria-hidden="true"><?php echo esc_html( $entry_label[1] ); ?></span> <?php echo esc_html( $entry_label[0] ); ?></span>
+								</li>
+							<?php endforeach; ?>
+						</ol>
+						<p><a href="<?php echo esc_url( $activity_url ); ?>" data-nexo-tab="sistema"><?php esc_html_e( 'Ver toda', 'nexo-mcp' ); ?></a></p>
+					<?php endif; ?>
+				</section>
+			</aside>
 		</div>
 	</section>
 
@@ -780,20 +943,25 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 									class="button button-link-delete nexo-mcp-revoke-oauth"
 									data-client="<?php echo esc_attr( (string) $connection['client_id'] ); ?>"
 									data-user="<?php echo esc_attr( (string) $connection['user_id'] ); ?>"
+									aria-label="<?php echo esc_attr( sprintf( /* translators: %s: nombre del cliente. */ __( 'Revocar acceso de %s', 'nexo-mcp' ), $connection_name ) ); ?>"
 								>
 									<?php esc_html_e( 'Revocar', 'nexo-mcp' ); ?>
 								</button>
 							</div>
-							<span class="nexo-mcp-conn-scopes">
+							<ul class="nexo-mcp-conn-scopes" aria-label="<?php esc_attr_e( 'Alcances concedidos', 'nexo-mcp' ); ?>">
 								<?php foreach ( explode( ' ', (string) $connection['scope'] ) as $granted_scope ) : ?>
 									<?php if ( '' !== $granted_scope ) : ?>
-										<code><?php echo esc_html( $granted_scope ); ?></code>
+										<?php if ( \NexoDev\NexoMCP\Admin\ConnectionMap::is_risky_scope( $granted_scope ) ) : ?>
+											<li class="nexo-mcp-scope nexo-mcp-scope--risky"><code><?php echo esc_html( $granted_scope ); ?></code> <span class="nexo-mcp-scope__flag"><span aria-hidden="true">▲</span> <?php esc_html_e( 'Riesgo alto', 'nexo-mcp' ); ?></span></li>
+										<?php else : ?>
+											<li class="nexo-mcp-scope"><code><?php echo esc_html( $granted_scope ); ?></code></li>
+										<?php endif; ?>
 									<?php endif; ?>
 								<?php endforeach; ?>
-							</span>
+							</ul>
 							<?php $connection_scopes = array_filter( explode( ' ', (string) $connection['scope'] ) ); ?>
 							<details class="nexo-mcp-conn-edit">
-								<summary><?php esc_html_e( 'Editar alcances de esta conexión', 'nexo-mcp' ); ?></summary>
+								<summary><?php esc_html_e( 'Editar alcances', 'nexo-mcp' ); ?></summary>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="nexo-mcp-conn-edit__form">
 									<input type="hidden" name="action" value="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\OAuthConnectionsController::SCOPES_ACTION ); ?>">
 									<input type="hidden" name="client_id" value="<?php echo esc_attr( (string) $connection['client_id'] ); ?>">
@@ -859,391 +1027,121 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 					</div>
 				</div>
 
-				<div class="nexo-mcp-toggles">
-					<label class="nexo-mcp-toggle">
+				<?php
+				/*
+				 * Cada ajuste es una fila: nombre y descripción, alcance en mono,
+				 * interruptor y su estado en texto («Activo» / «Apagado», que
+				 * cambia con la casilla vía CSS). La casilla conserva `name`,
+				 * `value` y los `data-nexo-*` de confirmación: admin.js los lee.
+				 */
+				$render_toggle = static function ( string $key, bool $is_on, string $label, string $description, array $scopes, string $tag ) use ( $sensitive_options, $print_sensitive ): void {
+					?>
+					<label class="nexo-mcp-toggle<?php echo '' !== $tag ? ' nexo-mcp-toggle--sensitive' : ''; ?>">
 						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Servidor MCP', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Habilita el endpoint autenticado del conector.', 'nexo-mcp' ); ?></small>
+							<strong><?php echo esc_html( $label ); ?><?php echo '' !== $tag ? ' <em class="nexo-mcp-tag nexo-mcp-tag--sensitive">' . esc_html( $tag ) . '</em>' : ''; ?></strong>
+							<small><?php echo esc_html( $description ); ?></small>
+						</span>
+						<span class="nexo-mcp-toggle__scopes">
+							<?php foreach ( $scopes as $toggle_scope ) : ?>
+								<code><?php echo esc_html( $toggle_scope ); ?></code>
+							<?php endforeach; ?>
 						</span>
 						<input
 							type="checkbox"
-							name="nexo_mcp_settings[server_enabled]"
+							name="nexo_mcp_settings[<?php echo esc_attr( $key ); ?>]"
 							value="1"
-							<?php checked( ! empty( $settings['server_enabled'] ) ); ?>
+							<?php
+							if ( isset( $sensitive_options[ $key ] ) ) {
+								$print_sensitive( $key );
+							}
+							?>
+							<?php checked( $is_on ); ?>
 						>
 						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Herramientas WordPress', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Páginas, artículos, medios y categorías.', 'nexo-mcp' ); ?></small>
+						<span class="nexo-mcp-toggle__state" aria-hidden="true">
+							<span class="nexo-mcp-toggle__on"><?php esc_html_e( 'Activo', 'nexo-mcp' ); ?></span>
+							<span class="nexo-mcp-toggle__off"><?php esc_html_e( 'Apagado', 'nexo-mcp' ); ?></span>
 						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[wordpress_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['wordpress_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
 					</label>
+					<?php
+				};
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Contenido avanzado', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Medios, taxonomías y revisiones con permisos editoriales.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[content_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['content_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				$module_descriptions = array(
+					'wordpress_tools_enabled'          => __( 'Páginas, artículos, medios y categorías.', 'nexo-mcp' ),
+					'content_tools_enabled'            => __( 'Medios, taxonomías y revisiones con permisos editoriales.', 'nexo-mcp' ),
+					'seo_tools_enabled'                => __( 'Metadatos, Open Graph, Schema, sitemap y robots.', 'nexo-mcp' ),
+					'appearance_tools_enabled'         => __( 'Identidad, CSS adicional y menús sin editar archivos del tema.', 'nexo-mcp' ),
+					'woocommerce_tools_enabled'        => __( 'Productos simples, variables, precios, stock e imágenes.', 'nexo-mcp' ),
+					'builders_tools_enabled'           => __( 'Textos, enlaces e imágenes en páginas de Elementor, Divi y WPBakery, con respaldo antes de cada cambio.', 'nexo-mcp' ),
+					'design_system_tools_enabled'      => __( 'Cambia clases, variables, colores y tipografía de todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'builders_dynamic_enabled'         => __( 'Asocia datos del sitio (título, fecha, imagen destacada…) a textos e imágenes de Elementor 4. Requiere Elementor Pro y el módulo de constructores.', 'nexo-mcp' ),
+					'builders_components_enabled'      => __( 'Crea componentes reutilizables de Elementor 4 (en borrador). Requiere Elementor Pro con licencia activa y el módulo de constructores.', 'nexo-mcp' ),
+					'divi_design_tools_enabled'        => __( 'Cambia paleta, variables, fuentes y tipografía globales de Divi 5 en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'divi_presets_tools_enabled'       => __( 'Crea, cambia y borra los presets de módulos y de grupos de opciones de Divi 5, y fija el predeterminado, en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'divi_dynamic_tools_enabled'       => __( 'Pone contenido dinámico y bucles de consulta en las páginas de Divi 5 (copia de trabajo, con respaldo): muestra datos del sitio a cualquier visitante.', 'nexo-mcp' ),
+					'divi_conditions_tools_enabled'    => __( 'Pone condiciones para mostrar u ocultar módulos de Divi 5 (copia de trabajo, con respaldo): decide qué ve cada visitante.', 'nexo-mcp' ),
+					'divi_theme_builder_tools_enabled' => __( 'Crea y cambia plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo, 404): decide qué ve todo el sitio.', 'nexo-mcp' ),
+					'divi_library_tools_enabled'       => __( 'Guarda, cambia y reutiliza elementos de la biblioteca de Divi 5: un elemento global cambia todas las páginas que lo usan.', 'nexo-mcp' ),
+					'maintenance_tools_enabled'        => __( 'Actualiza, instala, activa o desactiva con aprobación temporal.', 'nexo-mcp' ),
+					'extension_deletion_enabled'       => __( 'Permite borrar plugins y temas desactivados. No se puede deshacer.', 'nexo-mcp' ),
+					'publishing_enabled'               => __( 'Permite cambiar estados y publicar cuando el usuario tiene capacidad.', 'nexo-mcp' ),
+					'destructive_enabled'              => __( 'Habilita eliminaciones explícitas. Déjalo apagado si no es imprescindible.', 'nexo-mcp' ),
+				);
+				?>
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'SEO técnico', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Metadatos, Open Graph, Schema, sitemap y robots.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[seo_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['seo_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<p class="nexo-mcp-modules-lead"><?php esc_html_e( 'Apagado = ninguna IA lo usa, aunque tenga el alcance. Los módulos con la etiqueta «Riesgo alto» piden una confirmación al encenderse.', 'nexo-mcp' ); ?></p>
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Apariencia global', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Identidad, CSS adicional y menús sin editar archivos del tema.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[appearance_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['appearance_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Constructores visuales', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Textos, enlaces e imágenes en páginas de Elementor, Divi y WPBakery, con respaldo antes de cada cambio.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['builders_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Sistema de diseño de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cambia clases, variables, colores y tipografía de todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[design_system_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'design_system_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['design_system_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Datos dinámicos de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Asocia datos del sitio (título, fecha, imagen destacada…) a textos e imágenes de Elementor 4. Requiere Elementor Pro y el módulo de constructores.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_dynamic_enabled]"
-							value="1"
-							<?php $print_sensitive( 'builders_dynamic_enabled' ); ?>
-							<?php checked( ! empty( $settings['builders_dynamic_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Componentes de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea componentes reutilizables de Elementor 4 (en borrador). Requiere Elementor Pro con licencia activa y el módulo de constructores.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_components_enabled]"
-							value="1"
-							<?php $print_sensitive( 'builders_components_enabled' ); ?>
-							<?php checked( ! empty( $settings['builders_components_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Diseño global de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cambia paleta, variables, fuentes y tipografía globales de Divi 5 en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_design_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_design_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_design_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Presets de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea, cambia y borra los presets de módulos y de grupos de opciones de Divi 5, y fija el predeterminado, en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_presets_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_presets_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_presets_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Contenido dinámico de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Pone contenido dinámico y bucles de consulta en las páginas de Divi 5 (copia de trabajo, con respaldo): muestra datos del sitio a cualquier visitante.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_dynamic_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_dynamic_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_dynamic_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Condiciones de visualización de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Pone condiciones para mostrar u ocultar módulos de Divi 5 (copia de trabajo, con respaldo): decide qué ve cada visitante.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_conditions_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_conditions_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_conditions_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Theme Builder de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea y cambia plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo, 404): decide qué ve todo el sitio.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_theme_builder_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_theme_builder_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_theme_builder_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Biblioteca de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Guarda, cambia y reutiliza elementos de la biblioteca de Divi 5: un elemento global cambia todas las páginas que lo usan.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_library_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_library_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_library_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Mantenimiento de plugins', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Actualiza, instala, activa o desactiva con aprobación temporal.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[maintenance_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'maintenance_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['maintenance_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Borrar plugins y temas', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Permite borrar plugins y temas desactivados. No se puede deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[extension_deletion_enabled]"
-							value="1"
-							<?php $print_sensitive( 'extension_deletion_enabled' ); ?>
-							<?php checked( ! empty( $settings['extension_deletion_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<?php if ( $is_woocommerce ) : ?>
-						<label class="nexo-mcp-toggle">
-							<span class="nexo-mcp-toggle__text">
-								<strong><?php esc_html_e( 'Herramientas WooCommerce', 'nexo-mcp' ); ?></strong>
-								<small><?php esc_html_e( 'Productos simples, variables, precios, stock e imágenes.', 'nexo-mcp' ); ?></small>
-							</span>
-							<input
-								type="checkbox"
-								name="nexo_mcp_settings[woocommerce_tools_enabled]"
-								value="1"
-								<?php checked( ! empty( $settings['woocommerce_tools_enabled'] ) ); ?>
-							>
-							<i aria-hidden="true"></i>
-						</label>
+				<?php foreach ( \NexoDev\NexoMCP\Admin\ConnectionMap::module_groups( $is_woocommerce ) as $modules_group_label => $modules_group ) : ?>
+					<?php if ( array() === $modules_group ) : ?>
+						<?php continue; ?>
 					<?php endif; ?>
+					<section class="nexo-mcp-modset">
+						<h3><?php echo esc_html( $modules_group_label ); ?></h3>
+						<div class="nexo-mcp-toggles">
+							<?php foreach ( $modules_group as $group_module ) : ?>
+								<?php
+								$render_toggle(
+									$group_module['key'],
+									! empty( $settings[ $group_module['key'] ] ),
+									$group_module['label'],
+									$module_descriptions[ $group_module['key'] ] ?? '',
+									$group_module['scopes'],
+									$group_module['risk'] ? __( 'Riesgo alto', 'nexo-mcp' ) : ''
+								);
+								?>
+							<?php endforeach; ?>
+						</div>
+					</section>
+				<?php endforeach; ?>
 
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Modo sólo lectura', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Impide cualquier creación o modificación.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[read_only]"
-							value="1"
-							<?php $print_sensitive( 'read_only' ); ?>
-							<?php checked( ! empty( $settings['read_only'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<section class="nexo-mcp-modset">
+					<h3><?php esc_html_e( 'Servidor y política', 'nexo-mcp' ); ?></h3>
+					<div class="nexo-mcp-toggles">
+						<?php
+						$render_toggle( 'server_enabled', ! empty( $settings['server_enabled'] ), __( 'Servidor MCP', 'nexo-mcp' ), __( 'Habilita el endpoint autenticado del conector.', 'nexo-mcp' ), array(), '' );
+						$render_toggle( 'read_only', ! empty( $settings['read_only'] ), __( 'Modo sólo lectura', 'nexo-mcp' ), __( 'Impide cualquier creación o modificación.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'drafts_only', ! empty( $settings['drafts_only'] ), __( 'Crear sólo borradores', 'nexo-mcp' ), __( 'La política prevalecerá sobre los permisos del usuario.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'working_copy_default', ! empty( $settings['working_copy_default'] ), __( 'Editar lo publicado en una copia de trabajo', 'nexo-mcp' ), __( 'Los cambios a páginas y entradas publicadas van primero a un borrador enlazado. Publícalo o descártalo desde la lista de páginas o entradas.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'enforce_connection_scopes', ! empty( $settings['enforce_connection_scopes'] ), __( 'Respetar los alcances de cada conexión', 'nexo-mcp' ), __( 'Cada conexión OAuth sólo puede usar los permisos que se le concedieron (editables en Accesos). Los módulos del panel siguen siendo el límite superior.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'cache_purge_enabled', ! empty( $settings['cache_purge_enabled'] ), __( 'Purgar la caché al escribir', 'nexo-mcp' ), __( 'Sin esto un cambio se guarda pero el visitante sigue viendo lo anterior. Purga sólo la página afectada, salvo en cambios globales.', 'nexo-mcp' ), array(), '' );
+						?>
+					</div>
+				</section>
 
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Crear sólo borradores', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'La política prevalecerá sobre los permisos del usuario.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[drafts_only]"
-							value="1"
-							<?php $print_sensitive( 'drafts_only' ); ?>
-							<?php checked( ! empty( $settings['drafts_only'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Editar lo publicado en una copia de trabajo', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Los cambios a páginas y entradas publicadas van primero a un borrador enlazado. Publícalo o descártalo desde la lista de páginas o entradas.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[working_copy_default]"
-							value="1"
-							<?php $print_sensitive( 'working_copy_default' ); ?>
-							<?php checked( ! empty( $settings['working_copy_default'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Respetar los alcances de cada conexión', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cada conexión OAuth sólo puede usar los permisos que se le concedieron (editables en Accesos). Los módulos del panel siguen siendo el límite superior.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[enforce_connection_scopes]"
-							value="1"
-							<?php $print_sensitive( 'enforce_connection_scopes' ); ?>
-							<?php checked( ! empty( $settings['enforce_connection_scopes'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Purgar la caché al escribir', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Sin esto un cambio se guarda pero el visitante sigue viendo lo anterior. Purga sólo la página afectada, salvo en cambios globales.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[cache_purge_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['cache_purge_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Publicación remota', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Permite cambiar estados y publicar cuando el usuario tiene capacidad.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[publishing_enabled]"
-							value="1"
-							<?php $print_sensitive( 'publishing_enabled' ); ?>
-							<?php checked( ! empty( $settings['publishing_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Acciones destructivas', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Habilita eliminaciones explícitas. Déjalo apagado si no es imprescindible.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[destructive_enabled]"
-							value="1"
-							<?php $print_sensitive( 'destructive_enabled' ); ?>
-							<?php checked( ! empty( $settings['destructive_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-				</div>
-
-				<div class="nexo-mcp-proxy">
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'El sitio se publica por un túnel o proxy', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Actívalo si tus clientes de IA llegan por una dirección distinta a la del sitio, como un túnel de desarrollo. Sin esto la autorización se rechaza con «invalid_target».', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[proxy_enabled]"
-							value="1"
-							<?php checked( '' !== (string) ( $settings['proxy_resource'] ?? '' ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<section class="nexo-mcp-modset nexo-mcp-proxy">
+					<h3><?php esc_html_e( 'Túnel o proxy', 'nexo-mcp' ); ?></h3>
+					<div class="nexo-mcp-toggles">
+						<?php
+						$render_toggle(
+							'proxy_enabled',
+							'' !== (string) ( $settings['proxy_resource'] ?? '' ),
+							__( 'El sitio se publica por un túnel o proxy', 'nexo-mcp' ),
+							__( 'Actívalo si tus clientes de IA llegan por una dirección distinta a la del sitio, como un túnel de desarrollo. Sin esto la autorización se rechaza con «invalid_target».', 'nexo-mcp' ),
+							array(),
+							''
+						);
+						?>
+					</div>
 
 					<p class="nexo-mcp-proxy-field">
 						<label for="nexo-mcp-proxy-resource">
@@ -1268,440 +1166,451 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							?>
 						</small>
 					</p>
-				</div>
+				</section>
 
 				<?php submit_button( __( 'Guardar configuración', 'nexo-mcp' ), 'primary', 'submit', false ); ?>
 			</form>
 		</section>
 	</section>
 
-	<?php /* ------------------------------------------------------ Sitio y cupos */ ?>
+	<?php /* ------------------------------------------------------------ Sistema */ ?>
 	<section
-		id="nexo-mcp-panel-licencia"
+		id="nexo-mcp-panel-sistema"
 		class="nexo-mcp-tabpanel"
-		data-nexo-panel="licencia"
-		aria-labelledby="nexo-mcp-tablink-licencia"
-		<?php echo 'licencia' === $active_tab ? '' : 'hidden'; ?>
+		data-nexo-panel="sistema"
+		<?php echo '' !== $active_section ? 'data-nexo-section="' . esc_attr( $active_section ) . '"' : ''; ?>
+		aria-labelledby="nexo-mcp-tablink-sistema"
+		<?php echo 'sistema' === $active_tab ? '' : 'hidden'; ?>
 	>
-		<?php if ( ! $api_configured ) : ?>
-		<section class="nexo-mcp-card nexo-mcp-api-missing">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin servicio de licencias', 'nexo-mcp' ); ?></h2>
+		<nav class="nexo-mcp-sysnav" aria-label="<?php esc_attr_e( 'Secciones de Sistema', 'nexo-mcp' ); ?>">
+			<ol class="nexo-mcp-sysnav__list">
+				<?php foreach ( $system_sections as $section_slug => $section_label ) : ?>
+					<li><a class="nexo-mcp-sysnav__link" href="#nexo-mcp-sec-<?php echo esc_attr( $section_slug ); ?>"><?php echo esc_html( $section_label ); ?></a></li>
+				<?php endforeach; ?>
+			</ol>
+		</nav>
+		<div id="nexo-mcp-sec-actividad" class="nexo-mcp-sistema__section">
+			<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-actividad-title">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Trazabilidad', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title" id="nexo-mcp-actividad-title"><?php esc_html_e( 'Actividad reciente', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php esc_html_e( 'Sin secretos', 'nexo-mcp' ); ?></span>
 				</div>
-				<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
-			</div>
-			<p class="nexo-mcp-callout"><?php esc_html_e( 'Este sitio no tiene un servidor de licencias configurado, así que no se pide clave ni registro: el conector funciona completo, con todas sus herramientas, sin límite de sitios.', 'nexo-mcp' ); ?></p>
-			<p class="description">
-				<?php
-				printf(
-					/* translators: %s: línea de ejemplo para wp-config.php. */
-					esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
-					'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
-				);
-				?>
-			</p>
-		</section>
-		<?php else : ?>
-		<section class="nexo-mcp-card nexo-mcp-registration" aria-labelledby="nexo-mcp-licencia-title">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Licencia', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title" id="nexo-mcp-licencia-title"><?php esc_html_e( 'Este sitio y tus cupos', 'nexo-mcp' ); ?></h2>
-				</div>
-				<span class="nexo-mcp-tag"><?php echo esc_html( $license_plan_label ); ?></span>
-			</div>
 
-			<?php /* Sin licencia activa no se llega a esta vista: AdminPage muestra la activación. */ ?>
-			<div class="nexo-mcp-box nexo-mcp-registration__verified">
-				<div>
-					<strong><?php echo esc_html( '' !== $site_host ? $site_host : $oauth_site_url ); ?></strong>
-					<small>
-						<?php
-						if ( '' !== $license_sites_label ) {
-							echo esc_html( $license_sites_label );
-						} else {
-							printf(
-								/* translators: %s: fecha UTC de activación. */
-								esc_html__( 'Activo desde el %s UTC', 'nexo-mcp' ),
-								esc_html( $registration['verified_at'] )
-							);
-						}
-						?>
-					</small>
-					<small>
-						<?php
-						echo '' !== $registration['license_prefix']
-							? esc_html( $registration['license_prefix'] . '…' )
-							: esc_html( $registration['email'] );
-						?>
-					</small>
+				<div class="nexo-mcp-table-wrap">
+					<table class="nexo-mcp-table nexo-mcp-log">
+						<thead>
+							<tr>
+								<th scope="col"><?php esc_html_e( 'Hora (UTC)', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Usuario', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Herramienta', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Detalle', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Resultado', 'nexo-mcp' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php if ( array() === $audit_entries ) : ?>
+								<tr>
+									<td colspan="5" class="nexo-mcp-table__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></td>
+								</tr>
+							<?php else : ?>
+								<?php foreach ( $audit_entries as $entry ) : ?>
+									<?php
+									$entry_status = (string) $entry->status;
+									$entry_label  = $result_labels[ $entry_status ] ?? array( $entry_status, '•' );
+									$entry_detail = trim( (string) ( $entry->operation ?? '' ) . ' ' . (string) ( $entry->result_summary ?? '' ) );
+									?>
+									<tr>
+										<td class="nexo-mcp-table__date"><?php echo esc_html( (string) $entry->occurred_at ); ?></td>
+										<td class="nexo-mcp-table__user"><?php echo esc_html( $entry->user_id ? '#' . (string) $entry->user_id : '—' ); ?></td>
+										<td><code><?php echo esc_html( (string) $entry->tool ); ?></code></td>
+										<td class="nexo-mcp-log__detail"><?php echo esc_html( '' !== $entry_detail ? $entry_detail : '—' ); ?></td>
+										<td><span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( $entry_status ) ); ?>"><span aria-hidden="true"><?php echo esc_html( $entry_label[1] ); ?></span> <?php echo esc_html( $entry_label[0] ); ?></span></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</tbody>
+					</table>
 				</div>
-				<span class="nexo-mcp-status <?php echo $license_offline ? 'nexo-mcp-status--warning' : 'nexo-mcp-status--online'; ?>">
-					<span aria-hidden="true"></span>
-					<?php echo $license_offline ? esc_html__( 'Sin confirmar', 'nexo-mcp' ) : esc_html__( 'Activo', 'nexo-mcp' ); ?>
-				</span>
-			</div>
-
-			<?php if ( $license_offline ) : ?>
-				<p class="nexo-mcp-callout nexo-mcp-callout--warn nexo-mcp-license-offline">
+			</section>
+		</div>
+		<div id="nexo-mcp-sec-licencia" class="nexo-mcp-sistema__section">
+			<?php if ( ! $api_configured ) : ?>
+			<section class="nexo-mcp-card nexo-mcp-api-missing">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin servicio de licencias', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
+				</div>
+				<p class="nexo-mcp-callout"><?php esc_html_e( 'Este sitio no tiene un servidor de licencias configurado, así que no se pide clave ni registro: el conector funciona completo, con todas sus herramientas, sin límite de sitios.', 'nexo-mcp' ); ?></p>
+				<p class="description">
 					<?php
 					printf(
-						/* translators: %d: días restantes. */
-						esc_html__( 'No se ha podido confirmar la licencia con el servidor. El conector sigue funcionando %d días más mientras se reintenta a diario.', 'nexo-mcp' ),
-						(int) $license_grace_days
+						/* translators: %s: línea de ejemplo para wp-config.php. */
+						esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
+						'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
 					);
 					?>
 				</p>
-			<?php endif; ?>
-
-			<div class="nexo-mcp-actions">
-				<button class="button" type="button" data-nexo-license-action="recheck_license"><?php esc_html_e( 'Comprobar licencia', 'nexo-mcp' ); ?></button>
-				<button class="button button-link-delete" type="button" data-nexo-license-action="release_license"><?php esc_html_e( 'Desconectar este sitio', 'nexo-mcp' ); ?></button>
-			</div>
-
-			<p class="nexo-mcp-registration__message" role="status" aria-live="polite"></p>
-			<p class="description"><?php esc_html_e( 'Al desconectar, este sitio libera su cupo y deja de operar hasta que vuelvas a activarlo con una clave.', 'nexo-mcp' ); ?></p>
-		</section>
-		<?php endif; ?>
-	</section>
-
-	<?php /* ---------------------------------------------------- Actualizaciones */ ?>
-	<section
-		id="nexo-mcp-panel-actualizaciones"
-		class="nexo-mcp-tabpanel"
-		data-nexo-panel="actualizaciones"
-		aria-labelledby="nexo-mcp-tablink-actualizaciones"
-		<?php echo 'actualizaciones' === $active_tab ? '' : 'hidden'; ?>
-	>
-		<?php if ( ! $api_configured ) : ?>
-		<section class="nexo-mcp-card nexo-mcp-api-missing">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin canal de actualizaciones remoto', 'nexo-mcp' ); ?></h2>
+			</section>
+			<?php else : ?>
+			<section class="nexo-mcp-card nexo-mcp-registration" aria-labelledby="nexo-mcp-licencia-title">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Licencia', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title" id="nexo-mcp-licencia-title"><?php esc_html_e( 'Este sitio y tus cupos', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php echo esc_html( $license_plan_label ); ?></span>
 				</div>
-				<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
-			</div>
-			<p class="nexo-mcp-callout"><?php esc_html_e( 'No hay un servidor de actualizaciones configurado. Actualiza Nexo MCP subiendo una versión nueva del ZIP desde Plugins › Añadir plugin.', 'nexo-mcp' ); ?></p>
-			<p class="description">
-				<?php
-				printf(
-					/* translators: %s: línea de ejemplo para wp-config.php. */
-					esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
-					'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
-				);
-				?>
-			</p>
-		</section>
-		<?php else : ?>
-		<section class="nexo-mcp-card nexo-mcp-updates" aria-labelledby="nexo-mcp-updates-title">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Versiones', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title" id="nexo-mcp-updates-title">
+
+				<?php /* Sin licencia activa no se llega a esta vista: AdminPage muestra la activación. */ ?>
+				<div class="nexo-mcp-box nexo-mcp-registration__verified">
+					<div>
+						<strong><?php echo esc_html( '' !== $site_host ? $site_host : $oauth_site_url ); ?></strong>
+						<small>
+							<?php
+							if ( '' !== $license_sites_label ) {
+								echo esc_html( $license_sites_label );
+							} else {
+								printf(
+									/* translators: %s: fecha UTC de activación. */
+									esc_html__( 'Activo desde el %s UTC', 'nexo-mcp' ),
+									esc_html( $registration['verified_at'] )
+								);
+							}
+							?>
+						</small>
+						<small>
+							<?php
+							echo '' !== $registration['license_prefix']
+								? esc_html( $registration['license_prefix'] . '…' )
+								: esc_html( $registration['email'] );
+							?>
+						</small>
+					</div>
+					<span class="nexo-mcp-status <?php echo $license_offline ? 'nexo-mcp-status--warning' : 'nexo-mcp-status--online'; ?>">
+						<span aria-hidden="true"></span>
+						<?php echo $license_offline ? esc_html__( 'Sin confirmar', 'nexo-mcp' ) : esc_html__( 'Activo', 'nexo-mcp' ); ?>
+					</span>
+				</div>
+
+				<?php if ( $license_offline ) : ?>
+					<p class="nexo-mcp-callout nexo-mcp-callout--warn nexo-mcp-license-offline">
+						<?php
+						printf(
+							/* translators: %d: días restantes. */
+							esc_html__( 'No se ha podido confirmar la licencia con el servidor. El conector sigue funcionando %d días más mientras se reintenta a diario.', 'nexo-mcp' ),
+							(int) $license_grace_days
+						);
+						?>
+					</p>
+				<?php endif; ?>
+
+				<div class="nexo-mcp-actions">
+					<button class="button" type="button" data-nexo-license-action="recheck_license"><?php esc_html_e( 'Comprobar licencia', 'nexo-mcp' ); ?></button>
+					<button class="button button-link-delete" type="button" data-nexo-license-action="release_license"><?php esc_html_e( 'Desconectar este sitio', 'nexo-mcp' ); ?></button>
+				</div>
+
+				<p class="nexo-mcp-registration__message" role="status" aria-live="polite"></p>
+				<p class="description"><?php esc_html_e( 'Al desconectar, este sitio libera su cupo y deja de operar hasta que vuelvas a activarlo con una clave.', 'nexo-mcp' ); ?></p>
+			</section>
+			<?php endif; ?>
+		</div>
+		<div id="nexo-mcp-sec-actualizaciones" class="nexo-mcp-sistema__section">
+			<?php if ( ! $api_configured ) : ?>
+			<section class="nexo-mcp-card nexo-mcp-api-missing">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin canal de actualizaciones remoto', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
+				</div>
+				<p class="nexo-mcp-callout"><?php esc_html_e( 'No hay un servidor de actualizaciones configurado. Actualiza Nexo MCP subiendo una versión nueva del ZIP desde Plugins › Añadir plugin.', 'nexo-mcp' ); ?></p>
+				<p class="description">
+					<?php
+					printf(
+						/* translators: %s: línea de ejemplo para wp-config.php. */
+						esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
+						'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
+					);
+					?>
+				</p>
+			</section>
+			<?php else : ?>
+			<section class="nexo-mcp-card nexo-mcp-updates" aria-labelledby="nexo-mcp-updates-title">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Versiones', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title" id="nexo-mcp-updates-title">
+							<?php
+							echo $update_available
+								? esc_html__( 'Hay una versión nueva', 'nexo-mcp' )
+								: esc_html__( 'Estás al día', 'nexo-mcp' );
+							?>
+						</h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php echo esc_html( 'v' . NEXO_MCP_VERSION ); ?></span>
+				</div>
+
+				<div class="nexo-mcp-box">
+					<div>
+						<strong>
+							<?php
+							if ( $update_available ) {
+								printf(
+									/* translators: 1: versión instalada, 2: versión disponible. */
+									esc_html__( '%1$s → %2$s', 'nexo-mcp' ),
+									esc_html( NEXO_MCP_VERSION ),
+									esc_html( $update['version'] )
+								);
+							} else {
+								echo esc_html(
+									'' !== $update['version'] ? $update['version'] : NEXO_MCP_VERSION
+								);
+							}
+							?>
+						</strong>
+						<small>
+							<?php
+							if ( $update_available && '' !== $update['published'] ) {
+								printf(
+									/* translators: %s: fecha de publicación. */
+									esc_html__( 'Publicada el %s', 'nexo-mcp' ),
+									esc_html( gmdate( 'd-m-Y', (int) strtotime( $update['published'] ) ) )
+								);
+							} elseif ( '' !== $update['checked_at'] ) {
+								printf(
+									/* translators: %s: fecha UTC de la última comprobación. */
+									esc_html__( 'Comprobado el %s UTC', 'nexo-mcp' ),
+									esc_html( $update['checked_at'] )
+								);
+							} else {
+								esc_html_e( 'Sin comprobar todavía', 'nexo-mcp' );
+							}
+							?>
+						</small>
+					</div>
+					<span class="nexo-mcp-status <?php echo $update_available ? 'nexo-mcp-status--warning' : 'nexo-mcp-status--online'; ?>">
+						<span aria-hidden="true"></span>
 						<?php
 						echo $update_available
-							? esc_html__( 'Hay una versión nueva', 'nexo-mcp' )
-							: esc_html__( 'Estás al día', 'nexo-mcp' );
+							? esc_html__( 'Actualizable', 'nexo-mcp' )
+							: esc_html__( 'Al día', 'nexo-mcp' );
 						?>
-					</h2>
+					</span>
 				</div>
-				<span class="nexo-mcp-tag"><?php echo esc_html( 'v' . NEXO_MCP_VERSION ); ?></span>
-			</div>
 
-			<div class="nexo-mcp-box">
-				<div>
-					<strong>
-						<?php
-						if ( $update_available ) {
-							printf(
-								/* translators: 1: versión instalada, 2: versión disponible. */
-								esc_html__( '%1$s → %2$s', 'nexo-mcp' ),
-								esc_html( NEXO_MCP_VERSION ),
-								esc_html( $update['version'] )
-							);
-						} else {
-							echo esc_html(
-								'' !== $update['version'] ? $update['version'] : NEXO_MCP_VERSION
-							);
-						}
-						?>
-					</strong>
-					<small>
-						<?php
-						if ( $update_available && '' !== $update['published'] ) {
-							printf(
-								/* translators: %s: fecha de publicación. */
-								esc_html__( 'Publicada el %s', 'nexo-mcp' ),
-								esc_html( gmdate( 'd-m-Y', (int) strtotime( $update['published'] ) ) )
-							);
-						} elseif ( '' !== $update['checked_at'] ) {
-							printf(
-								/* translators: %s: fecha UTC de la última comprobación. */
-								esc_html__( 'Comprobado el %s UTC', 'nexo-mcp' ),
-								esc_html( $update['checked_at'] )
-							);
-						} else {
-							esc_html_e( 'Sin comprobar todavía', 'nexo-mcp' );
-						}
-						?>
-					</small>
-				</div>
-				<span class="nexo-mcp-status <?php echo $update_available ? 'nexo-mcp-status--warning' : 'nexo-mcp-status--online'; ?>">
-					<span aria-hidden="true"></span>
+				<?php if ( $update_available && array() !== $update_changelog ) : ?>
+					<p class="nexo-mcp-eyebrow nexo-mcp-changelog__title">
+						<?php esc_html_e( 'Qué trae', 'nexo-mcp' ); ?>
+					</p>
+					<ul class="nexo-mcp-changelog">
+						<?php foreach ( $update_changelog as $linea ) : ?>
+							<li><?php echo esc_html( $linea ); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+
+				<?php if ( $update_available ) : ?>
+					<div class="nexo-mcp-actions">
+						<a class="button button-primary" href="<?php echo esc_url( $updates_url ); ?>">
+							<?php esc_html_e( 'Ir a actualizar', 'nexo-mcp' ); ?>
+						</a>
+					</div>
+					<p class="description">
+						<?php esc_html_e( 'Se instala desde la pantalla de Plugins, como cualquier otro. Si tienes activadas las actualizaciones automáticas de WordPress, se instalará sola.', 'nexo-mcp' ); ?>
+					</p>
+				<?php else : ?>
 					<?php
-					echo $update_available
-						? esc_html__( 'Actualizable', 'nexo-mcp' )
-						: esc_html__( 'Al día', 'nexo-mcp' );
+					/*
+					 * El botón vive aquí y no sólo en la sección de licencia: quien
+					 * quiere saber si hay algo nuevo mira las versiones, y
+					 * «Comprobar licencia» no dice que también las busca.
+					 */
 					?>
-				</span>
-			</div>
-
-			<?php if ( $update_available && array() !== $update_changelog ) : ?>
-				<p class="nexo-mcp-eyebrow nexo-mcp-changelog__title">
-					<?php esc_html_e( 'Qué trae', 'nexo-mcp' ); ?>
-				</p>
-				<ul class="nexo-mcp-changelog">
-					<?php foreach ( $update_changelog as $linea ) : ?>
-						<li><?php echo esc_html( $linea ); ?></li>
-					<?php endforeach; ?>
-				</ul>
+					<div class="nexo-mcp-actions">
+						<button class="button" type="button" data-nexo-check-updates>
+							<?php esc_html_e( 'Buscar actualizaciones', 'nexo-mcp' ); ?>
+						</button>
+					</div>
+					<p class="nexo-mcp-registration__message nexo-mcp-updates__message" role="status" aria-live="polite"></p>
+					<p class="description">
+						<?php esc_html_e( 'Las versiones nuevas llegan solas mientras tu licencia esté activa. Se comprueba una vez al día, y con este botón al momento.', 'nexo-mcp' ); ?>
+					</p>
+				<?php endif; ?>
+			</section>
 			<?php endif; ?>
-
-			<?php if ( $update_available ) : ?>
-				<div class="nexo-mcp-actions">
-					<a class="button button-primary" href="<?php echo esc_url( $updates_url ); ?>">
-						<?php esc_html_e( 'Ir a actualizar', 'nexo-mcp' ); ?>
-					</a>
+		</div>
+		<div id="nexo-mcp-sec-endpoint" class="nexo-mcp-sistema__section">
+			<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-endpoint-title">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Conexión', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title" id="nexo-mcp-endpoint-title"><?php esc_html_e( 'Endpoint MCP', 'nexo-mcp' ); ?></h2>
+					</div>
 				</div>
-				<p class="description">
-					<?php esc_html_e( 'Se instala desde la pantalla de Plugins, como cualquier otro. Si tienes activadas las actualizaciones automáticas de WordPress, se instalará sola.', 'nexo-mcp' ); ?>
-				</p>
-			<?php else : ?>
-				<?php
-				/*
-				 * El botón vive aquí y no sólo en la sección de licencia: quien
-				 * quiere saber si hay algo nuevo mira las versiones, y
-				 * «Comprobar licencia» no dice que también las busca.
-				 */
-				?>
-				<div class="nexo-mcp-actions">
-					<button class="button" type="button" data-nexo-check-updates>
-						<?php esc_html_e( 'Buscar actualizaciones', 'nexo-mcp' ); ?>
+
+				<div class="nexo-mcp-endpoint">
+					<code id="nexo-mcp-endpoint-url"><?php echo esc_html( $endpoint ); ?></code>
+					<button class="button nexo-mcp-copy-endpoint" type="button" data-target="nexo-mcp-endpoint-url">
+						<svg class="nexo-mcp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+						<?php esc_html_e( 'Copiar', 'nexo-mcp' ); ?>
 					</button>
 				</div>
-				<p class="nexo-mcp-registration__message nexo-mcp-updates__message" role="status" aria-live="polite"></p>
 				<p class="description">
-					<?php esc_html_e( 'Las versiones nuevas llegan solas mientras tu licencia esté activa. Se comprueba una vez al día, y con este botón al momento.', 'nexo-mcp' ); ?>
+					<?php esc_html_e( 'Requiere HTTPS, una Application Password válida y un usuario con capacidades Nexo MCP.', 'nexo-mcp' ); ?>
 				</p>
-			<?php endif; ?>
-		</section>
-		<?php endif; ?>
-	</section>
+			</section>
 
-	<?php /* ------------------------------------------------------- Endpoint MCP */ ?>
-	<section
-		id="nexo-mcp-panel-endpoint"
-		class="nexo-mcp-tabpanel"
-		data-nexo-panel="endpoint"
-		aria-labelledby="nexo-mcp-tablink-endpoint"
-		<?php echo 'endpoint' === $active_tab ? '' : 'hidden'; ?>
-	>
-		<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-endpoint-title">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Conexión', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title" id="nexo-mcp-endpoint-title"><?php esc_html_e( 'Endpoint MCP', 'nexo-mcp' ); ?></h2>
+			<?php
+			/*
+			 * El descubrimiento vive en /.well-known/, fuera del alcance de WordPress.
+			 * Hay servidores que sirven ese directorio como archivos estáticos y la
+			 * petición nunca llega a PHP: el conector queda mudo aunque esté activo.
+			 * Sólo se puede saber pidiendo las direcciones desde fuera, así que la
+			 * tarjeta nace en blanco y la completa el navegador.
+			 */
+			?>
+			<article class="nexo-mcp-status-card nexo-mcp-discovery"
+				data-resource-metadata="<?php echo esc_url( $oauth_resource_url ); ?>"
+				data-authorization-metadata="<?php echo esc_url( $oauth_server_url ); ?>"
+			>
+				<span class="nexo-mcp-status-card__label"><?php esc_html_e( 'Descubrimiento OAuth', 'nexo-mcp' ); ?></span>
+				<strong class="nexo-mcp-status nexo-mcp-status--neutral nexo-mcp-discovery__state">
+					<span aria-hidden="true"></span>
+					<?php esc_html_e( 'Comprobando', 'nexo-mcp' ); ?>
+				</strong>
+				<small class="nexo-mcp-discovery__hint"><?php esc_html_e( 'Las direcciones que tu IA consulta antes de pedir permiso.', 'nexo-mcp' ); ?></small>
+			</article>
+		</div>
+		<div id="nexo-mcp-sec-soporte" class="nexo-mcp-sistema__section">
+			<?php if ( ! $api_configured ) : ?>
+			<section class="nexo-mcp-card nexo-mcp-api-missing">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin servicio de reportes', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
 				</div>
-			</div>
-
-			<div class="nexo-mcp-endpoint">
-				<code id="nexo-mcp-endpoint-url"><?php echo esc_html( $endpoint ); ?></code>
-				<button class="button nexo-mcp-copy-endpoint" type="button" data-target="nexo-mcp-endpoint-url">
-					<svg class="nexo-mcp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-					<?php esc_html_e( 'Copiar', 'nexo-mcp' ); ?>
-				</button>
-			</div>
-			<p class="description">
-				<?php esc_html_e( 'Requiere HTTPS, una Application Password válida y un usuario con capacidades Nexo MCP.', 'nexo-mcp' ); ?>
-			</p>
-		</section>
-	</section>
-
-	<?php /* ---------------------------------------------------------- Actividad */ ?>
-	<section
-		id="nexo-mcp-panel-actividad"
-		class="nexo-mcp-tabpanel"
-		data-nexo-panel="actividad"
-		aria-labelledby="nexo-mcp-tablink-actividad"
-		<?php echo 'actividad' === $active_tab ? '' : 'hidden'; ?>
-	>
-		<section class="nexo-mcp-card" aria-labelledby="nexo-mcp-actividad-title">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Trazabilidad', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title" id="nexo-mcp-actividad-title"><?php esc_html_e( 'Actividad reciente', 'nexo-mcp' ); ?></h2>
-				</div>
-				<span class="nexo-mcp-tag"><?php esc_html_e( 'Sin secretos', 'nexo-mcp' ); ?></span>
-			</div>
-
-			<div class="nexo-mcp-table-wrap">
-				<table class="nexo-mcp-table">
-					<thead>
-						<tr>
-							<th scope="col"><?php esc_html_e( 'Fecha UTC', 'nexo-mcp' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Usuario', 'nexo-mcp' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Acción', 'nexo-mcp' ); ?></th>
-							<th scope="col"><?php esc_html_e( 'Estado', 'nexo-mcp' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php if ( array() === $audit_entries ) : ?>
-							<tr>
-								<td colspan="4" class="nexo-mcp-table__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></td>
-							</tr>
-						<?php else : ?>
-							<?php foreach ( $audit_entries as $entry ) : ?>
-								<tr>
-									<td class="nexo-mcp-table__date"><?php echo esc_html( (string) $entry->occurred_at ); ?></td>
-									<td class="nexo-mcp-table__user"><?php echo esc_html( $entry->user_id ? '#' . (string) $entry->user_id : '—' ); ?></td>
-									<td><code><?php echo esc_html( (string) $entry->tool ); ?></code></td>
-									<td><span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( (string) $entry->status ) ); ?>"><?php echo esc_html( (string) $entry->status ); ?></span></td>
-								</tr>
-							<?php endforeach; ?>
-						<?php endif; ?>
-					</tbody>
-				</table>
-			</div>
-		</section>
-	</section>
-
-	<?php /* -------------------------------------------------- Reportar problema */ ?>
-	<section
-		id="nexo-mcp-panel-soporte"
-		class="nexo-mcp-tabpanel"
-		data-nexo-panel="soporte"
-		aria-labelledby="nexo-mcp-tablink-soporte"
-		<?php echo 'soporte' === $active_tab ? '' : 'hidden'; ?>
-	>
-		<?php if ( ! $api_configured ) : ?>
-		<section class="nexo-mcp-card nexo-mcp-api-missing">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Servicio externo', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title"><?php esc_html_e( 'Sin servicio de reportes', 'nexo-mcp' ); ?></h2>
-				</div>
-				<span class="nexo-mcp-tag"><?php esc_html_e( 'No configurado', 'nexo-mcp' ); ?></span>
-			</div>
-			<p class="nexo-mcp-callout"><?php esc_html_e( 'No hay un servidor configurado para recibir reportes. Puedes describir el problema en el repositorio o canal donde obtuviste el plugin; adjunta la versión de WordPress, PHP y del plugin que ves en Resumen.', 'nexo-mcp' ); ?></p>
-			<p class="description">
-				<?php
-				printf(
-					/* translators: %s: línea de ejemplo para wp-config.php. */
-					esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
-					'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
-				);
-				?>
-			</p>
-		</section>
-		<?php else : ?>
-		<section class="nexo-mcp-card" id="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\ReportController::ANCHOR ); ?>" aria-labelledby="nexo-mcp-soporte-title">
-			<div class="nexo-mcp-card__head">
-				<div>
-					<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Soporte', 'nexo-mcp' ); ?></p>
-					<h2 class="nexo-mcp-card__title" id="nexo-mcp-soporte-title"><?php esc_html_e( 'Reportar un problema', 'nexo-mcp' ); ?></h2>
-				</div>
-				<span class="nexo-mcp-tag"><?php esc_html_e( 'Servicio configurado', 'nexo-mcp' ); ?></span>
-			</div>
-
-			<?php if ( null !== $report_notice ) : ?>
-				<?php /* `inline` evita que common.js lo reubique junto al encabezado. */ ?>
-				<div class="notice notice-<?php echo esc_attr( $report_notice['type'] ); ?> inline">
-					<p><?php echo esc_html( $report_notice['message'] ); ?></p>
-				</div>
-			<?php endif; ?>
-
-			<p class="nexo-mcp-muted nexo-mcp-report__intro"><?php esc_html_e( 'Cuenta qué falló o qué te gustaría que hiciera el conector. El reporte se envía al servicio configurado en NEXO_MCP_API_URL.', 'nexo-mcp' ); ?></p>
-
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="nexo-mcp-report__form">
-				<input type="hidden" name="action" value="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\ReportController::FORM_ACTION ); ?>">
-				<?php wp_nonce_field( \NexoDev\NexoMCP\Admin\ReportController::NONCE_ACTION ); ?>
-
-				<fieldset class="nexo-mcp-report__kind">
-					<legend><?php esc_html_e( '¿Qué nos quieres contar?', 'nexo-mcp' ); ?></legend>
-					<label>
-						<input type="radio" name="kind" value="error" required <?php checked( 'error', $report_notice['kind'] ?? '' ); ?>>
-						<span><?php esc_html_e( 'Algo falló', 'nexo-mcp' ); ?></span>
-					</label>
-					<label>
-						<input type="radio" name="kind" value="sugerencia" required <?php checked( 'sugerencia', $report_notice['kind'] ?? '' ); ?>>
-						<span><?php esc_html_e( 'Tengo una sugerencia', 'nexo-mcp' ); ?></span>
-					</label>
-				</fieldset>
-
-				<label class="nexo-mcp-report__label" for="nexo-mcp-report-message"><?php esc_html_e( 'Cuéntame qué pasó', 'nexo-mcp' ); ?></label>
-				<textarea
-					id="nexo-mcp-report-message"
-					name="message"
-					rows="6"
-					maxlength="<?php echo esc_attr( (string) $report_max_length ); ?>"
-					minlength="<?php echo esc_attr( (string) $report_min_length ); ?>"
-					required
-					placeholder="<?php esc_attr_e( 'Qué intentabas hacer, qué esperabas y qué ocurrió en su lugar.', 'nexo-mcp' ); ?>"
-				><?php echo esc_textarea( $report_notice['draft'] ?? '' ); ?></textarea>
+				<p class="nexo-mcp-callout"><?php esc_html_e( 'No hay un servidor configurado para recibir reportes. Puedes describir el problema en el repositorio o canal donde obtuviste el plugin; adjunta la versión de WordPress, PHP y del plugin que ves en Resumen.', 'nexo-mcp' ); ?></p>
 				<p class="description">
 					<?php
 					printf(
-						/* translators: %d: máximo de caracteres permitido. */
-						esc_html__( 'Máximo %d caracteres.', 'nexo-mcp' ),
-						(int) $report_max_length
+						/* translators: %s: línea de ejemplo para wp-config.php. */
+						esc_html__( 'Para activarlo, agrega a wp-config.php: %s', 'nexo-mcp' ),
+						'<code>' . esc_html( "define( 'NEXO_MCP_API_URL', 'https://tu-servidor.example/api' );" ) . '</code>'
 					);
 					?>
 				</p>
-
-				<div class="nexo-mcp-report__context">
-					<strong><?php esc_html_e( 'Se envía junto a tu mensaje:', 'nexo-mcp' ); ?></strong>
-					<ul>
-						<li><?php echo esc_html( $registration['email'] ); ?></li>
-						<li>
-							<?php
-							printf(
-								/* translators: 1: versión del plugin, 2: versión de WordPress, 3: versión de PHP. */
-								esc_html__( 'Plugin %1$s · WordPress %2$s · PHP %3$s', 'nexo-mcp' ),
-								esc_html( NEXO_MCP_VERSION ),
-								esc_html( get_bloginfo( 'version' ) ),
-								esc_html( PHP_VERSION )
-							);
-							?>
-						</li>
-						<li>
-							<?php
-							echo esc_html(
-								$report_builders
-									? sprintf(
-										/* translators: %s: lista de constructores activos. */
-										__( 'Constructores activos: %s', 'nexo-mcp' ),
-										implode( ', ', $report_builders )
-									)
-									: __( 'Sin constructores visuales activos', 'nexo-mcp' )
-							);
-							?>
-						</li>
-					</ul>
-					<p class="description">
-						<?php esc_html_e( 'Nunca se envían credenciales, tokens ni registros de actividad.', 'nexo-mcp' ); ?>
-					</p>
+			</section>
+			<?php else : ?>
+			<section class="nexo-mcp-card" id="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\ReportController::ANCHOR ); ?>" aria-labelledby="nexo-mcp-soporte-title">
+				<div class="nexo-mcp-card__head">
+					<div>
+						<p class="nexo-mcp-eyebrow"><?php esc_html_e( 'Soporte', 'nexo-mcp' ); ?></p>
+						<h2 class="nexo-mcp-card__title" id="nexo-mcp-soporte-title"><?php esc_html_e( 'Reportar un problema', 'nexo-mcp' ); ?></h2>
+					</div>
+					<span class="nexo-mcp-tag"><?php esc_html_e( 'Servicio configurado', 'nexo-mcp' ); ?></span>
 				</div>
 
-				<button class="button button-primary" type="submit">
-					<?php esc_html_e( 'Enviar reporte', 'nexo-mcp' ); ?>
-				</button>
-			</form>
-		</section>
-		<?php endif; ?>
+				<?php if ( null !== $report_notice ) : ?>
+					<?php /* `inline` evita que common.js lo reubique junto al encabezado. */ ?>
+					<div class="notice notice-<?php echo esc_attr( $report_notice['type'] ); ?> inline">
+						<p><?php echo esc_html( $report_notice['message'] ); ?></p>
+					</div>
+				<?php endif; ?>
+
+				<p class="nexo-mcp-muted nexo-mcp-report__intro"><?php esc_html_e( 'Cuenta qué falló o qué te gustaría que hiciera el conector. El reporte se envía al servicio configurado en NEXO_MCP_API_URL.', 'nexo-mcp' ); ?></p>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="nexo-mcp-report__form">
+					<input type="hidden" name="action" value="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\ReportController::FORM_ACTION ); ?>">
+					<?php wp_nonce_field( \NexoDev\NexoMCP\Admin\ReportController::NONCE_ACTION ); ?>
+
+					<fieldset class="nexo-mcp-report__kind">
+						<legend><?php esc_html_e( '¿Qué nos quieres contar?', 'nexo-mcp' ); ?></legend>
+						<label>
+							<input type="radio" name="kind" value="error" required <?php checked( 'error', $report_notice['kind'] ?? '' ); ?>>
+							<span><?php esc_html_e( 'Algo falló', 'nexo-mcp' ); ?></span>
+						</label>
+						<label>
+							<input type="radio" name="kind" value="sugerencia" required <?php checked( 'sugerencia', $report_notice['kind'] ?? '' ); ?>>
+							<span><?php esc_html_e( 'Tengo una sugerencia', 'nexo-mcp' ); ?></span>
+						</label>
+					</fieldset>
+
+					<label class="nexo-mcp-report__label" for="nexo-mcp-report-message"><?php esc_html_e( 'Cuéntame qué pasó', 'nexo-mcp' ); ?></label>
+					<textarea
+						id="nexo-mcp-report-message"
+						name="message"
+						rows="6"
+						maxlength="<?php echo esc_attr( (string) $report_max_length ); ?>"
+						minlength="<?php echo esc_attr( (string) $report_min_length ); ?>"
+						required
+						placeholder="<?php esc_attr_e( 'Qué intentabas hacer, qué esperabas y qué ocurrió en su lugar.', 'nexo-mcp' ); ?>"
+					><?php echo esc_textarea( $report_notice['draft'] ?? '' ); ?></textarea>
+					<p class="description">
+						<?php
+						printf(
+							/* translators: %d: máximo de caracteres permitido. */
+							esc_html__( 'Máximo %d caracteres.', 'nexo-mcp' ),
+							(int) $report_max_length
+						);
+						?>
+					</p>
+
+					<div class="nexo-mcp-report__context">
+						<strong><?php esc_html_e( 'Se envía junto a tu mensaje:', 'nexo-mcp' ); ?></strong>
+						<ul>
+							<li><?php echo esc_html( $registration['email'] ); ?></li>
+							<li>
+								<?php
+								printf(
+									/* translators: 1: versión del plugin, 2: versión de WordPress, 3: versión de PHP. */
+									esc_html__( 'Plugin %1$s · WordPress %2$s · PHP %3$s', 'nexo-mcp' ),
+									esc_html( NEXO_MCP_VERSION ),
+									esc_html( get_bloginfo( 'version' ) ),
+									esc_html( PHP_VERSION )
+								);
+								?>
+							</li>
+							<li>
+								<?php
+								echo esc_html(
+									$report_builders
+										? sprintf(
+											/* translators: %s: lista de constructores activos. */
+											__( 'Constructores activos: %s', 'nexo-mcp' ),
+											implode( ', ', $report_builders )
+										)
+										: __( 'Sin constructores visuales activos', 'nexo-mcp' )
+								);
+								?>
+							</li>
+						</ul>
+						<p class="description">
+							<?php esc_html_e( 'Nunca se envían credenciales, tokens ni registros de actividad.', 'nexo-mcp' ); ?>
+						</p>
+					</div>
+
+					<button class="button button-primary" type="submit">
+						<?php esc_html_e( 'Enviar reporte', 'nexo-mcp' ); ?>
+					</button>
+				</form>
+			</section>
+			<?php endif; ?>
+		</div>
 	</section>
+
+
+
+
+
 
 	<p class="nexo-mcp-credit">
 		<?php esc_html_e( 'Nexo MCP · software libre bajo GPL-2.0-or-later (ver NOTICE.md).', 'nexo-mcp' ); ?>

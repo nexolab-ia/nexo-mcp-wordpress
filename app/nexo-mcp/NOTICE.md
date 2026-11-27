@@ -30,4 +30,3 @@ respaldado por SICS.
 
 - `wordpress/mcp-adapter` y `wordpress/php-mcp-schema` (GPL-2.0-or-later),
   instalados con Composer en `vendor/`.
-- Tipografía Inter (SIL Open Font License 1.1), en `assets/fonts/`.

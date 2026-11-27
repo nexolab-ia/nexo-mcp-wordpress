@@ -370,6 +370,7 @@ $GLOBALS['wpdb'] = new WPDB_Test_Double();
 function __( $text, $domain = null ) { return $text; }
 function _e( $text, $domain = null ): void { echo $text; }
 function esc_html__( $text, $domain = null ) { return $text; }
+function _n( $single, $plural, $number, $domain = null ) { return 1 === (int) $number ? $single : $plural; }
 function esc_html( $text ) { return (string) $text; }
 function esc_attr( $text ) { return (string) $text; }
 function esc_url( $text ) { return (string) $text; }
