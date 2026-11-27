@@ -119,4 +119,81 @@ final class DiviLibraryToolSpec {
 			'additionalProperties' => false,
 		);
 	}
+
+	/**
+	 * Descripción de save-divi-library-item.
+	 */
+	public static function save_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea (sin id) o ACTUALIZA (con id) UN ítem de la biblioteca de Divi 5 a partir de un árbol de módulos validado, con los mismos términos y metas que el Visual Builder (layout_type, scope, module_width, _et_pb_template_type, _et_pb_module_type, _et_pb_use_divi_5 y _et_pb_excluded_global_options). ' . self::access(),
+				'',
+				'ALTA (sin id): title (1 a 100 caracteres, sin < >), type (layout: una o más secciones; section: exactamente una sección; row: exactamente una fila; module: exactamente un módulo del catálogo) y nodes (lista de nodos como en nexo-mcp-create-divi-page: {type, attrs?, children?, preset?}; el árbol se guarda bajo un divi/placeholder y pasa por el mismo validador de Divi 5 que las páginas, sin los módulos del Theme Builder). Opcionales: scope (non_global por omisión, o global), categories (hasta 10 nombres, sin comas; se crean si no existen). El ítem nace publicado.',
+				'',
+				'ACTUALIZACIÓN (con id): se cambia lo que se pase entre title, nodes (reemplaza TODO el contenido) y categories (la lista completa; [] las quita); type y scope no se pueden cambiar (si se pasan deben coincidir). Un ítem GLOBAL no se actualiza (nexo_mcp_divi_library_global_blocked): cambiarlo cambia todas las páginas que lo usan y eso no lo hace el conector todavía. Si el contenido actual trae módulos que el conector no sabe representar (nexo-mcp-get-divi-library-item los lista en foreign), reemplazarlo exige replace_foreign: true (nexo_mcp_divi_library_foreign) y queda en el respaldo.',
+				'',
+				'RESPALDO: antes de actualizar se guarda el estado anterior (título, estado, contenido, categorías y módulo; una sola copia, la del último cambio) en la meta _nexo_mcp_library_backup del ítem; sin respaldo no se escribe (nexo_mcp_divi_library_backup_failed). DESHACER: nexo-mcp-restore-divi-library-item con el id. Si la escritura falla a medias el ítem vuelve a su estado anterior (nexo_mcp_divi_library_save_failed); un alta a medias se borra.',
+				'',
+				'SALIDA: id, created, title, status, type, scope, categories, module_type, modified, nodes [{path, type, fingerprint}], previous ({title, categories} de antes; null al crear), backup ({operation, captured_at}; null al crear) y warnings.',
+				'',
+				'ERRORES (no escriben nada, salvo que se diga): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), los de forma del árbol de Divi (nexo_mcp_divi_tree_invalid, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_module_unknown…), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_foreign (con data.foreign), nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de save-divi-library-item.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function save_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'              => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Ítem que se actualiza; sin id se crea uno.',
+				),
+				'title'           => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => DiviLibrarySchema::MAX_TITLE,
+					'description' => 'Título del ítem (obligatorio al crear).',
+				),
+				'type'            => array(
+					'type'        => 'string',
+					'enum'        => DiviLibrarySchema::TYPES,
+					'description' => 'layout, section, row o module (obligatorio al crear; no cambia).',
+				),
+				'scope'           => array(
+					'type'        => 'string',
+					'enum'        => DiviLibrarySchema::SCOPES,
+					'description' => 'non_global (por omisión) o global. No cambia en un ítem que ya existe.',
+				),
+				'nodes'           => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'items'       => array( 'type' => 'object' ),
+					'description' => 'Árbol de módulos de Divi 5 (obligatorio al crear): un layout lleva secciones; una sección, una sección; una fila, una fila; un módulo, un módulo.',
+				),
+				'categories'      => array(
+					'type'        => 'array',
+					'maxItems'    => DiviLibrarySchema::MAX_CATEGORIES,
+					'items'       => array(
+						'type'      => 'string',
+						'minLength' => 1,
+						'maxLength' => DiviLibrarySchema::MAX_CATEGORY,
+					),
+					'description' => 'Nombres de las categorías de la biblioteca (la lista completa).',
+				),
+				'replace_foreign' => array(
+					'type'        => 'boolean',
+					'description' => 'Confirma reemplazar contenido que el conector no sabe representar (queda en el respaldo).',
+				),
+			),
+			'additionalProperties' => false,
+		);
+	}
 }

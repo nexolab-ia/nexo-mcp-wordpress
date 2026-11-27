@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Support\PostLock;
+
 /**
  * Lógica de `list-divi-library`, `get-divi-library-item`, `save-divi-library-item`, `delete-divi-library-item` y
  * `restore-divi-library-item` (T9 de `odd/tasks/divi-theme-builder.md`; decisiones S5 y S7, D10 de L2).
@@ -24,6 +26,11 @@ namespace NexoDev\NexoMCP\Builders;
 final class DiviLibraryEditor {
 
 	public const CODE_DENIED = 'nexo_mcp_divi_library_denied';
+
+	/**
+	 * Meta con la marca única que lleva el ítem mientras se crea, para encontrarlo si el creador lanza.
+	 */
+	public const MARKER_META = '_nexo_mcp_library_creating';
 
 	/**
 	 * Tope de ítems que se miran al listar (después se filtra y se corta al límite pedido).
@@ -45,6 +52,13 @@ final class DiviLibraryEditor {
 	private DiviLibraryBackup $backup;
 
 	/**
+	 * Validador del árbol (el de Divi 5 de siempre, sin los módulos de layout del Theme Builder).
+	 *
+	 * @var DiviTreeValidator
+	 */
+	private DiviTreeValidator $validator;
+
+	/**
 	 * Permiso de la biblioteca: fn( ?int ): bool.
 	 *
 	 * @var callable
@@ -59,18 +73,76 @@ final class DiviLibraryEditor {
 	private $divi5_active;
 
 	/**
+	 * Bloqueo de presets: fn( callable ): mixed.
+	 *
+	 * @var callable
+	 */
+	private $presets_lock;
+
+	/**
+	 * Versión de Divi para `builderVersion`: fn(): string.
+	 *
+	 * @var callable
+	 */
+	private $version;
+
+	/**
+	 * Alta del ítem: fn( string $title, string $content, array $meta, array $terms, array $categories ): int|\WP_Error|false.
+	 *
+	 * @var callable
+	 */
+	private $creator;
+
+	/**
+	 * Búsqueda de lo creado por la marca: fn( string $meta_key, string $marker ): array<int, int>.
+	 *
+	 * @var callable
+	 */
+	private $finder;
+
+	/**
+	 * Borrado de un ítem creado a medias: fn( int $id ): mixed (falsy si falla).
+	 *
+	 * @var callable
+	 */
+	private $deleter;
+
+	/**
 	 * Construye el editor.
 	 *
 	 * @param DiviLibrarySchema $schema       Esquema.
 	 * @param DiviLibraryBackup $backup       Respaldos.
+	 * @param DiviTreeValidator $validator    Validador del árbol.
 	 * @param callable          $allowed      fn( ?int ): bool. `PermissionPolicy::can_write_divi_library()`.
 	 * @param callable|null     $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
+	 * @param callable|null     $presets_lock fn( callable ): mixed. Por omisión, el bloqueo de {@see DiviDesignStore::LOCK_ID}.
+	 * @param callable|null     $version      fn(): string. Por omisión, la versión de Divi instalada.
+	 * @param callable|null     $creator      fn( string, string, array, array, array ): int|\WP_Error|false. Por omisión, `et_pb_create_layout()` si existe y si no `wp_insert_post()`.
+	 * @param callable|null     $finder       fn( string, string ): array<int, int>. Por omisión, `get_posts()` por la marca.
+	 * @param callable|null     $deleter      fn( int ): mixed. Por omisión, `wp_delete_post( $id, true )`.
 	 */
-	public function __construct( DiviLibrarySchema $schema, DiviLibraryBackup $backup, callable $allowed, ?callable $divi5_active = null ) {
+	public function __construct(
+		DiviLibrarySchema $schema,
+		DiviLibraryBackup $backup,
+		DiviTreeValidator $validator,
+		callable $allowed,
+		?callable $divi5_active = null,
+		?callable $presets_lock = null,
+		?callable $version = null,
+		?callable $creator = null,
+		?callable $finder = null,
+		?callable $deleter = null
+	) {
 		$this->schema       = $schema;
 		$this->backup       = $backup;
+		$this->validator    = $validator;
 		$this->allowed      = $allowed;
 		$this->divi5_active = $divi5_active ?? array( Divi5ContentWriter::class, 'divi5_installed' );
+		$this->presets_lock = $presets_lock ?? static fn( callable $work ) => PostLock::run( DiviDesignStore::LOCK_ID, $work );
+		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
+		$this->creator      = $creator ?? array( self::class, 'create_with_divi' );
+		$this->finder       = $finder ?? array( self::class, 'find_by_marker' );
+		$this->deleter      = $deleter ?? static fn( int $id ) => wp_delete_post( $id, true );
 	}
 
 	/**
@@ -171,21 +243,662 @@ final class DiviLibraryEditor {
 			return $post;
 		}
 
-		$nodes = array();
-
-		foreach ( Divi5Tree::build( (string) $post->post_content ) as $node ) {
-			$nodes = array_merge( $nodes, Divi5Tree::summarize( $node ) );
-		}
-
 		return array_merge(
 			$this->schema->summary( $post ),
 			array(
 				'global'  => $this->schema->is_global( $id ),
 				'foreign' => $this->schema->foreign_types( (string) $post->post_content ),
 				'backup'  => $this->backup->describe( $id ),
-				'nodes'   => $nodes,
+				'nodes'   => self::nodes_of( (string) $post->post_content ),
 			)
 		);
+	}
+
+	/**
+	 * Crea un ítem nuevo o actualiza uno que existe.
+	 *
+	 * Sin `id` es un alta (`title`, `type` y `nodes` obligatorios, y permiso `save_library`). Con `id`, el ítem tiene que ser de
+	 * la biblioteca, estar vivo y no ser global; se cambia lo que se pase (`title`, `nodes`, `categories`) y no se cambian
+	 * `type` ni `scope`.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function save_item( array $input ) {
+		$id   = $this->id_of( $input );
+		$gate = $this->gate( $id );
+
+		if ( null !== $gate ) {
+			return $gate;
+		}
+
+		if ( array_key_exists( 'id', $input ) && null === $id ) {
+			return $this->schema->error( 'id', __( 'debe ser el id entero de un ítem de la biblioteca.', 'nexo-mcp' ) );
+		}
+
+		return null === $id ? $this->create( $input ) : $this->update( $id, $input );
+	}
+
+	/**
+	 * Alta de un ítem.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta (sin `id`).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function create( array $input ) {
+		$parsed = $this->schema->parse_save( $input );
+
+		if ( $parsed instanceof \WP_Error ) {
+			return $parsed;
+		}
+
+		$work = fn() => $this->create_unlocked( $parsed );
+
+		return DiviTreeValidator::tree_has_preset( $parsed['nodes'] ) ? ( $this->presets_lock )( $work ) : $work();
+	}
+
+	/**
+	 * Valida el árbol y crea el ítem (con el bloqueo de presets en mano si hace falta).
+	 *
+	 * @param array<string, mixed> $parsed Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function create_unlocked( array $parsed ) {
+		$type     = (string) $parsed['type'];
+		$prepared = $this->prepare( $type, $parsed['nodes'] );
+
+		if ( $prepared instanceof \WP_Error ) {
+			return $prepared;
+		}
+
+		$scope      = (string) $parsed['scope'];
+		$categories = (array) ( $parsed['categories'] ?? array() );
+		$stored     = $this->schema->stored( $type, $scope, $prepared['module_type'] );
+		$marker     = bin2hex( random_bytes( 16 ) );
+		$meta       = array_merge( $stored['meta'], array( self::MARKER_META => $marker ) );
+		$creator    = $this->creator;
+		$title      = (string) $parsed['title'];
+
+		try {
+			$id = Divi5ContentWriter::without_kses( static fn() => $creator( $title, $prepared['content'], $meta, $stored['terms'], $categories ) );
+		} catch ( \Throwable $e ) {
+			return $this->rollback_found( $marker );
+		}
+
+		if ( $id instanceof \WP_Error ) {
+			return $this->failed( $id->get_error_message() );
+		}
+
+		if ( ! is_int( $id ) || $id <= 0 ) {
+			return $this->failed( __( 'WordPress no creó el ítem.', 'nexo-mcp' ) );
+		}
+
+		try {
+			$post = get_post( $id );
+			$read = $this->schema->read( $id );
+
+			if ( ! $post instanceof \WP_Post
+				|| $prepared['content'] !== $post->post_content
+				|| 'publish' !== $post->post_status
+				|| DiviLibrarySchema::POST_TYPE !== $post->post_type
+				|| $type !== $read['type']
+				|| $scope !== $read['scope']
+				|| ! $this->same_names( $categories, $read['categories'] )
+				|| ! $this->has_metas( $id, $stored['meta'] ) ) {
+				return $this->rollback( $id, __( 'WordPress guardó un contenido, unos términos o unas metas distintos de los pedidos.', 'nexo-mcp' ) );
+			}
+
+			delete_post_meta( $id, self::MARKER_META );
+		} catch ( \Throwable $e ) {
+			return $this->rollback( $id, __( 'error interno al guardar.', 'nexo-mcp' ) );
+		}
+
+		$warnings = array();
+
+		if ( 'global' === $scope ) {
+			$warnings[] = __( 'Es un ítem global: cuando se use en páginas, cambiarlo cambia todas. El conector todavía no actualiza, borra ni restaura ítems globales: hazlo en el Visual Builder.', 'nexo-mcp' );
+		}
+
+		return $this->answer( $id, true, $warnings, null, null );
+	}
+
+	/**
+	 * Actualiza un ítem: título, contenido y/o categorías.
+	 *
+	 * @param int                  $id    Ítem.
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update( int $id, array $input ) {
+		$post = $this->load( $id );
+
+		if ( $post instanceof \WP_Error ) {
+			return $post;
+		}
+
+		$current = $this->editable( $id );
+
+		if ( $current instanceof \WP_Error ) {
+			return $current;
+		}
+
+		$parsed = $this->schema->parse_save( $input, $current );
+
+		if ( $parsed instanceof \WP_Error ) {
+			return $parsed;
+		}
+
+		$has_nodes = array_key_exists( 'nodes', $input );
+		$work      = fn() => $this->update_unlocked( $id, $parsed, $has_nodes );
+
+		return $has_nodes && DiviTreeValidator::tree_has_preset( $parsed['nodes'] ) ? ( $this->presets_lock )( $work ) : $work();
+	}
+
+	/**
+	 * Valida y, con el bloqueo del ítem, respalda y escribe.
+	 *
+	 * @param int                  $id        Ítem.
+	 * @param array<string, mixed> $parsed    Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 * @param bool                 $has_nodes Si la entrada trae `nodes`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update_unlocked( int $id, array $parsed, bool $has_nodes ) {
+		$prepared = null;
+
+		if ( $has_nodes ) {
+			$prepared = $this->prepare( (string) $parsed['type'], $parsed['nodes'] );
+
+			if ( $prepared instanceof \WP_Error ) {
+				return $prepared;
+			}
+		}
+
+		return PostLock::run( $id, fn() => $this->update_locked( $id, $parsed, $prepared ) );
+	}
+
+	/**
+	 * Escribe con el bloqueo en mano: respaldo (sin él no se escribe), comprobación del bloqueo y cambio.
+	 *
+	 * @param int                                                   $id       Ítem.
+	 * @param array<string, mixed>                                  $parsed   Entrada validada.
+	 * @param array{content: string, module_type: string|null}|null $prepared Contenido nuevo, si lo hay.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function update_locked( int $id, array $parsed, ?array $prepared ) {
+		$post = $this->load( $id );
+
+		if ( $post instanceof \WP_Error ) {
+			return $post;
+		}
+
+		$current = $this->editable( $id );
+
+		if ( $current instanceof \WP_Error ) {
+			return $current;
+		}
+
+		$foreign = $prepared ? $this->schema->foreign_types( (string) $post->post_content ) : array();
+
+		if ( array() !== $foreign && ! $parsed['replace_foreign'] ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_foreign',
+				sprintf(
+					/* translators: %s: tipos de bloque. */
+					__( 'El ítem tiene contenido que el conector no sabe representar (%s): reemplazarlo lo pierde. Pasa replace_foreign: true para reemplazarlo (queda en el respaldo) o cámbialo en el Visual Builder.', 'nexo-mcp' ),
+					implode( ', ', $foreign )
+				),
+				array(
+					'status'  => 409,
+					'foreign' => $foreign,
+				)
+			);
+		}
+
+		$read     = $this->schema->read( $id );
+		$snapshot = $this->backup->snapshot( $post, 'save', $read );
+
+		if ( ! $this->backup->save( $id, $snapshot ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_backup_failed',
+				__( 'No se pudo guardar el respaldo del ítem, así que no se cambió nada.', 'nexo-mcp' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$locked = PostLock::verify( $id );
+
+		if ( is_wp_error( $locked ) ) {
+			return $locked;
+		}
+
+		$failure = $this->apply( $id, $parsed, $prepared );
+
+		if ( null !== $failure ) {
+			return $this->restore_state( $id, $snapshot, $failure );
+		}
+
+		$warnings = array();
+
+		if ( array() !== $foreign ) {
+			$warnings[] = __( 'Se reemplazó contenido que el conector no sabe representar; sigue en el respaldo.', 'nexo-mcp' );
+		}
+
+		$previous = array(
+			'title'      => $snapshot['title'],
+			'categories' => $snapshot['categories'],
+		);
+
+		return $this->answer( $id, false, $warnings, $previous, $this->backup->describe( $id ) );
+	}
+
+	/**
+	 * Aplica el cambio y comprueba lo guardado. Devuelve el motivo si falla, o null.
+	 *
+	 * @param int                                                   $id       Ítem.
+	 * @param array<string, mixed>                                  $parsed   Entrada validada.
+	 * @param array{content: string, module_type: string|null}|null $prepared Contenido nuevo, si lo hay.
+	 */
+	private function apply( int $id, array $parsed, ?array $prepared ): ?string {
+		$data = array( 'ID' => $id );
+
+		if ( null !== $parsed['title'] ) {
+			$data['post_title'] = wp_slash( (string) $parsed['title'] );
+		}
+
+		if ( null !== $prepared ) {
+			$data['post_content'] = wp_slash( $prepared['content'] );
+		}
+
+		try {
+			if ( count( $data ) > 1 ) {
+				$saved = Divi5ContentWriter::without_kses( static fn() => wp_update_post( $data, true ) );
+
+				if ( is_wp_error( $saved ) || ! $saved ) {
+					return is_wp_error( $saved ) ? $saved->get_error_message() : __( 'WordPress no guardó el ítem.', 'nexo-mcp' );
+				}
+			}
+
+			if ( null !== $parsed['categories'] ) {
+				$terms = wp_set_object_terms( $id, $parsed['categories'], 'layout_category' );
+
+				if ( is_wp_error( $terms ) ) {
+					return $terms->get_error_message();
+				}
+			}
+
+			if ( null !== $prepared && null !== $prepared['module_type'] ) {
+				update_post_meta( $id, '_et_pb_module_type', $prepared['module_type'] );
+			}
+
+			$post = get_post( $id );
+			$read = $this->schema->read( $id );
+
+			if ( ! $post instanceof \WP_Post
+				|| ( null !== $parsed['title'] && $parsed['title'] !== $post->post_title )
+				|| ( null !== $prepared && $prepared['content'] !== $post->post_content )
+				|| ( null !== $parsed['categories'] && ! $this->same_names( $parsed['categories'], $read['categories'] ) ) ) {
+				return __( 'WordPress guardó un contenido o unos términos distintos de los pedidos.', 'nexo-mcp' );
+			}
+		} catch ( \Throwable $e ) {
+			return __( 'error interno al guardar.', 'nexo-mcp' );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Devuelve el ítem a su respaldo tras una escritura fallida y devuelve el error.
+	 *
+	 * @param int                  $id       Ítem.
+	 * @param array<string, mixed> $snapshot Estado de antes.
+	 * @param string               $reason   Motivo.
+	 */
+	private function restore_state( int $id, array $snapshot, string $reason ): \WP_Error {
+		$restored = $this->put_back( $id, $snapshot );
+
+		return new \WP_Error(
+			'nexo_mcp_divi_library_save_failed',
+			sprintf(
+				/* translators: 1: motivo, 2: resultado. */
+				__( 'No se pudo guardar el ítem de la biblioteca: %1$s %2$s', 'nexo-mcp' ),
+				$reason,
+				$restored ? __( 'El ítem volvió a su estado anterior.', 'nexo-mcp' ) : __( 'No se pudo volver al estado anterior automáticamente: restáuralo con nexo-mcp-restore-divi-library-item.', 'nexo-mcp' )
+			),
+			array( 'status' => 500 )
+		);
+	}
+
+	/**
+	 * Pone un estado guardado (título, contenido, estado, categorías, módulo) y comprueba que quedó.
+	 *
+	 * @param int                  $id       Ítem.
+	 * @param array<string, mixed> $snapshot Estado de {@see DiviLibraryBackup::snapshot()}.
+	 */
+	private function put_back( int $id, array $snapshot ): bool {
+		try {
+			Divi5ContentWriter::without_kses(
+				static fn() => wp_update_post(
+					array(
+						'ID'           => $id,
+						'post_title'   => wp_slash( (string) $snapshot['title'] ),
+						'post_content' => wp_slash( (string) $snapshot['content'] ),
+						'post_status'  => (string) $snapshot['status'],
+					),
+					true
+				)
+			);
+			wp_set_object_terms( $id, (array) $snapshot['categories'], 'layout_category' );
+
+			if ( '' !== (string) $snapshot['module_type'] ) {
+				update_post_meta( $id, '_et_pb_module_type', (string) $snapshot['module_type'] );
+			}
+
+			$post = get_post( $id );
+
+			return $post instanceof \WP_Post
+				&& $post->post_title === $snapshot['title']
+				&& $post->post_content === $snapshot['content']
+				&& $post->post_status === $snapshot['status']
+				&& $this->same_names( (array) $snapshot['categories'], $this->schema->read( $id )['categories'] );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+	}
+
+	/**
+	 * Tipo y alcance de un ítem que se puede cambiar: reconocido (tiene tipo) y no global.
+	 *
+	 * @param int $id Ítem.
+	 *
+	 * @return array{type: string, scope: string}|\WP_Error
+	 */
+	private function editable( int $id ) {
+		if ( $this->schema->is_global( $id ) ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_library_global_blocked',
+				__( 'Este ítem es global: cambiarlo, borrarlo o restaurarlo cambia todas las páginas que lo usan y el conector todavía no lo hace. Edítalo en el Visual Builder de Divi.', 'nexo-mcp' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$read = $this->schema->read( $id );
+
+		if ( '' === $read['type'] ) {
+			return $this->not_found( $id );
+		}
+
+		return array(
+			'type'  => $read['type'],
+			'scope' => $read['scope'],
+		);
+	}
+
+	/**
+	 * Valida el árbol con el validador de Divi 5, comprueba su forma y lo serializa bajo un `divi/placeholder`.
+	 *
+	 * @param string $type  Tipo del ítem.
+	 * @param mixed  $nodes Nodos recibidos.
+	 *
+	 * @return array{content: string, module_type: string|null}|\WP_Error
+	 */
+	private function prepare( string $type, $nodes ) {
+		$clean = $this->validator->validate_tree( $nodes, DiviLibrarySchema::root_parent( $type ) );
+
+		if ( $clean instanceof \WP_Error ) {
+			return $clean;
+		}
+
+		$shape = $this->schema->check_shape( $type, $clean );
+
+		if ( $shape instanceof \WP_Error ) {
+			return $shape;
+		}
+
+		$module = 'module' === $type ? DiviLibrarySchema::module_type( $clean ) : null;
+
+		if ( 'module' === $type && null === $module ) {
+			return $this->schema->error( 'nodes', __( 'el módulo no está en el catálogo.', 'nexo-mcp' ) );
+		}
+
+		$blocks = Divi5BlockBuilder::build(
+			array(
+				array(
+					'type'     => 'divi/placeholder',
+					'children' => $clean,
+				),
+			),
+			(string) ( $this->version )()
+		);
+
+		return array(
+			'content'     => serialize_blocks( $blocks ),
+			'module_type' => $module,
+		);
+	}
+
+	/**
+	 * Respuesta de guardar.
+	 *
+	 * @param int                        $id       Ítem.
+	 * @param bool                       $created  Si se creó.
+	 * @param array<int, string>         $warnings Avisos.
+	 * @param array<string, mixed>|null  $previous Lo que había antes (null al crear).
+	 * @param array<string, string>|null $backup  Respaldo (null al crear).
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function answer( int $id, bool $created, array $warnings, ?array $previous, ?array $backup ) {
+		$post = get_post( $id );
+
+		if ( ! $post instanceof \WP_Post ) {
+			return $this->failed( __( 'el ítem ya no existe.', 'nexo-mcp' ) );
+		}
+
+		return array_merge(
+			$this->schema->summary( $post ),
+			array(
+				'created'  => $created,
+				'nodes'    => self::nodes_of( (string) $post->post_content ),
+				'previous' => $previous,
+				'backup'   => $backup,
+				'warnings' => $warnings,
+			)
+		);
+	}
+
+	/**
+	 * El creador lanzó: si llegó a crear el ítem (se encuentra por su marca), se borra.
+	 *
+	 * @param string $marker Marca única de esta llamada.
+	 */
+	private function rollback_found( string $marker ): \WP_Error {
+		$reason = __( 'error interno al guardar.', 'nexo-mcp' );
+
+		try {
+			$ids = ( $this->finder )( self::MARKER_META, $marker );
+		} catch ( \Throwable $e ) {
+			$ids = null;
+		}
+
+		if ( null === $ids || array() === $ids ) {
+			return $this->failed( $reason . ' ' . __( 'Si WordPress llegó a crear el ítem, puede haber quedado uno publicado: búscalo en la biblioteca de Divi y bórralo si no lo reconoces.', 'nexo-mcp' ) );
+		}
+
+		$stuck = array();
+
+		foreach ( $ids as $id ) {
+			if ( ! $this->delete_created( (int) $id ) ) {
+				$stuck[] = (int) $id;
+			}
+		}
+
+		return array() === $stuck
+			? $this->failed( $reason, true )
+			: $this->failed( $reason . ' ' . sprintf( /* translators: %s: ids. */ __( 'El ítem %s quedó creado y no se pudo borrar: revísalo o bórralo desde la biblioteca de Divi.', 'nexo-mcp' ), implode( ', ', $stuck ) ) );
+	}
+
+	/**
+	 * Borra el ítem creado y devuelve el error.
+	 *
+	 * @param int    $id     Ítem creado por esta llamada.
+	 * @param string $reason Motivo.
+	 */
+	private function rollback( int $id, string $reason ): \WP_Error {
+		return $this->delete_created( $id )
+			? $this->failed( $reason, true )
+			: $this->failed( $reason . ' ' . sprintf( /* translators: %d: id. */ __( 'El ítem %d quedó creado y no se pudo borrar: revísalo o bórralo desde la biblioteca de Divi.', 'nexo-mcp' ), $id ) );
+	}
+
+	/**
+	 * Borra un ítem creado por esta llamada; false si sigue existiendo.
+	 *
+	 * @param int $id Ítem.
+	 */
+	private function delete_created( int $id ): bool {
+		return (bool) ( $this->deleter )( $id ) || ! get_post( $id ) instanceof \WP_Post;
+	}
+
+	/**
+	 * Error de guardado.
+	 *
+	 * @param string $reason  Motivo.
+	 * @param bool   $deleted Si había un ítem a medias y se eliminó.
+	 */
+	private function failed( string $reason, bool $deleted = false ): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_divi_library_save_failed',
+			sprintf(
+				/* translators: %s: motivo. */
+				__( 'No se pudo guardar el ítem de la biblioteca: %s', 'nexo-mcp' ),
+				$reason
+			) . ( $deleted ? ' ' . __( 'El ítem creado se eliminó.', 'nexo-mcp' ) : '' ),
+			array( 'status' => 500 )
+		);
+	}
+
+	/**
+	 * Lista plana `{path, type, fingerprint}` de todos los nodos de un contenido.
+	 *
+	 * @param string $content `post_content`.
+	 *
+	 * @return array<int, array{path: string, type: string, fingerprint: string}>
+	 */
+	private static function nodes_of( string $content ): array {
+		$nodes = array();
+
+		foreach ( Divi5Tree::build( $content ) as $node ) {
+			$nodes = array_merge( $nodes, Divi5Tree::summarize( $node ) );
+		}
+
+		return $nodes;
+	}
+
+	/**
+	 * Si el ítem tiene todas esas metas con esos valores.
+	 *
+	 * @param int                  $id    Ítem.
+	 * @param array<string,string> $metas Metas esperadas.
+	 */
+	private function has_metas( int $id, array $metas ): bool {
+		foreach ( $metas as $key => $value ) {
+			if ( (string) get_post_meta( $id, $key, true ) !== $value ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Mismos nombres sin importar el orden.
+	 *
+	 * @param array<int, string> $a Nombres.
+	 * @param array<int, string> $b Nombres.
+	 */
+	private function same_names( array $a, array $b ): bool {
+		sort( $a );
+		sort( $b );
+
+		return $a === $b;
+	}
+
+	/**
+	 * Alta por defecto: `et_pb_create_layout()` de Divi si existe (como el Visual Builder) y si no `wp_insert_post()`.
+	 *
+	 * @param string                           $title      Título.
+	 * @param string                           $content    Contenido.
+	 * @param array<string, string>            $meta       Metas.
+	 * @param array<string, array<int,string>> $terms      Términos por taxonomía.
+	 * @param array<int, string>               $categories Categorías por nombre.
+	 *
+	 * @return int|\WP_Error|false
+	 */
+	public static function create_with_divi( string $title, string $content, array $meta, array $terms, array $categories ) {
+		if ( function_exists( 'et_pb_create_layout' ) ) {
+			$id = et_pb_create_layout( wp_slash( $title ), wp_slash( $content ), $meta, $terms, implode( ',', $categories ), '', 'publish' );
+
+			return is_numeric( $id ) ? (int) $id : false;
+		}
+
+		$id = wp_insert_post(
+			array(
+				'post_type'    => DiviLibrarySchema::POST_TYPE,
+				'post_status'  => 'publish',
+				'post_title'   => wp_slash( $title ),
+				'post_content' => wp_slash( $content ),
+			),
+			true
+		);
+
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+
+		foreach ( $meta as $key => $value ) {
+			add_post_meta( $id, $key, $value );
+		}
+
+		foreach ( array_merge( $terms, array( 'layout_category' => $categories ) ) as $taxonomy => $names ) {
+			if ( array() !== $names ) {
+				wp_set_object_terms( $id, $names, $taxonomy );
+			}
+		}
+
+		return (int) $id;
+	}
+
+	/**
+	 * Busca por la marca los ítems que dejó un alta que lanzó.
+	 *
+	 * @param string $key    Meta con la marca.
+	 * @param string $marker Marca.
+	 *
+	 * @return array<int, int>
+	 */
+	public static function find_by_marker( string $key, string $marker ): array {
+		if ( ! function_exists( 'get_posts' ) ) {
+			return array();
+		}
+
+		$ids = get_posts(
+			array(
+				'post_type'      => DiviLibrarySchema::POST_TYPE,
+				'post_status'    => 'any',
+				'meta_key'       => $key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value'     => $marker, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'fields'         => 'ids',
+				'posts_per_page' => 5,
+				'no_found_rows'  => true,
+			)
+		);
+
+		return array_values( array_filter( array_map( 'intval', (array) $ids ), static fn( int $id ): bool => $id > 0 ) );
 	}
 
 	/**
