@@ -707,6 +707,206 @@
 	font-size: 12px;
 }
 
+/* ------------------------------------------- Resumen: módulos y costado */
+
+.nexo-mcp-overview {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 360px;
+	gap: 40px;
+	align-items: start;
+}
+
+.nexo-mcp-admin .nexo-mcp-overview h2 {
+	margin: 0 0 2px;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 18px;
+}
+
+.nexo-mcp-overview__lead {
+	margin: 0 0 12px;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
+}
+
+.nexo-mcp-overview__group {
+	margin: 0 0 20px;
+}
+
+.nexo-mcp-admin .nexo-mcp-overview__group h3 {
+	margin: 0;
+	padding: 6px 0;
+	border-bottom: 2px solid var(--nexo-fg);
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.6px;
+	text-transform: uppercase;
+}
+
+.nexo-mcp-modrows {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-modrow {
+	display: grid;
+	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
+	gap: 12px;
+	align-items: center;
+	margin: 0;
+	padding: 9px 4px;
+	border-bottom: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-modrow--on {
+	padding-left: 12px;
+	box-shadow: inset 3px 0 0 var(--nexo-primary);
+}
+
+.nexo-mcp-modrow__name strong {
+	font-size: 14px;
+}
+
+.nexo-mcp-modrow__name .nexo-mcp-tag {
+	margin-left: 8px;
+}
+
+.nexo-mcp-modrow__scopes code,
+.nexo-mcp-asidecard__scopes code {
+	margin: 0 4px 4px 0;
+	padding: 0 6px;
+	border: 1px solid var(--nexo-border);
+	border-radius: 2px;
+	background: #e2e8f0;
+	font: 12px/1.6 var(--nexo-mono);
+}
+
+.nexo-mcp-modrow__scopes code {
+	border: 0;
+	background: none;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-modrow__state {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.nexo-mcp-modstate {
+	display: inline-flex;
+	gap: 4px;
+	align-items: center;
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.nexo-mcp-modstate .nexo-mcp-icon {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: none;
+}
+
+.nexo-mcp-modstate--on {
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-modstate--off {
+	color: var(--nexo-muted-fg-strong);
+}
+
+.nexo-mcp-modrow__link {
+	font-size: 12px;
+}
+
+.nexo-mcp-overview__block {
+	margin: 0 0 32px;
+	padding-top: 12px;
+	border-top: 3px solid var(--nexo-primary);
+}
+
+.nexo-mcp-asidecard {
+	padding: 10px 0;
+	border-bottom: 1px solid var(--nexo-border);
+}
+
+.nexo-mcp-asidecard header {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.nexo-mcp-overview__meta {
+	margin: 0;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+.nexo-mcp-asidecard__scopes {
+	margin: 6px 0 0;
+}
+
+.nexo-mcp-overview__empty {
+	margin: 0;
+	padding: 10px 0;
+	color: var(--nexo-muted-fg);
+}
+
+.nexo-mcp-timeline {
+	margin: 0 0 12px;
+	padding: 0 0 0 18px;
+	border-left: 2px solid #334155;
+	list-style: none;
+}
+
+.nexo-mcp-timeline__item {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: 0;
+	padding: 0 0 16px 8px;
+}
+
+.nexo-mcp-timeline__item::before {
+	content: "";
+	position: absolute;
+	top: 4px;
+	left: -26px;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--nexo-fg);
+	border-radius: 50%;
+	background: var(--nexo-muted-soft);
+}
+
+.nexo-mcp-timeline__item--bad::before {
+	border-color: var(--nexo-err);
+	border-radius: 2px;
+	transform: rotate(45deg);
+}
+
+.nexo-mcp-timeline time {
+	color: var(--nexo-muted-fg);
+	font: 12px var(--nexo-mono);
+}
+
+.nexo-mcp-timeline__tool {
+	font: 600 13px var(--nexo-mono);
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-sistema__section {
+	display: grid;
+	gap: 24px;
+	scroll-margin-top: 48px;
+}
+
 /* --------------------------------------------------------- Resumen: tarjetas */
 
 .nexo-mcp-summary {
@@ -2332,6 +2532,24 @@
 
 	.nexo-mcp-status-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.nexo-mcp-overview {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 24px;
+	}
+
+	.nexo-mcp-modrow {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.nexo-mcp-modrow__scopes {
+		grid-column: 1;
+	}
+
+	.nexo-mcp-modrow__state {
+		grid-column: 2;
+		grid-row: 1 / span 2;
 	}
 }
 

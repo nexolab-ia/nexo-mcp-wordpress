@@ -1551,16 +1551,33 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', id);
       url.searchParams.delete('settings-updated');
-      url.hash = '';
+      // Un enlace a una sección de otra pestaña (Sistema#…) conserva su ancla.
+      url.hash = link.hash;
       window.history.replaceState(null, '', url);
 
-      // Un enlace dentro del contenido (p. ej. «Empezar») deja la vista
-      // a media página; se sube hasta las pestañas.
-      if (!link.classList.contains('nexo-mcp-tab')) {
+      const section = link.hash.length > 1
+        ? document.getElementById(link.hash.slice(1))
+        : null;
+
+      if (section) {
+        section.scrollIntoView({ block: 'start' });
+      } else if (!link.classList.contains('nexo-mcp-tab')) {
+        // Un enlace dentro del contenido (p. ej. «Empezar») deja la vista
+        // a media página; se sube hasta las pestañas.
         nav?.scrollIntoView({ block: 'nearest' });
       }
     });
   });
+
+  // Un enlace antiguo (?tab=endpoint, ?tab=actividad…) llega con Sistema ya
+  // abierto por PHP y la sección a mostrar en `data-nexo-section`.
+  const legacySection = document.querySelector('[data-nexo-section]');
+
+  if (legacySection && window.location.hash.length < 2) {
+    document
+      .getElementById(legacySection.dataset.nexoSection)
+      ?.scrollIntoView({ block: 'start' });
+  }
 
   // Un ancla a algo que vive en otra pestaña (#nexo-mcp-reportar) la abre.
   if (window.location.hash.length > 1) {
