@@ -133,54 +133,167 @@
 	font-style: normal;
 }
 
-/* ------------------------------------------------------------------ Header */
+/* ----------------------------------------------------- Banda del mapa */
 
-.nexo-mcp-header {
-	position: relative;
-	display: flex;
-	flex-wrap: wrap;
-	align-items: flex-end;
-	justify-content: space-between;
-	gap: 24px;
-	padding: 24px 32px;
+.nexo-mcp-map {
+	padding: 24px 32px 28px;
 	border: 1px solid var(--nexo-border);
-	border-bottom: 3px solid var(--nexo-accent);
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-fg);
 }
 
-/* El logotipo es claro: va sobre una pastilla slate dentro de la banda clara. */
-.nexo-mcp-admin .nexo-mcp-header__brand {
+.nexo-mcp-map__top {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px 24px;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	margin: 0;
-	padding: 10px 14px;
-	border-radius: var(--nexo-radius-md);
-	background: var(--nexo-fg);
-	line-height: 0;
+	padding: 0;
+	color: var(--nexo-fg);
+	font-size: 22px;
+	line-height: 1.2;
 }
 
-.nexo-mcp-header__brand img {
-	display: block;
-	width: auto;
-	height: 32px;
+.nexo-mcp-map__brand b {
+	font-weight: 800;
 }
 
-.nexo-mcp-admin .nexo-mcp-header__meta {
-	margin: 0;
-	text-align: right;
-}
-
-.nexo-mcp-header__meta span {
-	display: block;
-	font-size: 10px;
-	letter-spacing: 0.18em;
+.nexo-mcp-map__brand-mark {
 	color: var(--nexo-muted-fg);
+	font-weight: 300;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__meta {
+	margin: 6px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
+}
+
+.nexo-mcp-map__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__action {
+	margin: 0;
+}
+
+.nexo-mcp-map__diagram {
+	display: grid;
+	grid-template-columns: 1fr 40px 1fr 40px 1.2fr 40px 1fr;
+	align-items: stretch;
+	margin: 24px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-map__node {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px 14px;
+	border: 1px solid var(--nexo-border);
+	border-top: 3px solid var(--nexo-accent);
+	border-radius: 2px;
+	background: var(--nexo-bg);
+}
+
+.nexo-mcp-map__node--hub {
+	border-top-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+}
+
+.nexo-mcp-map__kind {
+	color: var(--nexo-muted-fg);
+	font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	letter-spacing: 0.5px;
 	text-transform: uppercase;
 }
 
-.nexo-mcp-header__meta strong {
-	font-size: 18px;
-	font-weight: 500;
+.nexo-mcp-map__node strong {
+	margin: 2px 0 6px;
+	font-size: 16px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-map__state {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--nexo-ok);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.nexo-mcp-map__state[data-state='warn'] {
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-map__state[data-state='off'] {
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-map__state[data-state='wait'] {
+	color: var(--nexo-muted-fg-strong);
+}
+
+.nexo-mcp-map__ico {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	background: center / contain no-repeat;
+}
+
+.nexo-mcp-map__state[data-state='ok'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3Cpath d='M4.5 8.2 7 10.5l4.5-5' stroke='%23fff' stroke-width='1.8' fill='none'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='warn'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5 15 14H1z' fill='%23fcd34d' stroke='%2392400e'/%3E%3Cpath d='M8 6v4M8 11.6v1' stroke='%230f172a' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='off'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23b91c1c'/%3E%3Cpath d='M5 5l6 6M11 5l-6 6' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='wait'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='%23fff' stroke='%23475569' stroke-width='1.6'/%3E%3Cpath d='M5 8h6' stroke='%23475569' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__hint {
+	margin-top: 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* Líneas decorativas entre nodos: la flecha apunta hacia el destino. */
+.nexo-mcp-map__link {
+	position: relative;
+	align-self: center;
+	height: 0;
+	margin: 0;
+	border-top: 2px dashed var(--nexo-primary);
+}
+
+.nexo-mcp-map__link::after {
+	content: '';
+	position: absolute;
+	top: -6px;
+	right: -2px;
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	border-left: 8px solid var(--nexo-primary);
 }
 
 .nexo-mcp-admin .wp-header-end {
@@ -2194,6 +2307,29 @@
 /* ------------------------------------------------------------ Responsive */
 
 @media (max-width: 1100px) {
+	.nexo-mcp-map__diagram {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-map__link {
+		width: 0;
+		height: 24px;
+		margin: 0 auto;
+		border-top: 0;
+		border-left: 2px dashed var(--nexo-primary);
+	}
+
+	.nexo-mcp-map__link::after {
+		top: auto;
+		right: auto;
+		bottom: -2px;
+		left: -6px;
+		border-top: 8px solid var(--nexo-primary);
+		border-right: 5px solid transparent;
+		border-bottom: 0;
+		border-left: 5px solid transparent;
+	}
+
 	.nexo-mcp-status-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -2216,12 +2352,8 @@
 		margin: 16px 12px 40px 0;
 	}
 
-	.nexo-mcp-header {
-		padding: 24px;
-	}
-
-	.nexo-mcp-header__brand img {
-		height: 28px;
+	.nexo-mcp-map {
+		padding: 20px 16px 24px;
 	}
 
 	.nexo-mcp-tabs {
@@ -2340,10 +2472,6 @@
 	.nexo-mcp-client-grid,
 	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
 		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.nexo-mcp-header__meta {
-		display: none;
 	}
 
 	.nexo-mcp-confirm__actions .button {

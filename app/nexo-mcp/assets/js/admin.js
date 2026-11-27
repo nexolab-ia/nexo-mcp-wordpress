@@ -837,7 +837,29 @@ document.addEventListener('DOMContentLoaded', () => {
     '.nexo-mcp-discovery-alert__status'
   );
 
+  // Espejo del descubrimiento en el nodo OAuth de la banda del mapa. Sin
+  // HTTPS no hay nada que comprobar y el nodo conserva su aviso.
+  const mapDiscovery = document.querySelector('.nexo-mcp-map__discovery');
+
+  const paintMapDiscovery = (tone) => {
+    const text = mapDiscovery?.querySelector('.nexo-mcp-map__discovery-text');
+
+    if (!mapDiscovery || !text || '1' !== mapDiscovery.dataset.nexoHttps) {
+      return;
+    }
+
+    const painted = {
+      online: ['ok', nexoMcpAdmin.mapDiscoveryReady],
+      offline: ['warn', nexoMcpAdmin.mapDiscoveryBlocked],
+    }[tone] || ['wait', nexoMcpAdmin.mapDiscoveryUnknown];
+
+    mapDiscovery.dataset.state = painted[0];
+    text.textContent = painted[1];
+  };
+
   const paintDiscovery = (tone, label, hint) => {
+    paintMapDiscovery(tone);
+
     const state = discoveryCard?.querySelector('.nexo-mcp-discovery__state');
     const note = discoveryCard?.querySelector('.nexo-mcp-discovery__hint');
 
