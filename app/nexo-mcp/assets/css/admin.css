@@ -1415,13 +1415,16 @@
 
 .nexo-mcp-conn-list {
 	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 12px;
 }
 
 .nexo-mcp-conn-card {
-	padding: 16px;
+	min-width: 0;
+	padding: 14px 16px;
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
 }
 
 .nexo-mcp-conn-card__top {
@@ -1438,12 +1441,13 @@
 .nexo-mcp-conn-name {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 700;
 	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-conn-meta {
 	display: block;
+	margin-top: 2px;
 	color: var(--nexo-muted-fg);
 	font-size: 12px;
 }
@@ -1452,24 +1456,68 @@
 	content: " · ";
 }
 
-.nexo-mcp-conn-scopes {
+.nexo-mcp-admin .nexo-mcp-conn-scopes {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-	margin-top: 12px;
+	margin: 12px 0 0;
+	padding: 0;
+	list-style: none;
 }
 
-.nexo-mcp-admin .nexo-mcp-conn-scopes code {
+.nexo-mcp-admin .nexo-mcp-scope {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
 	margin: 0;
-	padding: 2px 8px;
+	padding: 1px 6px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 4px;
-	background: var(--nexo-muted-soft);
-	color: var(--nexo-muted-fg);
-	font-family: var(--nexo-font);
+	border-radius: 2px;
+	background: var(--nexo-muted);
+	color: var(--nexo-fg-soft);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope code {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	color: inherit;
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope--risky {
+	border-color: var(--nexo-warn-line);
+	background: var(--nexo-warn-bg);
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-scope__flag {
 	font-size: 11px;
-	font-weight: 500;
-	line-height: 1.5;
+	font-weight: 700;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth {
+	flex: none;
+	min-height: 32px;
+	border: 1px solid var(--nexo-err-line);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-err-text);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:hover {
+	background: var(--nexo-err-soft);
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: 2px;
 }
 
 /* ------------------------------------------------------ Módulos y límites */
@@ -1885,15 +1933,29 @@
 }
 
 .nexo-mcp-table__user {
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+	white-space: nowrap;
+}
+
+.nexo-mcp-log__detail {
+	min-width: 140px;
+	color: var(--nexo-fg-soft);
+	font-size: 13px;
+	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-admin .nexo-mcp-table code {
 	margin: 0;
-	padding: 2px 6px;
-	border-radius: 6px;
-	background: var(--nexo-muted);
+	padding: 0;
+	background: transparent;
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+}
+
+.nexo-mcp-log tbody tr:hover td {
+	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-table__empty {
@@ -2843,4 +2905,18 @@
 
 .nexo-mcp-admin .nexo-mcp-api-missing .nexo-mcp-callout {
 	margin: 12px 0;
+}
+
+/* Accesos y Actividad: una columna bajo 1100px. */
+@media (max-width: 1099px) {
+	.nexo-mcp-conn-list {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth,
+	.nexo-mcp-log tbody tr td {
+		transition: none;
+	}
 }

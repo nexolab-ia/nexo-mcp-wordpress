@@ -1212,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         announce(result.data.message);
-        button.closest('.nexo-mcp-credential-card')?.remove();
+        button.closest('.nexo-mcp-conn-card, .nexo-mcp-credential-card')?.remove();
       } catch (error) {
         announce(nexoMcpAdmin.genericError);
         button.disabled = false;

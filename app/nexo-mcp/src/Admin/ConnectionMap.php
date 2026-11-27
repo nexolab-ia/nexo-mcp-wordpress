@@ -192,6 +192,24 @@ final class ConnectionMap {
 	}
 
 	/**
+	 * Si un alcance pertenece a un módulo de riesgo alto.
+	 *
+	 * Usa la misma lista de módulos que el Resumen, así que no hay otra que
+	 * mantener al sumar un módulo.
+	 *
+	 * @param string $scope Alcance OAuth, por ejemplo `mcp:destructive`.
+	 */
+	public static function is_risky_scope( string $scope ): bool {
+		foreach ( self::modules( true ) as $module ) {
+			if ( $module['risk'] && in_array( $scope, $module['scopes'], true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Cuenta conexiones y módulos.
 	 *
 	 * @param array<string, mixed> $settings       Ajustes guardados.

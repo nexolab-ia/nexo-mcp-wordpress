@@ -932,20 +932,25 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 									class="button button-link-delete nexo-mcp-revoke-oauth"
 									data-client="<?php echo esc_attr( (string) $connection['client_id'] ); ?>"
 									data-user="<?php echo esc_attr( (string) $connection['user_id'] ); ?>"
+									aria-label="<?php echo esc_attr( sprintf( /* translators: %s: nombre del cliente. */ __( 'Revocar acceso de %s', 'nexo-mcp' ), $connection_name ) ); ?>"
 								>
 									<?php esc_html_e( 'Revocar', 'nexo-mcp' ); ?>
 								</button>
 							</div>
-							<span class="nexo-mcp-conn-scopes">
+							<ul class="nexo-mcp-conn-scopes" aria-label="<?php esc_attr_e( 'Alcances concedidos', 'nexo-mcp' ); ?>">
 								<?php foreach ( explode( ' ', (string) $connection['scope'] ) as $granted_scope ) : ?>
 									<?php if ( '' !== $granted_scope ) : ?>
-										<code><?php echo esc_html( $granted_scope ); ?></code>
+										<?php if ( \NexoDev\NexoMCP\Admin\ConnectionMap::is_risky_scope( $granted_scope ) ) : ?>
+											<li class="nexo-mcp-scope nexo-mcp-scope--risky"><code><?php echo esc_html( $granted_scope ); ?></code> <span class="nexo-mcp-scope__flag"><span aria-hidden="true">▲</span> <?php esc_html_e( 'Riesgo alto', 'nexo-mcp' ); ?></span></li>
+										<?php else : ?>
+											<li class="nexo-mcp-scope"><code><?php echo esc_html( $granted_scope ); ?></code></li>
+										<?php endif; ?>
 									<?php endif; ?>
 								<?php endforeach; ?>
-							</span>
+							</ul>
 							<?php $connection_scopes = array_filter( explode( ' ', (string) $connection['scope'] ) ); ?>
 							<details class="nexo-mcp-conn-edit">
-								<summary><?php esc_html_e( 'Editar alcances de esta conexión', 'nexo-mcp' ); ?></summary>
+								<summary><?php esc_html_e( 'Editar alcances', 'nexo-mcp' ); ?></summary>
 								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="nexo-mcp-conn-edit__form">
 									<input type="hidden" name="action" value="<?php echo esc_attr( \NexoDev\NexoMCP\Admin\OAuthConnectionsController::SCOPES_ACTION ); ?>">
 									<input type="hidden" name="client_id" value="<?php echo esc_attr( (string) $connection['client_id'] ); ?>">
@@ -1177,27 +1182,42 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 				</div>
 
 				<div class="nexo-mcp-table-wrap">
-					<table class="nexo-mcp-table">
+					<table class="nexo-mcp-table nexo-mcp-log">
 						<thead>
 							<tr>
-								<th scope="col"><?php esc_html_e( 'Fecha UTC', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Hora (UTC)', 'nexo-mcp' ); ?></th>
 								<th scope="col"><?php esc_html_e( 'Usuario', 'nexo-mcp' ); ?></th>
-								<th scope="col"><?php esc_html_e( 'Acción', 'nexo-mcp' ); ?></th>
-								<th scope="col"><?php esc_html_e( 'Estado', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Herramienta', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Detalle', 'nexo-mcp' ); ?></th>
+								<th scope="col"><?php esc_html_e( 'Resultado', 'nexo-mcp' ); ?></th>
 							</tr>
 						</thead>
 						<tbody>
 							<?php if ( array() === $audit_entries ) : ?>
 								<tr>
-									<td colspan="4" class="nexo-mcp-table__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></td>
+									<td colspan="5" class="nexo-mcp-table__empty"><?php esc_html_e( 'Aún no hay actividad registrada.', 'nexo-mcp' ); ?></td>
 								</tr>
 							<?php else : ?>
+								<?php
+								$result_labels = array(
+									'success' => array( __( 'Correcto', 'nexo-mcp' ), '✓' ),
+									'error'   => array( __( 'Error', 'nexo-mcp' ), '✕' ),
+									'denied'  => array( __( 'Denegado', 'nexo-mcp' ), '⊘' ),
+									'limited' => array( __( 'Limitado', 'nexo-mcp' ), '!' ),
+								);
+								?>
 								<?php foreach ( $audit_entries as $entry ) : ?>
+									<?php
+									$entry_status = (string) $entry->status;
+									$entry_label  = $result_labels[ $entry_status ] ?? array( $entry_status, '•' );
+									$entry_detail = trim( (string) ( $entry->operation ?? '' ) . ' ' . (string) ( $entry->result_summary ?? '' ) );
+									?>
 									<tr>
 										<td class="nexo-mcp-table__date"><?php echo esc_html( (string) $entry->occurred_at ); ?></td>
 										<td class="nexo-mcp-table__user"><?php echo esc_html( $entry->user_id ? '#' . (string) $entry->user_id : '—' ); ?></td>
 										<td><code><?php echo esc_html( (string) $entry->tool ); ?></code></td>
-										<td><span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( (string) $entry->status ) ); ?>"><?php echo esc_html( (string) $entry->status ); ?></span></td>
+										<td class="nexo-mcp-log__detail"><?php echo esc_html( '' !== $entry_detail ? $entry_detail : '—' ); ?></td>
+										<td><span class="nexo-mcp-event nexo-mcp-event--<?php echo esc_attr( sanitize_html_class( $entry_status ) ); ?>"><span aria-hidden="true"><?php echo esc_html( $entry_label[1] ); ?></span> <?php echo esc_html( $entry_label[0] ); ?></span></td>
 									</tr>
 								<?php endforeach; ?>
 							<?php endif; ?>
