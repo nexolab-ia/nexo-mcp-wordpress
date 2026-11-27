@@ -84,6 +84,7 @@ final class Divi5SectionEditor {
 	 * @param callable|null             $version      fn(): string. Por omisión, la versión de Divi instalada.
 	 * @param callable|null             $presets_lock fn( callable ): mixed. Bloqueo de presets; por omisión, el de {@see DiviDesignStore::LOCK_ID}.
 	 * @param DiviConditionsSchema|null $conditions Esquema que resume las condiciones del subárbol reemplazado o borrado.
+	 * @param callable|null             $layout_allowed fn(): bool. Permiso del Theme Builder para escribir un layout (ver {@see DiviLayoutGuard}).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -96,9 +97,10 @@ final class Divi5SectionEditor {
 		?callable $saver = null,
 		?callable $version = null,
 		?callable $presets_lock = null,
-		?DiviConditionsSchema $conditions = null
+		?DiviConditionsSchema $conditions = null,
+		?callable $layout_allowed = null
 	) {
-		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver );
+		$this->writer       = new Divi5ContentWriter( $settings, $adapter, $backup, $copies, $lock_check, $divi5_active, $saver, $layout_allowed );
 		$this->validator    = $validator;
 		$this->version      = $version ?? array( Divi5BlockBuilder::class, 'installed_version' );
 		$this->conditions   = $conditions ?? new DiviConditionsSchema();
@@ -184,6 +186,14 @@ final class Divi5SectionEditor {
 			$out['dropped_conditions'] = $prepared['dropped'];
 		}
 
+		if ( array() !== $prepared['dropped_post_content'] ) {
+			$out['dropped_post_content'] = $prepared['dropped_post_content'];
+		}
+
+		if ( array() !== $prepared['warnings'] ) {
+			$out['warnings'] = $prepared['warnings'];
+		}
+
 		return $out;
 	}
 
@@ -193,7 +203,7 @@ final class Divi5SectionEditor {
 	 * @param \WP_Post             $source Contenido sobre el que se trabaja.
 	 * @param array<string, mixed> $input  Parámetros.
 	 *
-	 * @return array{content: string, operation: string, path: string, parent: string, index: int, added: int, dropped: array<int, array<string, mixed>>}|\WP_Error
+	 * @return array{content: string, operation: string, path: string, parent: string, index: int, added: int, dropped: array<int, array<string, mixed>>, dropped_post_content: array<int, array<string, string>>, warnings: array<int, string>}|\WP_Error
 	 */
 	private function prepare( \WP_Post $source, array $input ) {
 		$operation   = isset( $input['operation'] ) && is_string( $input['operation'] ) ? $input['operation'] : '';
@@ -270,8 +280,10 @@ final class Divi5SectionEditor {
 		$new = array();
 
 		if ( 'delete' !== $operation ) {
-			$base  = Divi5Tree::count_blocks( $blocks ) - ( $replaces ? Divi5Tree::count_blocks( array( $located ) ) : 0 );
-			$clean = $this->validator->validate_tree( $sections, $kind, 0, $base );
+			$base = Divi5Tree::count_blocks( $blocks ) - ( $replaces ? Divi5Tree::count_blocks( array( $located ) ) : 0 );
+			// Un layout del Theme Builder admite además `divi/post-content`, `divi/post-title` y `divi/menu`; una página no.
+			$validator = DiviLayoutGuard::is_layout( $source ) ? $this->validator->with_layout() : $this->validator;
+			$clean     = $validator->validate_tree( $sections, $kind, 0, $base );
 
 			if ( is_wp_error( $clean ) ) {
 				return $clean;
@@ -289,14 +301,73 @@ final class Divi5SectionEditor {
 			);
 		}
 
+		$content = serialize_blocks( $spliced );
+		$lost    = $replaces ? $this->dropped_post_content( $located, $path ) : array();
+
 		return array(
-			'content'   => serialize_blocks( $spliced ),
-			'operation' => $operation,
-			'path'      => $path,
-			'parent'    => $parent,
-			'index'     => $index,
-			'added'     => count( $new ),
-			'dropped'   => $replaces ? $this->dropped( $located, $path ) : array(),
+			'content'              => $content,
+			'operation'            => $operation,
+			'path'                 => $path,
+			'parent'               => $parent,
+			'index'                => $index,
+			'added'                => count( $new ),
+			'dropped'              => $replaces ? $this->dropped( $located, $path ) : array(),
+			'dropped_post_content' => $lost,
+			'warnings'             => $this->post_content_warnings( $source, $lost, $content ),
+		);
+	}
+
+	/**
+	 * `divi/post-content` del nodo y de sus descendientes, que replace/delete pierden: `{path, type}` en orden de documento.
+	 *
+	 * El módulo que pone el contenido de la página dentro de un cuerpo del Theme Builder: sin él el cuerpo REEMPLAZA el
+	 * contenido de las páginas a las que se asigne (S6). Se avisa en vez de callar.
+	 *
+	 * @param array<string, mixed> $block Bloque que se reemplaza o borra.
+	 * @param string               $path  Su ruta.
+	 *
+	 * @return array<int, array<string, string>>
+	 */
+	private function dropped_post_content( array $block, string $path ): array {
+		$out = array();
+		$all = array_merge(
+			array(
+				array(
+					'path'  => $path,
+					'block' => $block,
+				),
+			),
+			Divi5Tree::descendants( $block, $path )
+		);
+
+		foreach ( $all as $item ) {
+			if ( 'divi/post-content' === ( $item['block']['blockName'] ?? null ) ) {
+				$out[] = array(
+					'path' => $item['path'],
+					'type' => 'divi/post-content',
+				);
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Avisos de la edición: un cuerpo del Theme Builder que se queda sin `divi/post-content`.
+	 *
+	 * @param \WP_Post                          $source  Contenido sobre el que se trabaja.
+	 * @param array<int, array<string, string>> $lost    Lo que se pierde ({@see self::dropped_post_content()}).
+	 * @param string                            $content Contenido nuevo.
+	 *
+	 * @return array<int, string>
+	 */
+	private function post_content_warnings( \WP_Post $source, array $lost, string $content ): array {
+		if ( array() === $lost || 'body' !== DiviLayoutGuard::slot_of( $source ) || DiviLayoutGuard::has_post_content( $content ) ) {
+			return array();
+		}
+
+		return array(
+			__( 'Este cuerpo del Theme Builder se quedó sin divi/post-content: asignado a páginas, entradas o la tienda REEMPLAZA su contenido (se pierden el texto de la página y, en WooCommerce, el carrito y el pago). Vuelve a insertar un divi/post-content en una columna antes de asignarlo.', 'nexo-mcp' ),
 		);
 	}
 

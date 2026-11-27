@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Builders;
 
+use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Support\Settings;
 use NexoDev\NexoMCP\WordPress\WorkingCopy;
 
@@ -146,6 +147,13 @@ final class BuilderGateway {
 	private ?DiviConditionsCatalog $divi_conditions_catalog;
 
 	/**
+	 * Permiso del Theme Builder para tocar un layout: fn(): bool. Por omisión, `PermissionPolicy::can_write_divi_theme_builder()`.
+	 *
+	 * @var callable|null
+	 */
+	private $layout_allowed;
+
+	/**
 	 * Construye el gateway.
 	 *
 	 * Las cuatro últimas piezas del sistema de diseño se inyectan sólo en pruebas: por
@@ -168,6 +176,7 @@ final class BuilderGateway {
 	 * @param DiviLoopSchema|null           $divi_loops       Esquema del bucle de consulta de Divi (las pruebas inyectan tipos, taxonomías y términos).
 	 * @param DiviConditionsSchema|null     $divi_conditions  Esquema de las condiciones de visualización de Divi (las pruebas inyectan roles, tipos, términos y WooCommerce).
 	 * @param DiviConditionsCatalog|null    $divi_conditions_catalog Catálogo de condiciones (las pruebas inyectan roles, tipos y WooCommerce).
+	 * @param callable|null                 $layout_allowed  fn(): bool. Permiso del Theme Builder para leer o escribir un layout (las pruebas lo inyectan); por omisión, `PermissionPolicy::can_write_divi_theme_builder()` con estos ajustes.
 	 */
 	public function __construct(
 		?BuilderRegistry $registry = null,
@@ -186,7 +195,8 @@ final class BuilderGateway {
 		?DiviDynamicCatalog $divi_dynamic = null,
 		?DiviLoopSchema $divi_loops = null,
 		?DiviConditionsSchema $divi_conditions = null,
-		?DiviConditionsCatalog $divi_conditions_catalog = null
+		?DiviConditionsCatalog $divi_conditions_catalog = null,
+		?callable $layout_allowed = null
 	) {
 		$this->registry                = $registry ?? new BuilderRegistry();
 		$this->backup                  = $backup ?? new BuilderBackup();
@@ -205,6 +215,7 @@ final class BuilderGateway {
 		$this->divi_loops              = $divi_loops;
 		$this->divi_conditions         = $divi_conditions ?? new DiviConditionsSchema();
 		$this->divi_conditions_catalog = $divi_conditions_catalog;
+		$this->layout_allowed          = $layout_allowed;
 	}
 
 	/**
@@ -880,7 +891,10 @@ final class BuilderGateway {
 			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
 			null,
 			null,
-			$this->divi_presets_lock()
+			$this->divi_presets_lock(),
+			null,
+			null,
+			$this->layout_allowed_callable()
 		);
 
 		return $editor->edit(
@@ -944,7 +958,9 @@ final class BuilderGateway {
 			null,
 			null,
 			null,
-			$this->divi_loops ?? new DiviLoopSchema()
+			$this->divi_loops ?? new DiviLoopSchema(),
+			null,
+			$this->layout_allowed_callable()
 		);
 
 		return $editor->edit(
@@ -1002,7 +1018,9 @@ final class BuilderGateway {
 			null,
 			null,
 			null,
-			$this->divi_loops ?? new DiviLoopSchema()
+			$this->divi_loops ?? new DiviLoopSchema(),
+			null,
+			$this->layout_allowed_callable()
 		);
 
 		return $editor->edit(
@@ -1072,7 +1090,8 @@ final class BuilderGateway {
 			null,
 			null,
 			null,
-			$this->divi_conditions
+			$this->divi_conditions,
+			$this->layout_allowed_callable()
 		);
 
 		return $editor->edit(
@@ -1096,6 +1115,20 @@ final class BuilderGateway {
 	 */
 	public function create_divi_page( array $input ) {
 		return ( new Divi5PageCreator( $this->divi_validator(), null, null, null, null, null, $this->divi_presets_lock() ) )->create( $input );
+	}
+
+	/**
+	 * Crea un layout del Theme Builder de Divi 5 (encabezado, cuerpo o pie), publicado y sin asignar.
+	 *
+	 * Exige el permiso del Theme Builder (el inyectado o `PermissionPolicy::can_write_divi_theme_builder()`) ANTES de mirar la
+	 * entrada. Ver {@see Divi5LayoutCreator}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `type`, `title`, `sections`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function create_divi_layout( array $input ) {
+		return ( new Divi5LayoutCreator( $this->divi_validator(), $this->layout_allowed_callable(), null, null, null, null, null, $this->divi_presets_lock() ) )->create( $input );
 	}
 
 	/**
@@ -1125,7 +1158,8 @@ final class BuilderGateway {
 			null,
 			null,
 			$this->divi_presets_lock(),
-			$this->divi_conditions
+			$this->divi_conditions,
+			$this->layout_allowed_callable()
 		);
 
 		return $editor->edit(
@@ -1828,7 +1862,8 @@ final class BuilderGateway {
 			return $post;
 		}
 
-		if ( ! current_user_can( 'edit_post', $post->ID ) ) {
+		// Un layout del Theme Builder ya pasó el permiso del Theme Builder en `find_post`: no se le pide además el de una página.
+		if ( ! DiviLayoutGuard::is_layout( $post ) && ! current_user_can( 'edit_post', $post->ID ) ) {
 			return $this->forbidden();
 		}
 
@@ -1858,11 +1893,20 @@ final class BuilderGateway {
 		$original    = get_post( WorkingCopy::original_id_for( (int) $post->ID ) );
 		$is_its_copy = $original instanceof \WP_Post && $original->ID !== $post->ID && WorkingCopy::copy_of( $original ) === (int) $post->ID;
 
-		if ( ! current_user_can( 'edit_post', $is_its_copy ? $original->ID : $post->ID ) ) {
+		if ( ! DiviLayoutGuard::is_layout( $post ) && ! current_user_can( 'edit_post', $is_its_copy ? $original->ID : $post->ID ) ) {
 			return $this->forbidden();
 		}
 
 		return $post;
+	}
+
+	/**
+	 * Permiso del Theme Builder para tocar un layout: el inyectado o, por omisión, el de la política con estos ajustes.
+	 *
+	 * @return callable fn(): bool.
+	 */
+	private function layout_allowed_callable(): callable {
+		return $this->layout_allowed ?? fn(): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_theme_builder();
 	}
 
 	/**
@@ -1912,7 +1956,10 @@ final class BuilderGateway {
 			);
 		}
 
-		return $post;
+		// Un layout del Theme Builder pide el permiso del Theme Builder; los demás tipos `et_*` se rechazan (T5).
+		$guard = DiviLayoutGuard::check( $post, $this->layout_allowed_callable() );
+
+		return is_wp_error( $guard ) ? $guard : $post;
 	}
 
 	/**

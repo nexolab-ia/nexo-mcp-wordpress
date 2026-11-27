@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Authorization;
 
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\OAuth\BearerTokenGuard;
 use NexoDev\NexoMCP\OAuth\ScopeMap;
 use NexoDev\NexoMCP\Support\Settings;
@@ -173,6 +174,13 @@ final class PermissionPolicy {
 	 * @param int $post_id Página (o su copia de trabajo).
 	 */
 	public function can_write_divi_dynamic( int $post_id ): bool {
+		// Un layout del Theme Builder (o su copia) se muestra en todo el sitio: el permiso del Theme Builder y el scope
+		// propio, no el `edit_post` de una página.
+		if ( DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( $post_id ) ) {
+			return $this->can_write_divi_theme_builder()
+				&& $this->can_module_write( 'divi_dynamic_tools_enabled', Capabilities::DIVI_DYNAMIC, 'edit_theme_options' );
+		}
+
 		$original = WorkingCopy::original_id_for( $post_id );
 
 		return $this->can_module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', $original )
@@ -189,6 +197,12 @@ final class PermissionPolicy {
 	 * @param int $post_id Página (o su copia de trabajo).
 	 */
 	public function can_write_divi_conditions( int $post_id ): bool {
+		// Como `can_write_divi_dynamic`: un layout pide el permiso del Theme Builder y el scope propio.
+		if ( DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( $post_id ) ) {
+			return $this->can_write_divi_theme_builder()
+				&& $this->can_module_write( 'divi_conditions_tools_enabled', Capabilities::DIVI_CONDITIONS, 'edit_theme_options' );
+		}
+
 		$original = WorkingCopy::original_id_for( $post_id );
 
 		return $this->can_module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', $original )

@@ -14,6 +14,7 @@ use NexoDev\NexoMCP\Authorization\DenialExplainer;
 use NexoDev\NexoMCP\Authorization\IrreversibleActions;
 use NexoDev\NexoMCP\Authorization\PermissionPolicy;
 use NexoDev\NexoMCP\Builders\BuilderGateway;
+use NexoDev\NexoMCP\Builders\DiviLayoutGuard;
 use NexoDev\NexoMCP\Builders\DesignKitOperations;
 use NexoDev\NexoMCP\Builders\DesignVariableValue;
 use NexoDev\NexoMCP\Builders\DiviConditionsSchema;
@@ -84,6 +85,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/set-divi-loop',
 		'nexo-mcp/set-divi-conditions',
 		'nexo-mcp/create-divi-page',
+		'nexo-mcp/create-divi-layout',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -289,15 +291,18 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-page-structure',
 			'Obtener estructura de la página',
-			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
+			'Detecta el constructor visual y lista los textos, enlaces e imágenes editables de una página o entrada, sin el HTML. Con el id de un layout del Theme Builder (encabezado, cuerpo o pie, o su copia de trabajo) pide el permiso del Theme Builder (scope mcp:divi_theme_builder) y no el de una página: nexo_mcp_divi_layout_denied sin él; los demás tipos internos de Divi se rechazan (nexo_mcp_divi_post_type_denied). Es la lectura liviana previa a nexo-mcp-update-node-text. Los nodos que no se pueden editar traen editable: false y el motivo. En Divi 5, un módulo con condiciones de visualización trae attributes.conditions: un resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]} (ours: true si las puso nexo-mcp-set-divi-conditions) sin valores crudos; las hechas en el Visual Builder se conservan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->builders->get_structure( $input ),
-			fn( array $input ) => $this->module_read(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				(int) ( $input['id'] ?? 0 )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					(int) ( $input['id'] ?? 0 )
+				)
 			)
 		);
 		$this->ability(
@@ -773,7 +778,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_dynamic_sources( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -794,7 +799,7 @@ final class ExtendedAbilityRegistrar {
 			),
 			fn( array $input ) => $this->builders->list_divi_conditions( $input ),
 			fn( array $input ) => isset( $input['post_id'] )
-				? $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) )
+				? $this->layout_gate( (int) $input['post_id'], fn() => $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) $input['post_id'] ) ) )
 				: $this->module_read( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_posts' )
 		);
 		$this->ability(
@@ -862,6 +867,16 @@ final class ExtendedAbilityRegistrar {
 			fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_pages' )
 		);
 		$this->ability(
+			'create-divi-layout',
+			'Crear un layout del Theme Builder de Divi 5 (publicado, sin asignar)',
+			$this->divi_layout_description(),
+			'write',
+			$this->divi_layout_schema(),
+			fn( array $input ) => $this->builders->create_divi_layout( $input ),
+			// Sin id de página: un layout se muestra en todo el sitio. Permiso de sitio del Theme Builder (no el de constructores).
+			fn() => $this->policy->can_write_divi_theme_builder()
+		);
+		$this->ability(
 			'edit-divi-section',
 			'Reconstruir secciones de Divi 5',
 			$this->divi_section_description(),
@@ -914,11 +929,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_text_schema(),
 			fn( array $input ) => $this->builders->update_node_text( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -931,11 +949,15 @@ final class ExtendedAbilityRegistrar {
 			fn( array $input ) => $this->builders->update_node_attribute( $input ),
 			// Capacidad propia y no BUILDERS: cambiar a dónde apunta un enlace no
 			// es lo mismo que corregir una palabra, así que se concede aparte.
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDER_ATTRS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDER_ATTRS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDER_ATTRS, 'edit_theme_options' )
 			)
 		);
 		$this->ability(
@@ -945,11 +967,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_restore_schema(),
 			fn( array $input ) => $this->builders->restore_backup( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 		$this->ability(
@@ -960,11 +985,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->builder_structure_schema(),
 			fn( array $input ) => $this->builders->edit_structure( $input ),
-			fn( array $input ) => $this->module_write(
-				'builders_tools_enabled',
-				Capabilities::BUILDERS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_tools_enabled',
+					Capabilities::BUILDERS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				)
 			)
 		);
 	}
@@ -1379,12 +1407,14 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			$this->confirmed_id_schema( 'restore-revision' ),
 			fn( array $input ) => $this->content->restore_revision( (int) $input['id'] ),
-			fn() => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+			fn( array $input ) => $this->module_write( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_posts' )
+				// Restaurar la revisión de un layout reescribe el layout vivo (todo el sitio): además, el permiso del Theme Builder.
+				&& ( ! $this->is_layout_revision( (int) ( $input['id'] ?? 0 ) ) || $this->policy->can_write_divi_theme_builder() )
 		);
 		$this->ability(
 			'set-content-status',
 			'Cambiar estado de contenido',
-			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50.',
+			'Publica, cambia el estado o envía a la papelera cuando el módulo de publicación está habilitado. Usa id, o ids para un lote de hasta 50. La copia de trabajo de un layout del Theme Builder (encabezado, cuerpo o pie) también se publica (se fusiona en el layout vivo, que ve todo el sitio) o se descarta (trash) por aquí, pero pide además el permiso del Theme Builder (scope mcp:divi_theme_builder): nexo_mcp_divi_layout_denied sin él. El layout vivo en sí no cambia de estado por esta herramienta.',
 			'write',
 			$this->status_schema(),
 			fn( array $input ) => isset( $input['ids'] )
@@ -1395,11 +1425,14 @@ final class ExtendedAbilityRegistrar {
 		$this->ability(
 			'get-working-copy-diff',
 			'Comparar copia de trabajo',
-			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post).',
+			'Muestra qué cambió una copia de trabajo respecto a su original: título, extracto, un diff del contenido por líneas, metadatos y categorías o etiquetas, y si el original cambió desde que se creó la copia (stale). Úsala antes de pedirle a la persona que publique o descarte una copia, para explicarle exactamente qué va a cambiar. En meta, kept_on_publish lista claves que faltan en la copia pero que el original conserva al publicar (publicar nunca borra meta). Acepta el id del original o el de la copia (el que devuelve update-page o update-post). Para un layout del Theme Builder pide el permiso del Theme Builder (nexo_mcp_divi_layout_denied sin él); los demás tipos internos de Divi se rechazan.',
 			'read',
 			$this->id_schema(),
 			fn( array $input ) => $this->content->get_working_copy_diff( (int) $input['id'] ),
-			fn( array $input ) => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			fn( array $input ) => $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_read( 'content_tools_enabled', Capabilities::CONTENT_ADVANCED, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) ) )
+			)
 		);
 	}
 
@@ -1412,12 +1445,44 @@ final class ExtendedAbilityRegistrar {
 	 * @param array<string, mixed> $input Parámetros de la herramienta.
 	 */
 	private function elementor_page_permission( array $input ): bool {
-		return $this->module_write(
-			'builders_tools_enabled',
-			Capabilities::BUILDERS,
-			'edit_post',
-			WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+		return $this->layout_gate(
+			(int) ( $input['id'] ?? 0 ),
+			fn() => $this->module_write(
+				'builders_tools_enabled',
+				Capabilities::BUILDERS,
+				'edit_post',
+				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			)
 		);
+	}
+
+	/**
+	 * Indica si la revisión es de un layout del Theme Builder.
+	 *
+	 * @param int $revision_id Revisión.
+	 */
+	private function is_layout_revision( int $revision_id ): bool {
+		$revision = function_exists( 'wp_get_post_revision' ) ? wp_get_post_revision( $revision_id ) : null;
+
+		return $revision instanceof \WP_Post && DiviLayoutGuard::KIND_LAYOUT === DiviLayoutGuard::kind_of_id( (int) $revision->post_parent );
+	}
+
+	/**
+	 * Capa de permiso del tipo de contenido (T5): un layout del Theme Builder pide el permiso del Theme Builder y NO el de una página.
+	 *
+	 * Para cualquier otro contenido rige `$normal`. Los demás tipos `et_*` no tienen atajo: el permiso de siempre y, al
+	 * ejecutar, el gateway los rechaza con `nexo_mcp_divi_post_type_denied` ({@see DiviLayoutGuard}).
+	 *
+	 * @param int           $post_id Contenido indicado (original o copia de trabajo).
+	 * @param callable      $normal  fn(): bool. Permiso de una página.
+	 * @param callable|null $extra   fn(): bool. Scope propio de la herramienta que también rige en un layout (sin `edit_post`).
+	 */
+	private function layout_gate( int $post_id, callable $normal, ?callable $extra = null ): bool {
+		if ( DiviLayoutGuard::KIND_LAYOUT !== DiviLayoutGuard::kind_of_id( $post_id ) ) {
+			return (bool) $normal();
+		}
+
+		return $this->policy->can_write_divi_theme_builder() && ( null === $extra || (bool) $extra() );
 	}
 
 	/**
@@ -1431,11 +1496,15 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function dynamic_tag_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_dynamic_enabled',
-				Capabilities::BUILDERS_DYNAMIC,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_dynamic_enabled',
+					Capabilities::BUILDERS_DYNAMIC,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_dynamic_enabled', Capabilities::BUILDERS_DYNAMIC, 'edit_theme_options' )
 			);
 	}
 
@@ -1461,11 +1530,15 @@ final class ExtendedAbilityRegistrar {
 	 */
 	private function component_insert_permission( array $input ): bool {
 		return $this->elementor_page_permission( $input )
-			&& $this->module_write(
-				'builders_components_enabled',
-				Capabilities::BUILDERS_COMPONENTS,
-				'edit_post',
-				WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+			&& $this->layout_gate(
+				(int) ( $input['id'] ?? 0 ),
+				fn() => $this->module_write(
+					'builders_components_enabled',
+					Capabilities::BUILDERS_COMPONENTS,
+					'edit_post',
+					WorkingCopy::original_id_for( (int) ( $input['id'] ?? 0 ) )
+				),
+				fn() => $this->module_write( 'builders_components_enabled', Capabilities::BUILDERS_COMPONENTS, 'edit_theme_options' )
 			);
 	}
 
@@ -1977,6 +2050,9 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'PRESET (opcional, sola o junto a content/design): preset {module?: id | null, groups?: {<id de grupo>: id | null}} aplica presets de Divi 5 al módulo (se escribe modulePreset y groupPreset en el bloque, con el nombre de grupo que da Divi; null quita la referencia; un módulo lleva un preset de módulo y uno por grupo). Los ids salen de nexo-mcp-get-divi-presets (con module se ven los presets de ese módulo y available_groups da los ids de grupo válidos); el id debe existir para ese módulo o grupo: si no, nexo_mcp_divi_preset_unknown con data.path y no se escribe nada. Es una escritura de página (copia de trabajo, huella): no pide el scope de presets. Los attrs propios del módulo ganan siempre al preset. modulePreset/groupPreset crudos dentro de content o design siguen rechazados.',
 				'',
+				'EN UN LAYOUT además se editan divi/post-title y divi/menu (menu.advanced.menuId: el id, como texto, de un menú que existe; uno inexistente se rechaza) y divi/post-content (sin contenido que editar).',
+				$this->divi_layout_note(),
+				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, path y fingerprint nuevo del módulo (úsalo en la siguiente edición).',
 				'',
 				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el módulo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_module_denied (estructura o módulo fuera del catálogo), nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_preset_unknown (preset).',
@@ -2104,6 +2180,70 @@ final class ExtendedAbilityRegistrar {
 	}
 
 	/**
+	 * Nota de las herramientas de edición sobre los layouts del Theme Builder.
+	 */
+	private function divi_layout_note(): string {
+		return 'LAYOUTS DEL THEME BUILDER: id puede ser el de un layout de encabezado, cuerpo o pie (o su copia de trabajo); entonces se pide el permiso del Theme Builder (scope mcp:divi_theme_builder con su interruptor y un administrador con el permiso theme_builder de Divi) y NO el de una página: sin él, nexo_mcp_divi_layout_denied. Los demás tipos internos de Divi (plantillas, biblioteca) se rechazan siempre (nexo_mcp_divi_post_type_denied). El cambio va a la copia de trabajo del layout (el layout vivo, que ve todo el sitio, no cambia): revísala con nexo-mcp-get-working-copy-diff y publícala o descártala con nexo-mcp-set-content-status (también con el permiso del Theme Builder).';
+	}
+
+	/**
+	 * Descripción de create-divi-layout.
+	 */
+	private function divi_layout_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Crea un layout del Theme Builder de Divi 5 (encabezado, cuerpo o pie) con módulos reales, PUBLICADO y SIN ASIGNAR a ninguna plantilla (inerte hasta enlazarlo). Requiere Divi 5 activo (nexo_mcp_divi5_required) y el scope mcp:divi_theme_builder (interruptor encendido por el administrador) con un administrador que tenga el permiso theme_builder de Divi: un layout se muestra en todo el sitio, así que NO basta el permiso de constructores ni el edit_post de una página (nexo_mcp_divi_layout_denied, se comprueba antes que la entrada).',
+				'',
+				'EFECTO EN TODO EL SITIO: crear no cambia el sitio, pero asignar el layout a una plantilla sí (afecta a todas las páginas que esa plantilla cubra). Un layout se crea en publish a propósito: uno en borrador, privado o pendiente lo ve igualmente el público. Un layout sin asignar lo marca Divi como sin uso y lo manda a la papelera a los 7 días: asígnalo antes. Un encabezado o pie reemplaza al del tema (se pierden su menú, buscador y carrito). Un cuerpo sin divi/post-content REEMPLAZA el contenido de las páginas a las que se asigne (se pierden el texto de la página y, en WooCommerce, el carrito y el pago): se crea igual, pero la respuesta lo avisa.',
+				'',
+				'ENTRADA: type (header | body | footer), title y sections: la lista de secciones (sólo divi/section en la raíz; el divi/placeholder que envuelve el contenido lo pone el plugin).',
+				$this->divi_tree_help(),
+				'EN UN LAYOUT además se admiten, siempre como hijos de una columna: divi/post-content (el contenido de la página o entrada que muestra la plantilla; sin atributos; imprescindible en un cuerpo), divi/post-title (título de la entrada: interruptores on/off en title.advanced.showTitle, meta.advanced.showMeta|showAuthor|showDate|showCategories|showCommentsCount, image.advanced.enabled y meta.advanced.dateFormat, un formato de fecha de PHP de hasta 30 caracteres) y divi/menu (menu.advanced.menuId: el id del menú, como TEXTO, de un menú que existe en el sitio —uno inexistente se rechaza porque Divi lo cambiaría en silencio por el primero—, logo.innerContent {src, alt, linkUrl, linkTarget}, cartIcon.advanced.show y searchIcon.advanced.show en on/off). Una página no los admite.',
+				'',
+				'SALIDA: id, type, post_type (et_header_layout, et_body_layout o et_footer_layout), status (publish), assigned (false), nodes (lista plana de {path, type, fingerprint} con la ruta de cada nodo; úsala con nexo-mcp-edit-divi-section y nexo-mcp-edit-divi-module, que aceptan el id del layout con este mismo permiso) y warnings (el de sin asignar y, en un cuerpo sin divi/post-content, el de que reemplazaría el contenido). Al crear se borra el CSS estático de todo el sitio (ET_Core_PageResource::remove_static_resources(\'all\', \'all\')): Divi no hace nada, sin avisar, si el usuario de la conexión no tiene edit_posts; los plugins de caché de página se vacían con et_theme_builder_clear_wp_cache.',
+				'',
+				'ERRORES (no crean nada; si falla el guardado el layout a medias se elimina): nexo_mcp_divi_layout_denied, nexo_mcp_divi_layout_type_invalid, nexo_mcp_divi5_required, nexo_mcp_divi_title_required, nexo_mcp_divi_tree_invalid, nexo_mcp_divi_module_denied, nexo_mcp_divi_nesting_invalid, nexo_mcp_divi_attr_denied, nexo_mcp_divi_value_invalid, nexo_mcp_divi_shortcode_denied, nexo_mcp_divi_dynamic_denied, nexo_mcp_divi_too_many_nodes, nexo_mcp_divi_too_large, nexo_mcp_divi_save_failed.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de entrada de create-divi-layout.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function divi_layout_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'type'     => array(
+					'type'        => 'string',
+					'enum'        => array( 'header', 'body', 'footer' ),
+					'description' => 'Qué layout es: encabezado, cuerpo o pie.',
+				),
+				'title'    => array(
+					'type'      => 'string',
+					'minLength' => 1,
+					'maxLength' => 200,
+				),
+				'sections' => array(
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => 200,
+					'description' => 'Secciones: lista de nodos {type: "divi/section", attrs?, children?}. Ver la descripción de la herramienta (en un layout, además divi/post-content, divi/post-title y divi/menu dentro de una columna).',
+					'items'       => array(
+						'type'                 => 'object',
+						'additionalProperties' => true,
+					),
+				),
+			),
+			'required'             => array( 'type', 'title', 'sections' ),
+			'additionalProperties' => false,
+		);
+	}
+
+	/**
 	 * Descripción de edit-divi-section.
 	 */
 	private function divi_section_description(): string {
@@ -2119,7 +2259,10 @@ final class ExtendedAbilityRegistrar {
 				'',
 				'SALIDA: id (el post editado: la copia si la hubo), draft_of (si es copia), preview_url, operation, nodes (lista plana de {path, type, fingerprint} de los nodos nuevos, ya con sus rutas finales; vacía con delete) y removed (la ruta borrada, sólo con delete) y dropped_conditions (sólo con replace o delete, si el subárbol reemplazado o borrado tenía módulos con condiciones de visualización: lista de {path, type, summary}, con el path del módulo antes del cambio y summary el resumen {ours, match, total, conditions: [{type, operator, enabled, supported, summary}]}, sin valores crudos; la escritura se hace igual: replace no puede conservarlas porque los árboles no las admiten, así que vuelve a ponerlas con nexo-mcp-set-divi-conditions). Las rutas de los hermanos posteriores cambian: vuelve a leer antes de otra edición.',
 				'',
-				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
+				'EN UN LAYOUT (ver abajo) replace y delete avisan de lo que se pierde también con dropped_post_content (lista de {path, type: divi/post-content} del subárbol reemplazado o borrado, con el path antes del cambio) y, si un CUERPO se queda sin ningún divi/post-content, con warnings (un cuerpo sin él REEMPLAZA el contenido de las páginas a las que se asigne); la escritura se hace igual. En un layout además se admiten divi/post-content, divi/post-title y divi/menu como hijos de una columna (ver nexo-mcp-create-divi-layout).',
+				$this->divi_layout_note(),
+				'',
+				'ERRORES (no escriben nada ni crean copia): nexo_mcp_divi_layout_denied, nexo_mcp_divi_post_type_denied, nexo_mcp_divi_node_changed (la huella no coincide: el nodo cambió desde la lectura), nexo_mcp_builder_node_missing, nexo_mcp_divi_not_divi5, nexo_mcp_divi5_required, nexo_mcp_divi_operation_invalid, nexo_mcp_divi_position_invalid, nexo_mcp_divi_sections_not_allowed, nexo_mcp_divi_last_section, nexo_mcp_divi_nesting_invalid y los de validación de nexo-mcp-create-divi-page.',
 			)
 		);
 	}
@@ -2338,6 +2481,14 @@ final class ExtendedAbilityRegistrar {
 	 * @param string   $status   Estado pedido.
 	 */
 	private function can_set_copy_status( \WP_Post $copy, int $original, string $status ): bool {
+		// La copia de un layout del Theme Builder cambia lo que ve todo el sitio al publicarla: el permiso del Theme Builder
+		// (no el `edit_post` de una página), el módulo de publicación y poder publicar.
+		if ( DiviLayoutGuard::is_layout( $copy ) ) {
+			return $this->policy->can_write_divi_theme_builder()
+				&& $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'read' )
+				&& ( 'publish' !== $status || current_user_can( 'publish_posts' ) );
+		}
+
 		$target = get_post( $original ) instanceof \WP_Post ? $original : (int) $copy->ID;
 
 		if ( ! $this->module_write( 'publishing_enabled', Capabilities::PUBLISH, 'edit_post', $target ) ) {

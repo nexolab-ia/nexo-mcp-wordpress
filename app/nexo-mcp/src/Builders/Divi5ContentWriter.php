@@ -78,6 +78,13 @@ final class Divi5ContentWriter {
 	private $saver;
 
 	/**
+	 * Permiso del Theme Builder para escribir un layout: fn(): bool. Sin él, un layout se deniega.
+	 *
+	 * @var callable|null
+	 */
+	private $layout_allowed;
+
+	/**
 	 * Construye el escritor.
 	 *
 	 * @param Settings      $settings     Configuración.
@@ -87,6 +94,7 @@ final class Divi5ContentWriter {
 	 * @param callable      $lock_check   fn( \WP_Post ): true|\WP_Error.
 	 * @param callable|null $divi5_active fn(): bool. Por omisión, `ET_BUILDER_5_DIR` definida.
 	 * @param callable|null $saver        fn( int, string ): true|\WP_Error. Por omisión, `wp_update_post()` (sólo pruebas).
+	 * @param callable|null $layout_allowed fn(): bool. Permiso del Theme Builder; sin él un layout del Theme Builder se deniega (los demás tipos `et_*` siempre).
 	 */
 	public function __construct(
 		Settings $settings,
@@ -95,15 +103,17 @@ final class Divi5ContentWriter {
 		WorkingCopy $copies,
 		callable $lock_check,
 		?callable $divi5_active = null,
-		?callable $saver = null
+		?callable $saver = null,
+		?callable $layout_allowed = null
 	) {
-		$this->settings     = $settings;
-		$this->adapter      = $adapter;
-		$this->backup       = $backup;
-		$this->copies       = $copies;
-		$this->lock_check   = $lock_check;
-		$this->divi5_active = $divi5_active ?? static fn(): bool => self::divi5_installed();
-		$this->saver        = $saver ?? static function ( int $id, string $content ) {
+		$this->settings       = $settings;
+		$this->adapter        = $adapter;
+		$this->backup         = $backup;
+		$this->copies         = $copies;
+		$this->lock_check     = $lock_check;
+		$this->layout_allowed = $layout_allowed;
+		$this->divi5_active   = $divi5_active ?? static fn(): bool => self::divi5_installed();
+		$this->saver          = $saver ?? static function ( int $id, string $content ) {
 			$saved = wp_update_post(
 				array(
 					'ID'           => $id,
@@ -167,6 +177,14 @@ final class Divi5ContentWriter {
 	 * @return array{staged: bool, existing: int, source: \WP_Post}|\WP_Error
 	 */
 	public function target( \WP_Post $post, array $input ) {
+		// Segunda capa de la guarda de tipo (la primera es la del gateway): un layout sin el permiso del Theme Builder, o
+		// cualquier otro tipo `et_*`, no se escribe ni se copia aunque quien llame se salte el gateway.
+		$guard = DiviLayoutGuard::check( $post, $this->layout_allowed );
+
+		if ( is_wp_error( $guard ) ) {
+			return $guard;
+		}
+
 		if ( ! ( $this->divi5_active )() ) {
 			return self::required_error();
 		}
