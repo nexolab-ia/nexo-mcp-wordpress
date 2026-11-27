@@ -21,6 +21,9 @@ namespace ET\Builder\Packages\GlobalLayout {
 		public static string $mode = 'detach';
 
 		/**
+		 * Como `GlobalLayout.php:50-57`: recorre TODA la tabla de contenidos, sin filtrar por estado ni tipo (papelera, revisiones y
+		 * borradores automáticos incluidos), y aborta si el usuario no puede editar alguno de los que cambia.
+		 *
 		 * @param mixed    $override Resultado previo del filtro.
 		 * @param \WP_Post $post     Ítem que se manda a la papelera.
 		 *
@@ -38,7 +41,7 @@ namespace ET\Builder\Packages\GlobalLayout {
 			$id = (int) $post->ID;
 
 			foreach ( \WP_Test_State::$posts as $other ) {
-				if ( $other->ID === $id || 'trash' === $other->post_status || ! \NexoDev\NexoMCP\Builders\DiviLibraryUsage::references( (string) $other->post_content, $id ) ) {
+				if ( $other->ID === $id || ! \NexoDev\NexoMCP\Builders\DiviLibraryUsage::references( (string) $other->post_content, $id ) ) {
 					continue;
 				}
 
@@ -66,6 +69,9 @@ namespace {
 	final class WP_Library_Wpdb_Double extends WPDB_Test_Double {
 
 		public string $posts = 'wp_posts';
+
+		/** @var string Último error de la base, como `$wpdb->last_error`. */
+		public string $last_error = '';
 
 		/** @var int Veces que se consultó. */
 		public int $queries = 0;

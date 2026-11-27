@@ -34,6 +34,11 @@ final class DiviLibraryUsage {
 	public const MAX_LISTED = 50;
 
 	/**
+	 * Tope de contenidos a los que se les renueva la caché tras cambiar un global (el resto se informa).
+	 */
+	public const MAX_FLUSH = 500;
+
+	/**
 	 * Tope de ids sin permiso de edición que se devuelven.
 	 */
 	public const MAX_BLOCKED = 20;
@@ -68,15 +73,21 @@ final class DiviLibraryUsage {
 	/**
 	 * Contenidos que referencian el ítem.
 	 *
+	 * `count`, `pages` e `ids` son los vivos; `total` cuenta además papelera, revisiones y borradores automáticos, que Divi también
+	 * despega y cuyo permiso de edición entra en `not_editable`. `unknown` es true si la base falló: el resto no es fiable.
+	 *
 	 * @param int $item_id Ítem global.
 	 *
-	 * @return array{count: int, pages: array<int, array<string, mixed>>, truncated: bool, not_editable: array<int, int>, not_editable_count: int}
+	 * @return array{count: int, total: int, unknown: bool, ids: array<int, int>, pages: array<int, array<string, mixed>>, truncated: bool, not_editable: array<int, int>, not_editable_count: int}
 	 */
 	public function of( int $item_id ): array {
 		$pages     = array();
 		$count     = 0;
 		$blocked   = array();
 		$blocked_n = 0;
+		$total     = 0;
+		$ids       = array();
+		$unknown   = false;
 		$after     = 0;
 
 		do {
@@ -85,10 +96,16 @@ final class DiviLibraryUsage {
 			try {
 				$rows = ( $this->fetch )( $after, $item_id );
 			} catch ( \Throwable $e ) {
-				$rows = array();
+				$rows = null;
 			}
 
-			$rows = is_array( $rows ) ? array_values( $rows ) : array();
+			// Un error de la base NO es «sin uso»: se marca desconocido (como Divi, que se detiene con `$wpdb->last_error`).
+			if ( ! is_array( $rows ) ) {
+				$unknown = true;
+				break;
+			}
+
+			$rows = array_values( $rows );
 			$full = count( $rows ) >= self::BATCH;
 
 			foreach ( $rows as $row ) {
@@ -101,11 +118,13 @@ final class DiviLibraryUsage {
 				$status = (string) ( $row['post_status'] ?? '' );
 				$type   = (string) ( $row['post_type'] ?? '' );
 
-				if ( $id === $item_id || in_array( $status, array( 'trash', 'auto-draft', 'inherit' ), true ) || in_array( $type, array( 'revision', 'nav_menu_item' ), true ) || ! self::references( (string) ( $row['post_content'] ?? '' ), $item_id ) ) {
+				if ( $id === $item_id || ! self::references( (string) ( $row['post_content'] ?? '' ), $item_id ) ) {
 					continue;
 				}
 
-				++$count;
+				// Divi despega TODO lo que referencia el ítem, sin filtrar estado ni tipo (papelera, revisiones, borradores
+				// automáticos): el permiso de edición se comprueba en todos, la lista sólo trae los vivos.
+				++$total;
 				$editable = $this->editable( $id );
 
 				if ( ! $editable ) {
@@ -116,6 +135,16 @@ final class DiviLibraryUsage {
 					}
 				}
 
+				if ( in_array( $status, array( 'trash', 'auto-draft', 'inherit' ), true ) || in_array( $type, array( 'revision', 'nav_menu_item' ), true ) ) {
+					continue;
+				}
+
+				++$count;
+
+				if ( count( $ids ) < self::MAX_FLUSH ) {
+					$ids[] = $id;
+				}
+
 				if ( count( $pages ) < self::MAX_LISTED ) {
 					$pages[] = $this->entry( $id, $type, $status, (string) ( $row['post_title'] ?? '' ), $editable );
 				}
@@ -124,6 +153,9 @@ final class DiviLibraryUsage {
 
 		return array(
 			'count'              => $count,
+			'total'              => $total,
+			'unknown'            => $unknown,
+			'ids'                => $ids,
 			'pages'              => $pages,
 			'truncated'          => $count > count( $pages ),
 			'not_editable'       => $blocked,
@@ -200,15 +232,15 @@ final class DiviLibraryUsage {
 	 * @param int $after Último id visto.
 	 * @param int $item  Ítem (se excluye).
 	 *
-	 * @return array<int, array<string, mixed>>
+	 * @return array<int, array<string, mixed>>|null Null si la base falló.
 	 */
-	public static function fetch_batch( int $after, int $item ): array {
+	public static function fetch_batch( int $after, int $item ): ?array {
 		global $wpdb;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Búsqueda puntual de uso, sin caché a propósito.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT ID, post_type, post_status, post_title, post_content FROM {$wpdb->posts} WHERE ID > %d AND ID <> %d AND post_type NOT IN ('revision', 'nav_menu_item') AND post_status NOT IN ('trash', 'auto-draft', 'inherit') AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY ID ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
+				"SELECT ID, post_type, post_status, post_title, post_content FROM {$wpdb->posts} WHERE ID > %d AND ID <> %d AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY ID ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
 				$after,
 				$item,
 				'%' . $wpdb->esc_like( 'globalModule' ) . '%',
@@ -218,6 +250,6 @@ final class DiviLibraryUsage {
 			ARRAY_A
 		);
 
-		return is_array( $rows ) ? $rows : array();
+		return is_array( $rows ) && '' === (string) ( $wpdb->last_error ?? '' ) ? $rows : null;
 	}
 }

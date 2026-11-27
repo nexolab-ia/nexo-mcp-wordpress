@@ -421,7 +421,14 @@ final class DiviLibraryEditor {
 		$id     = (int) $post->ID;
 		$global = $this->schema->is_global( $id );
 		$usage  = $global ? $this->usage->of( $id ) : null;
-		$used   = null !== $usage && $usage['count'] > 0;
+
+		if ( null !== $usage && $usage['unknown'] ) {
+			return $this->usage_unknown();
+		}
+
+		// Un ítem NO global no se busca: las páginas llevan una copia, no una referencia, y Divi tampoco despega nada al borrarlo
+		// (`GlobalLayout::preserve_instances_before_delete` sólo actúa con un global). Aviso A4c de T10.
+		$used = null !== $usage && $usage['total'] > 0;
 
 		if ( null !== $usage && $usage['not_editable_count'] > 0 ) {
 			return new \WP_Error(
@@ -447,6 +454,7 @@ final class DiviLibraryEditor {
 			);
 		}
 
+		$previous = $this->backup->read( $id );
 		$snapshot = $this->backup->snapshot( $post, 'delete', $this->schema->read( $id ) );
 		$guard    = $this->back_up( $id, $snapshot );
 
@@ -458,25 +466,31 @@ final class DiviLibraryEditor {
 		$now     = get_post( $id );
 
 		if ( ! $trashed || ! $now instanceof \WP_Post || 'trash' !== $now->post_status ) {
-			return $this->restore_state(
+			$error = $this->restore_state(
 				$id,
 				$snapshot,
-				$used ? __( 'Divi no despegó las instancias del ítem en las páginas que lo usan y abortó el borrado.', 'nexo-mcp' ) : __( 'WordPress no mandó el ítem a la papelera.', 'nexo-mcp' )
+				$used ? __( 'Divi no despegó las instancias del ítem en las páginas que lo usan y abortó el borrado (puede haber despegado ya algunas: conservan su contenido).', 'nexo-mcp' ) : __( 'WordPress no mandó el ítem a la papelera.', 'nexo-mcp' )
 			);
+
+			// El respaldo que había (el deshacer del último cambio) vuelve: el del borrado ya no tiene sentido.
+			$this->reinstate_backup( $id, $previous );
+
+			return $error;
 		}
 
 		$left = $used ? $this->usage->of( $id ) : null;
 
-		if ( null !== $left && $left['count'] > 0 ) {
-			// Divi dijo que sí y quedan referencias a un ítem en la papelera (que no se renderiza): se devuelve el ítem.
+		if ( null !== $left && ( $left['unknown'] || $left['total'] > 0 ) ) {
+			// Divi dijo que sí y quedan referencias (o no se puede saber) a un ítem en la papelera (que no se renderiza): se devuelve el ítem.
 			$put_back = $this->put_back( $id, $snapshot );
+			$this->reinstate_backup( $id, $previous );
 
 			return new \WP_Error(
 				'nexo_mcp_divi_library_detach_failed',
 				sprintf(
 					/* translators: 1: contenidos, 2: resultado. */
 					__( 'Tras mandar el ítem a la papelera quedan contenidos que todavía lo referencian (%1$s): perderían su contenido. %2$s', 'nexo-mcp' ),
-					implode( ', ', array_column( $left['pages'], 'id' ) ),
+					$left['unknown'] ? __( 'no se pudo comprobar', 'nexo-mcp' ) : implode( ', ', array_column( $left['pages'], 'id' ) ),
 					$put_back ? __( 'El ítem volvió a su estado anterior; las páginas que Divi ya despegó conservan su contenido.', 'nexo-mcp' ) : __( 'No se pudo devolver el ítem automáticamente: restáuralo con nexo-mcp-restore-divi-library-item.', 'nexo-mcp' )
 				),
 				array(
@@ -500,7 +514,7 @@ final class DiviLibraryEditor {
 
 		if ( null !== $usage ) {
 			$out['affected_pages']   = self::shown( $usage );
-			$out['still_referenced'] = null === $left ? 0 : $left['count'];
+			$out['still_referenced'] = null === $left ? 0 : $left['total'];
 
 			if ( $used ) {
 				$warnings[] = __( 'Divi despegó el ítem de las páginas de affected_pages: cada una conserva su contenido como bloques propios. Restaurar el ítem NO las vuelve a enlazar.', 'nexo-mcp' );
@@ -529,6 +543,10 @@ final class DiviLibraryEditor {
 				__( 'Este ítem no tiene un respaldo disponible: no hay nada que restaurar (el respaldo lo guardan guardar y borrar antes de cambiarlo).', 'nexo-mcp' ),
 				array( 'status' => 404 )
 			);
+		}
+
+		if ( $this->schema->is_global( $id ) && $this->usage->of( $id )['unknown'] ) {
+			return $this->usage_unknown();
 		}
 
 		$now   = $this->backup->snapshot( $post, 'restore', $this->schema->read( $id ) );
@@ -810,7 +828,12 @@ final class DiviLibraryEditor {
 			);
 		}
 
+		if ( $this->schema->is_global( $id ) && $this->usage->of( $id )['unknown'] ) {
+			return $this->usage_unknown();
+		}
+
 		$read     = $this->schema->read( $id );
+		$previous = $this->backup->read( $id );
 		$snapshot = $this->backup->snapshot( $post, 'save', $read );
 
 		$guard = $this->back_up( $id, $snapshot );
@@ -824,6 +847,7 @@ final class DiviLibraryEditor {
 
 		if ( null !== $failure ) {
 			$error = $this->restore_state( $id, $snapshot, $failure );
+			$this->reinstate_backup( $id, $previous );
 
 			// Las categorías que creó esta llamada (sólo ésas) no se quedan de sobra.
 			$this->schema->drop_categories( $created );
@@ -1016,6 +1040,33 @@ final class DiviLibraryEditor {
 	}
 
 	/**
+	 * Devuelve el respaldo que había antes de una operación que falló (o lo quita si no había), para no perder el deshacer anterior.
+	 *
+	 * @param int                       $id       Ítem.
+	 * @param array<string, mixed>|null $previous Respaldo de antes (de {@see DiviLibraryBackup::read()}).
+	 */
+	private function reinstate_backup( int $id, ?array $previous ): void {
+		if ( null === $previous ) {
+			$this->backup->forget( $id );
+
+			return;
+		}
+
+		$this->backup->save( $id, $previous );
+	}
+
+	/**
+	 * Error de una búsqueda de uso que falló: se trata como desconocido, nunca como «sin uso».
+	 */
+	private function usage_unknown(): \WP_Error {
+		return new \WP_Error(
+			'nexo_mcp_divi_library_usage_unknown',
+			__( 'No se pudo comprobar qué páginas usan este ítem global (la base de datos falló al buscarlas), así que no se cambia, borra ni restaura nada. Reintenta.', 'nexo-mcp' ),
+			array( 'status' => 503 )
+		);
+	}
+
+	/**
 	 * `confirm_global` de la entrada: false si falta; si está tiene que ser true o false.
 	 *
 	 * @param array<string, mixed> $input Entrada.
@@ -1046,21 +1097,38 @@ final class DiviLibraryEditor {
 
 		$usage = $this->usage->of( $id );
 
-		foreach ( $usage['pages'] as $page ) {
-			try {
-				$post = get_post( (int) $page['id'] );
+		// A todas las afectadas (hasta el tope), en lotes: la lista de la respuesta sólo trae las primeras.
+		$flushed = 0;
 
-				if ( $post instanceof \WP_Post ) {
-					( new Divi5Adapter() )->flush( $post );
+		foreach ( array_chunk( $usage['ids'], 50 ) as $batch ) {
+			foreach ( $batch as $page_id ) {
+				try {
+					$post = get_post( $page_id );
+
+					if ( $post instanceof \WP_Post ) {
+						( new Divi5Adapter() )->flush( $post );
+						++$flushed;
+					}
+				} catch ( \Throwable $e ) {
+					continue;
 				}
-			} catch ( \Throwable $e ) {
-				continue;
 			}
 		}
 
+		$answer['cache_not_cleared'] = max( 0, $usage['count'] - $flushed );
+
 		$answer['affected_pages'] = self::shown( $usage );
-		$answer['warnings']       = array_merge(
+		$extra                    = array();
+
+		if ( $usage['unknown'] ) {
+			$extra[] = __( 'No se pudo comprobar qué páginas usan el ítem (la base falló): affected_pages puede estar incompleta y no se renovó la caché de ninguna.', 'nexo-mcp' );
+		} elseif ( $answer['cache_not_cleared'] > 0 ) {
+			$extra[] = sprintf( /* translators: %d: páginas. */ __( 'No se renovó la caché de %d páginas afectadas (pasan del tope): se renovará sola o vacía la caché del sitio.', 'nexo-mcp' ), $answer['cache_not_cleared'] );
+		}
+
+		$answer['warnings'] = array_merge(
 			(array) ( $answer['warnings'] ?? array() ),
+			$extra,
 			array( __( 'Es un ítem global: el cambio ya lo ven todas las páginas de affected_pages (Divi lo lee al renderizar) sin que se hayan tocado. Si algo sale mal, nexo-mcp-restore-divi-library-item con confirm_global: true lo deshace.', 'nexo-mcp' ) )
 		);
 

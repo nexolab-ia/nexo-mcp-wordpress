@@ -139,7 +139,7 @@ final class DiviLibraryGlobalToolTest extends NexoTestCase implements DiviLibrar
 		}
 
 		$this->assertStringContainsString( '"globalModule":"8030"', \WP_Test_State::$posts[ self::OTHER ]->post_content, 'lo que usa otro ítem no se toca' );
-		$this->assertStringContainsString( 'globalModule', \WP_Test_State::$posts[ self::GONE ]->post_content, 'la papelera no se toca' );
+		$this->assertStringContainsString( GlobalLayout::MARKER, \WP_Test_State::$posts[ self::GONE ]->post_content, 'Divi despega también lo que está en la papelera' );
 		$this->assertSame( 0, $result['still_referenced'] );
 		$this->assertStringContainsString( 'restore-divi-library-item', implode( ' ', $result['warnings'] ) );
 	}

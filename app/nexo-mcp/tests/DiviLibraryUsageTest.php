@@ -100,6 +100,30 @@ final class DiviLibraryUsageTest extends NexoTestCase {
 		}
 	}
 
+	public function test_a_failing_source_is_unknown_while_junk_rows_are_just_ignored(): void {
+		foreach ( array( static fn() => null, static fn() => 'x', static function () {
+			throw new \RuntimeException( 'boom' );
+		} ) as $fetch ) {
+			$this->assertTrue( ( new DiviLibraryUsage( $fetch ) )->of( 5 )['unknown'] );
+		}
+
+		$this->assertFalse( ( new DiviLibraryUsage( static fn() => array( 'x', array( 'ID' => 'abc' ) ) ) )->of( 5 )['unknown'] );
+	}
+
+	public function test_the_total_and_the_permission_check_include_what_divi_detaches_but_the_list_does_not(): void {
+		$rows  = array(
+			$this->row( 1, $this->ref( 5 ) ),
+			$this->row( 2, $this->ref( 5 ), array( 'post_status' => 'trash' ) ),
+			$this->row( 3, $this->ref( 5 ), array( 'post_type' => 'revision', 'post_status' => 'inherit' ) ),
+		);
+		$usage = ( new DiviLibraryUsage( static fn( int $after ): array => 0 === $after ? $rows : array(), static fn( int $id ): bool => 1 === $id ) )->of( 5 );
+
+		$this->assertSame( 1, $usage['count'] );
+		$this->assertSame( 3, $usage['total'] );
+		$this->assertSame( array( 1 ), $usage['ids'] );
+		$this->assertSame( array( 2, 3 ), $usage['not_editable'] );
+	}
+
 	public function test_a_permission_check_that_throws_counts_as_not_editable(): void {
 		$usage = ( new DiviLibraryUsage(
 			fn( int $after, int $item ): array => 0 === $after ? array( $this->row( 7, $this->ref( 5 ) ) ) : array(),
