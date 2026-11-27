@@ -273,4 +273,52 @@ final class DiviTemplateStoreTest extends NexoTestCase implements DiviTemplateId
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'nexo_mcp_busy', $result->get_error_code() );
 	}
+
+	public function test_restoring_a_creation_whose_row_cannot_be_removed_fails_and_does_not_trash(): void {
+		$store = $this->store();
+		$id    = $store->insert( 'Creada' );
+		$store->map( self::TB, $id );
+		$this->assertTrue( $store->save_backup( $id, $store->snapshot( $id, self::TB, 'create', false ) ) );
+		$before = $this->snapshot();
+
+		\WP_Test_State::$fail_delete_meta['_et_template'] = true;
+		$result                                          = $store->restore( $id, self::TB );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'nexo_mcp_divi_template_save_failed', $result->get_error_code() );
+		$this->assertSame( array( 'id' => $id ), $result->get_error_data() );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[ $id ]->post_status, 'no se manda a la papelera una plantilla que sigue en el mapeo' );
+		$this->assertSame( array( (string) $id ), $this->mapping() );
+		$this->assertSame( $before, $this->snapshot() );
+	}
+
+	public function test_discarding_the_live_builder_only_deletes_an_empty_one(): void {
+		$store = $this->store();
+		$this->put_template( 950, 'Plantilla' );
+
+		$this->assertFalse( $store->discard_live_builder( self::TB ), 'tiene filas: no se borra' );
+		$this->assertArrayHasKey( self::TB, \WP_Test_State::$posts );
+		$this->assertFalse( $store->discard_live_builder( 950 ), 'no es un Theme Builder' );
+		$this->assertArrayHasKey( 950, \WP_Test_State::$posts );
+
+		$store->unmap( self::TB, 950 );
+
+		$this->assertTrue( $store->discard_live_builder( self::TB ) );
+		$this->assertArrayNotHasKey( self::TB, \WP_Test_State::$posts );
+		$this->assertFalse( $store->discard_live_builder( 0 ) );
+	}
+
+	public function test_discarding_the_live_builder_never_deletes_one_from_the_theme_builder_library(): void {
+		$store = $this->store();
+		update_post_meta( self::TB, '_et_library_theme_builder', '1' );
+
+		$this->assertSame( array(), $store->mapping( self::TB ), 'está vacío' );
+		$this->assertFalse( $store->discard_live_builder( self::TB ) );
+		$this->assertArrayHasKey( self::TB, \WP_Test_State::$posts );
+		$this->assertSame( '1', \WP_Test_State::$meta[ self::TB ]['_et_library_theme_builder'] );
+
+		delete_post_meta( self::TB, '_et_library_theme_builder' );
+
+		$this->assertTrue( $store->discard_live_builder( self::TB ), 'sin la marca, vacío y propio sí' );
+	}
 }

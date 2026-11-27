@@ -63,12 +63,18 @@ if ( ! function_exists( 'et_theme_builder_get_theme_builder_post_id' ) ) {
 			return (int) $ids[0];
 		}
 
-		return $create ? (int) wp_insert_post(
+		if ( ! $create ) {
+			return 0;
+		}
+
+		$id = wp_insert_post(
 			array(
 				'post_type'   => 'et_theme_builder',
 				'post_status' => $status,
 				'post_title'  => 'Theme Builder',
 			)
-		) : 0;
+		);
+
+		return is_wp_error( $id ) ? 0 : (int) $id;
 	}
 }

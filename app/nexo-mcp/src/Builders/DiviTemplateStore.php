@@ -370,7 +370,25 @@ final class DiviTemplateStore {
 	}
 
 	/**
-	 * La plantilla a la papelera (como Divi: recuperable desde WordPress).
+	 * Elimina un Theme Builder en vivo que esta misma llamada acaba de crear (para deshacer una creación fallida), pero sólo
+	 * si sigue vacío (sin filas en el mapeo) y no es uno de la biblioteca del Theme Builder.
+	 *
+	 * @param int $tb Theme Builder.
+	 *
+	 * @return bool Si lo eliminó.
+	 */
+	public function discard_live_builder( int $tb ): bool {
+		$post = $tb > 0 ? get_post( $tb ) : null;
+
+		if ( ! $post instanceof \WP_Post || self::BUILDER_TYPE !== $post->post_type || array() !== $this->mapping( $tb ) || '' !== (string) get_post_meta( $tb, '_et_library_theme_builder', true ) ) {
+			return false;
+		}
+
+		return (bool) wp_delete_post( $tb, true );
+	}
+
+	/**
+	 * La plantilla a la papelera (como Divi; se recupera con restore-divi-template).
 	 *
 	 * @param int $id Plantilla.
 	 */
@@ -443,13 +461,16 @@ final class DiviTemplateStore {
 	 * respaldo de una creación (`existed` false) la manda a la papelera y la saca del mapeo. Sólo toca la fila de ESTA
 	 * plantilla en el mapeo. No captura nada antes: restaurar dos veces deja el mismo estado.
 	 *
-	 * @param int $id Plantilla.
-	 * @param int $tb Theme Builder en vivo.
+	 * Sólo escribe metas `_et_*` y un estado conocido, aunque el respaldo (que es una meta) traiga otra cosa.
+	 *
+	 * @param int                       $id       Plantilla.
+	 * @param int                       $tb       Theme Builder en vivo.
+	 * @param array<string, mixed>|null $snapshot Estado al que volver; por omisión el respaldo guardado en la plantilla.
 	 *
 	 * @return true|\WP_Error
 	 */
-	public function restore( int $id, int $tb ) {
-		$snapshot = $this->backup( $id );
+	public function restore( int $id, int $tb, ?array $snapshot = null ) {
+		$snapshot = $snapshot ?? $this->backup( $id );
 		$post     = $this->template( $id );
 
 		if ( null === $snapshot ) {
@@ -468,21 +489,29 @@ final class DiviTemplateStore {
 			);
 		}
 
-		if ( true !== $snapshot['existed'] ) {
-			$this->unmap( $tb, $id );
+		if ( true !== ( $snapshot['existed'] ?? null ) ) {
+			// Si la fila no sale del mapeo no se manda a la papelera: quedaría una plantilla en vivo que Divi no usa.
+			if ( ! $this->unmap( $tb, $id ) ) {
+				return new \WP_Error( 'nexo_mcp_divi_template_save_failed', __( 'No se pudo sacar la plantilla del Theme Builder en vivo.', 'nexo-mcp' ), array( 'id' => $id ) );
+			}
 
 			return $this->trash( $id ) || 'trash' === $post->post_status ? true : new \WP_Error( 'nexo_mcp_divi_template_save_failed', __( 'WordPress no pudo enviar la plantilla a la papelera.', 'nexo-mcp' ), array( 'id' => $id ) );
 		}
 
-		$status = isset( $snapshot['status'] ) && is_string( $snapshot['status'] ) && '' !== $snapshot['status'] ? $snapshot['status'] : 'publish';
-		$saved  = wp_update_post(
-			array(
-				'ID'          => $id,
-				'post_title'  => wp_slash( (string) ( $snapshot['title'] ?? '' ) ),
-				'post_status' => $status,
-			),
-			true
+		$status = self::snapshot_status( $snapshot );
+		$update = array(
+			'ID'          => $id,
+			'post_title'  => wp_slash( is_string( $snapshot['title'] ?? null ) ? $snapshot['title'] : '' ),
+			'post_status' => $status,
 		);
+
+		// WordPress añade `__trashed` al slug al mandar la plantilla a la papelera: al sacarla de ahí se quita (WordPress lo
+		// vuelve único si otro contenido ya lo usa).
+		if ( 'trash' !== $status && 1 === preg_match( '/^(.*)__trashed$/', $post->post_name, $slug ) ) {
+			$update['post_name'] = $slug[1];
+		}
+
+		$saved = wp_update_post( $update, true );
 
 		if ( is_wp_error( $saved ) ) {
 			return $saved;
@@ -494,7 +523,7 @@ final class DiviTemplateStore {
 			}
 		}
 
-		$this->write( $id, is_array( $snapshot['metas'] ?? null ) ? $snapshot['metas'] : array() );
+		$this->write( $id, self::snapshot_metas( $snapshot ) );
 
 		if ( true === ( $snapshot['mapped'] ?? false ) ) {
 			$this->map( $tb, $id );
@@ -503,6 +532,96 @@ final class DiviTemplateStore {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Si la plantilla está ahora tal como dice el estado respaldado (título, estado, metas y fila del mapeo; una creación,
+	 * en la papelera y fuera del mapeo).
+	 *
+	 * @param int                  $id       Plantilla.
+	 * @param int                  $tb       Theme Builder en vivo.
+	 * @param array<string, mixed> $snapshot Estado respaldado.
+	 */
+	public function is_state( int $id, int $tb, array $snapshot ): bool {
+		$post   = $this->template( $id );
+		$mapped = in_array( $id, $this->mapping( $tb ), true );
+
+		if ( null === $post ) {
+			return false;
+		}
+
+		if ( true !== ( $snapshot['existed'] ?? null ) ) {
+			return 'trash' === $post->post_status && ! $mapped;
+		}
+
+		$have = $this->metas( $id );
+		$want = self::snapshot_metas( $snapshot );
+
+		ksort( $have );
+		ksort( $want );
+
+		$title = is_string( $snapshot['title'] ?? null ) ? $snapshot['title'] : '';
+
+		return $title === $post->post_title
+			&& self::snapshot_status( $snapshot ) === $post->post_status
+			&& $want === $have
+			&& ( true === ( $snapshot['mapped'] ?? false ) ) === $mapped;
+	}
+
+	/**
+	 * Las metas de un estado respaldado, listas para escribir: sólo `_et_*`, las listas como arreglo de textos y el resto
+	 * como texto (el respaldo es una meta y puede traer cualquier cosa).
+	 *
+	 * @param array<string, mixed> $snapshot Estado respaldado.
+	 *
+	 * @return array<string, string|array<int, string>>
+	 */
+	public static function snapshot_metas( array $snapshot ): array {
+		$out = array();
+
+		foreach ( is_array( $snapshot['metas'] ?? null ) ? $snapshot['metas'] : array() as $key => $value ) {
+			if ( ! is_string( $key ) || ! str_starts_with( $key, '_et_' ) ) {
+				continue;
+			}
+
+			if ( in_array( $key, self::LIST_METAS, true ) ) {
+				$rows        = is_array( $value ) ? $value : array( $value );
+				$out[ $key ] = array_values( array_filter( array_map( static fn( $row ): string => is_scalar( $row ) ? (string) $row : '', $rows ), static fn( string $row ): bool => '' !== $row ) );
+			} elseif ( is_scalar( $value ) ) {
+				$out[ $key ] = (string) $value;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * El estado de WordPress al que volver: uno de los conocidos, o `publish`.
+	 *
+	 * @param array<string, mixed> $snapshot Estado respaldado.
+	 */
+	private static function snapshot_status( array $snapshot ): string {
+		$status = $snapshot['status'] ?? null;
+
+		return is_string( $status ) && in_array( $status, array( 'publish', 'draft', 'pending', 'private', 'trash' ), true ) ? $status : 'publish';
+	}
+
+	/**
+	 * Quita la marca de «sin uso» de Divi de los layouts que las metas asignan a una ranura, como el guardado en vivo de Divi
+	 * (si no, a los 7 días los manda a la papelera aunque estén en uso). Sólo toca un layout del tipo de su ranura.
+	 *
+	 * @param array<string, string|array<int, string>> $metas Metas de la plantilla.
+	 */
+	public function release_layouts( array $metas ): void {
+		foreach ( DiviLayoutGuard::LAYOUT_TYPES as $slot => $type ) {
+			$raw    = $metas[ '_et_' . $slot . '_layout_id' ] ?? null;
+			$layout = is_string( $raw ) && 1 === preg_match( '/^[1-9][0-9]{0,9}\z/', $raw ) ? (int) $raw : 0;
+			$post   = $layout > 0 ? get_post( $layout ) : null;
+
+			if ( $post instanceof \WP_Post && $type === $post->post_type ) {
+				delete_post_meta( $layout, self::MARKED_META );
+			}
+		}
 	}
 
 	/**

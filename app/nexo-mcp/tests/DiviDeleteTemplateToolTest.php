@@ -63,6 +63,15 @@ final class DiviDeleteTemplateToolTest extends NexoTestCase implements DiviTempl
 		}
 	}
 
+	public function test_the_description_points_to_restore_divi_template_and_not_to_wordpress_for_recovering(): void {
+		$description = $this->tool( self::DELETE )['description'];
+
+		$this->assertStringContainsString( 'nexo-mcp-restore-divi-template', $description );
+		$this->assertStringNotContainsString( 'se recupera desde WordPress', $description );
+		$this->assertStringContainsString( 'nexo-mcp-restore-builder-backup NO acepta plantillas', $description );
+		$this->assertStringNotContainsString( 'set-divi-template sin id; nace deshabilitada', $description );
+	}
+
 	public function test_the_permission_is_the_theme_builder_one_and_without_it_nothing_changes(): void {
 		$this->put_template( 950, 'Plantilla' );
 		$before = $this->snapshot();
@@ -293,5 +302,22 @@ final class DiviDeleteTemplateToolTest extends NexoTestCase implements DiviTempl
 		$this->assertIsArray( $result );
 		$this->assertFalse( $result['cache']['css'] );
 		$this->assertStringContainsString( 'edit_posts', implode( ' ', $result['warnings'] ) );
+	}
+
+	public function test_without_a_backup_nothing_is_deleted(): void {
+		$this->put_template( 950, 'Otra' );
+		$this->put_template( 951, 'Inicio', array( '_et_use_on' => array( 'homepage' ) ) );
+		$before = $this->snapshot();
+
+		\WP_Test_State::$json_fail_in = 'save_backup';
+		$result                       = $this->delete( array( 'id' => 951 ) );
+		\WP_Test_State::$json_fail_in = '';
+
+		$this->assertError( $result, 'nexo_mcp_divi_template_backup_failed' );
+		$this->assertSame( $before, $this->snapshot(), 'sigue publicada, en el mapeo y sin respaldo nuevo' );
+		$this->assertSame( 'publish', \WP_Test_State::$posts[951]->post_status );
+		$this->assertSame( array( '950', '951' ), $this->mapping() );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$css_calls );
+		$this->assertSame( array(), \WP_Layout_Stub_State::$cache_calls );
 	}
 }

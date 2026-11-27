@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\Tests;
 
+use NexoDev\NexoMCP\Builders\DiviTemplateStore;
 use NexoDev\NexoMCP\MCP\ExtendedAbilityRegistrar;
 
 /**
@@ -297,5 +298,73 @@ final class DiviListThemeBuilderToolTest extends NexoTestCase implements DiviTem
 
 		$this->assertStringNotContainsString( 'secreto', $json );
 		$this->assertStringNotContainsString( 'a b<script>', $json );
+	}
+
+	public function test_a_layout_in_the_trash_gets_its_own_warning_and_not_the_not_published_one(): void {
+		$this->put_live_tb();
+		$this->put_layout( 920, 'header', 'trash', '<!-- wp:divi/placeholder --><!-- /wp:divi/placeholder -->' );
+		$this->put_layout( 921, 'body', 'trash', '<!-- wp:divi/placeholder --><!-- /wp:divi/placeholder -->' );
+		$this->put_template( 950, 'Encabezado en papelera', array( '_et_use_on' => array( 'search' ), '_et_header_layout_id' => '920' ) );
+		$this->put_template( 951, 'Cuerpo en papelera', array( '_et_use_on' => array( 'homepage' ), '_et_body_layout_id' => '921' ) );
+		$this->put_template( 952, 'Borrador', array( '_et_use_on' => array( '404' ), '_et_header_layout_id' => (string) self::HEADER_DRAFT ) );
+
+		$result = $this->run_list();
+
+		$trashed = $this->warnings_of( $result['warnings'], 'layout_trashed' );
+		$this->assertSame( array( 950, 951 ), array_column( $trashed, 'template_id' ) );
+		$this->assertSame( array( 920, 921 ), array_column( $trashed, 'layout_id' ) );
+		$this->assertSame( array( 'header', 'body' ), array_column( $trashed, 'slot' ) );
+		$this->assertStringContainsString( 'papelera', $trashed[0]['message'] );
+		$this->assertStringContainsString( 'no lo muestra', $trashed[0]['message'] );
+		$this->assertSame( 'trash', $this->by_id( $result['templates'], 950 )['header']['status'] );
+
+		$not_published = $this->warnings_of( $result['warnings'], 'layout_not_published' );
+		$this->assertSame( array( 952 ), array_column( $not_published, 'template_id' ), 'un layout en la papelera no se anuncia como público' );
+		$this->assertSame( array(), $this->warnings_of( $result['warnings'], 'body_replaces_content' ), 'un cuerpo en la papelera no reemplaza nada' );
+	}
+
+	public function test_it_reads_at_most_the_template_limit_and_says_when_it_cut_the_list(): void {
+		$this->put_live_tb();
+		$last = 1000 + DiviTemplateStore::MAX_TEMPLATES + 1;
+
+		for ( $id = 1000; $id <= $last; $id++ ) {
+			$this->put_template( $id, 'T' . $id, array( '_et_use_on' => array( 'search' ) ) );
+		}
+
+		$result = $this->run_list();
+
+		$this->assertIsArray( $result );
+		$this->assertCount( DiviTemplateStore::MAX_TEMPLATES, $result['templates'] );
+		$this->assertSame( 1000, $result['templates'][0]['id'] );
+		$this->assertSame( 1000 + DiviTemplateStore::MAX_TEMPLATES - 1, $result['templates'][ DiviTemplateStore::MAX_TEMPLATES - 1 ]['id'] );
+		$this->assertTrue( $result['truncated'] );
+
+		$cut = $this->warnings_of( $result['warnings'], 'mapping_truncated' );
+		$this->assertCount( 1, $cut );
+		$this->assertSame( DiviTemplateStore::MAX_TEMPLATES + 2, $cut[0]['total'] );
+		$this->assertSame( DiviTemplateStore::MAX_TEMPLATES, $cut[0]['max'] );
+		$this->assertStringContainsString( (string) ( DiviTemplateStore::MAX_TEMPLATES + 2 ), $cut[0]['message'] );
+	}
+
+	public function test_exactly_the_template_limit_is_not_truncated(): void {
+		$this->put_live_tb();
+
+		for ( $id = 1000; $id < 1000 + DiviTemplateStore::MAX_TEMPLATES; $id++ ) {
+			$this->put_template( $id, 'T' . $id, array( '_et_use_on' => array( 'search' ) ) );
+		}
+
+		$result = $this->run_list();
+
+		$this->assertCount( DiviTemplateStore::MAX_TEMPLATES, $result['templates'] );
+		$this->assertFalse( $result['truncated'] );
+		$this->assertSame( array(), $this->warnings_of( $result['warnings'], 'mapping_truncated' ) );
+	}
+
+	public function test_the_description_names_the_new_warnings_and_the_flag(): void {
+		$description = $this->tool( self::LIST )['description'];
+
+		foreach ( array( 'layout_trashed', 'mapping_truncated', 'truncated' ) as $needle ) {
+			$this->assertStringContainsString( $needle, $description, $needle );
+		}
 	}
 }

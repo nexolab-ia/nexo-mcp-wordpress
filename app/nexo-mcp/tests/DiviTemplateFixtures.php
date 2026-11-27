@@ -30,8 +30,11 @@ use NexoDev\NexoMCP\WordPress\SeoGateway;
 trait DiviTemplateFixtures {
 
 
-	protected function prepare_divi_templates(): void {
-		if ( ! defined( 'ET_BUILDER_5_DIR' ) ) {
+	/**
+	 * @param bool $divi5 Si se define `ET_BUILDER_5_DIR` (Divi 5 activo). Una constante no se puede quitar: sin Divi 5 no se define nunca.
+	 */
+	protected function prepare_divi_templates( bool $divi5 = true ): void {
+		if ( $divi5 && ! defined( 'ET_BUILDER_5_DIR' ) ) {
 			define( 'ET_BUILDER_5_DIR', '/tmp/divi5' );
 		}
 		if ( ! defined( 'ET_BUILDER_VERSION' ) ) {

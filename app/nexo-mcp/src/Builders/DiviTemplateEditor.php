@@ -97,6 +97,7 @@ final class DiviTemplateEditor {
 			),
 			'draft'            => $this->draft( $this->store->draft_id() ),
 			'templates'        => $seen['items'],
+			'truncated'        => $seen['truncated'],
 			'default_template' => $view['default_template'],
 			'contexts'         => $view['contexts'],
 			'shadows'          => $view['shadows'],
@@ -188,6 +189,44 @@ final class DiviTemplateEditor {
 		}
 
 		return $this->store->locked( fn() => $this->delete_locked( (int) $id, $confirm, $foreign ) );
+	}
+
+	/**
+	 * Devuelve una plantilla a su respaldo (`_nexo_mcp_template_backup`), también tras borrarla o crearla.
+	 *
+	 * Antes guarda un respaldo fresco del estado actual (sin él no se escribe), así que restaurar dos veces alterna entre los
+	 * dos estados.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `id`, `confirm_site_wide`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_template( array $input ) {
+		$gate = $this->gate();
+
+		if ( null !== $gate ) {
+			return $gate;
+		}
+
+		$id = $this->target_id( $input, true );
+
+		if ( $id instanceof \WP_Error ) {
+			return $id;
+		}
+
+		$confirm = $this->flag( $input, 'confirm_site_wide' );
+
+		if ( $confirm instanceof \WP_Error ) {
+			return $confirm;
+		}
+
+		$foreign = $this->flag( $input, 'replace_foreign' );
+
+		if ( $foreign instanceof \WP_Error ) {
+			return $foreign;
+		}
+
+		return $this->store->locked( fn() => $this->restore_locked( (int) $id, $confirm, $foreign ) );
 	}
 
 	/**
@@ -315,7 +354,8 @@ final class DiviTemplateEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function create_locked( array $params, array $stored ) {
-		$tb = $this->store->ensure_live_id();
+		$existing = $this->store->live_id();
+		$tb       = $this->store->ensure_live_id();
 
 		if ( $tb <= 0 ) {
 			return new \WP_Error(
@@ -324,15 +364,25 @@ final class DiviTemplateEditor {
 			);
 		}
 
-		$id = $this->store->insert( $params['title'] );
+		// Un Theme Builder en vivo que esta llamada acaba de crear no se deja vacío si la creación falla.
+		$created = 0 === $existing;
+		$drop    = function () use ( $tb, $created ): void {
+			if ( $created ) {
+				$this->store->discard_live_builder( $tb );
+			}
+		};
+		$id      = $this->store->insert( $params['title'] );
 
 		if ( is_wp_error( $id ) ) {
+			$drop();
+
 			return $this->failed( $id->get_error_message() );
 		}
 
-		$undo = function () use ( $tb, $id ): void {
+		$undo = function () use ( $tb, $id, $drop ): void {
 			$this->store->unmap( $tb, $id );
 			$this->store->discard( $id );
+			$drop();
 		};
 
 		$snapshot = $this->store->snapshot( $id, $tb, 'create', false );
@@ -358,6 +408,8 @@ final class DiviTemplateEditor {
 
 			return $this->failed( __( 'Lo guardado no coincide con lo pedido.', 'nexo-mcp' ) );
 		}
+
+		$this->store->release_layouts( $stored );
 
 		return $this->set_response( $id, $tb, $params, true, $snapshot, null, null );
 	}
@@ -399,6 +451,8 @@ final class DiviTemplateEditor {
 		if ( ! $this->store->map( $tb, $id ) || ! $this->matches( $id, $params ) ) {
 			return $this->undone( $id, $tb, __( 'Lo guardado no coincide con lo pedido.', 'nexo-mcp' ) );
 		}
+
+		$this->store->release_layouts( $stored );
 
 		return $this->set_response( $id, $tb, $params, false, $snapshot, $replaced, $this->schema->summary( $snapshot['metas'], (string) $snapshot['title'] ) );
 	}
@@ -476,6 +530,194 @@ final class DiviTemplateEditor {
 				'page_cache' => $cache['page_cache'],
 			),
 			'warnings'           => $warnings,
+		);
+	}
+
+	/**
+	 * Restaura desde el respaldo, con el bloqueo del Theme Builder en mano.
+	 *
+	 * @param int  $id      Plantilla.
+	 * @param bool $confirm `confirm_site_wide`.
+	 * @param bool $foreign `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private function restore_locked( int $id, bool $confirm, bool $foreign ) {
+		$post = $this->store->template( $id );
+
+		if ( null === $post ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_template_not_found',
+				__( 'No hay una plantilla con ese id (vuelve a leer con nexo-mcp-list-divi-theme-builder; una borrada sigue existiendo en la papelera y se restaura con su id).', 'nexo-mcp' ),
+				array( 'id' => $id )
+			);
+		}
+
+		$snapshot = $this->store->backup( $id );
+
+		if ( null === $snapshot ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_template_no_backup',
+				__( 'Esta plantilla no tiene un respaldo disponible: no hay nada que restaurar (el respaldo lo guardan set-divi-template y delete-divi-template antes de cambiarla).', 'nexo-mcp' ),
+				array( 'id' => $id )
+			);
+		}
+
+		$tb = $this->store->live_id();
+
+		if ( $tb <= 0 ) {
+			return new \WP_Error(
+				'nexo_mcp_divi_template_unavailable',
+				__( 'No hay un Theme Builder en vivo donde restaurar la plantilla.', 'nexo-mcp' )
+			);
+		}
+
+		$mapping = $this->store->mapping( $tb );
+		$live    = in_array( $id, $mapping, true ) && 'trash' !== $post->post_status;
+		$before  = $this->schema->summary( $this->store->metas( $id ), $post->post_title );
+		$metas   = DiviTemplateStore::snapshot_metas( $snapshot );
+		$target  = $this->schema->summary( $metas, is_string( $snapshot['title'] ?? null ) ? $snapshot['title'] : '' );
+
+		if ( $live && ! $before['ours'] && ! $foreign ) {
+			return $this->foreign( $id, $before );
+		}
+
+		if ( ( $before['site_wide'] || $target['site_wide'] ) && ! $confirm ) {
+			return new \WP_Error(
+				DiviThemeBuilderSchema::CODE_SITE_WIDE,
+				'confirm_site_wide: ' . __( 'la plantilla actual o la respaldada cambia todo el sitio (es la por defecto o se asigna a un …:all, archive:all o 404): restaurarla lo cambia. Repite la llamada con confirm_site_wide: true si es lo que quieres.', 'nexo-mcp' ),
+				array( 'path' => 'confirm_site_wide' )
+			);
+		}
+
+		$mapped = true === ( $snapshot['existed'] ?? null ) && true === ( $snapshot['mapped'] ?? false );
+
+		if ( $mapped && ! in_array( $id, $mapping, true ) ) {
+			if ( count( $mapping ) >= DiviTemplateStore::MAX_TEMPLATES ) {
+				return new \WP_Error(
+					'nexo_mcp_divi_template_too_many',
+					sprintf(
+						/* translators: %d: máximo. */
+						__( 'El Theme Builder ya tiene %d plantillas, el máximo que el conector administra: restaurar una más lo pasaría. Borra una con nexo-mcp-delete-divi-template.', 'nexo-mcp' ),
+						DiviTemplateStore::MAX_TEMPLATES
+					),
+					array( 'max' => DiviTemplateStore::MAX_TEMPLATES )
+				);
+			}
+		}
+
+		if ( $mapped && '1' === ( $metas['_et_default'] ?? null ) ) {
+			$other = $this->other_default( $mapping, $id );
+
+			if ( null !== $other ) {
+				return new \WP_Error(
+					'nexo_mcp_divi_template_default_exists',
+					sprintf(
+						/* translators: %d: id de la plantilla por defecto. */
+						__( 'Ya hay una plantilla por defecto (id %d): sólo puede haber una. Reemplázala con su id o quítale default antes de restaurar ésta.', 'nexo-mcp' ),
+						$other
+					),
+					array( 'id' => $other )
+				);
+			}
+		}
+
+		$held = $this->store->verify_lock();
+
+		if ( is_wp_error( $held ) ) {
+			return $held;
+		}
+
+		$fresh = $this->store->snapshot( $id, $tb, 'restore', true );
+
+		if ( ! $this->store->save_backup( $id, $fresh ) ) {
+			$this->store->save_backup( $id, $snapshot );
+
+			return $this->backup_failed();
+		}
+
+		$restored = $this->store->restore( $id, $tb, $snapshot );
+
+		if ( is_wp_error( $restored ) || ! $this->store->is_state( $id, $tb, $snapshot ) ) {
+			if ( ! $this->store->is_state( $id, $tb, $fresh ) ) {
+				$this->store->restore( $id, $tb, $fresh );
+			}
+
+			$back = $this->store->is_state( $id, $tb, $fresh );
+			$this->store->save_backup( $id, $snapshot );
+
+			return $this->failed(
+				( is_wp_error( $restored ) ? $restored->get_error_message() : __( 'Lo guardado no coincide con el respaldo.', 'nexo-mcp' ) ) . ' ' . ( $back
+					? __( 'La plantilla volvió a su estado anterior.', 'nexo-mcp' )
+					: __( 'No se pudo volver al estado anterior automáticamente: revisa la plantilla con nexo-mcp-list-divi-theme-builder.', 'nexo-mcp' ) )
+			);
+		}
+
+		if ( $mapped ) {
+			$this->store->release_layouts( $metas );
+		}
+
+		return $this->restore_response( $id, $tb, $before, $snapshot, $fresh, $mapped );
+	}
+
+	/**
+	 * Respuesta de restore-divi-template tras restaurar y borrar las cachés.
+	 *
+	 * @param int                  $id       Plantilla.
+	 * @param int                  $tb       Theme Builder en vivo.
+	 * @param array<string, mixed> $before   Resumen de lo que había.
+	 * @param array<string, mixed> $snapshot Estado respaldado que se restauró.
+	 * @param array<string, mixed> $fresh    Respaldo de lo que había (el nuevo respaldo).
+	 * @param bool                 $mapped   Si la plantilla queda en el mapeo.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function restore_response( int $id, int $tb, array $before, array $snapshot, array $fresh, bool $mapped ): array {
+		$cache    = $this->store->clear_caches();
+		$post     = $this->store->template( $id );
+		$status   = $post instanceof \WP_Post ? (string) $post->post_status : '';
+		$now      = $this->schema->summary( $this->store->metas( $id ), $post instanceof \WP_Post ? $post->post_title : '' );
+		$warnings = array();
+
+		if ( ! $mapped ) {
+			$warnings[] = true === ( $snapshot['existed'] ?? null )
+				? __( 'La plantilla ya no está en el Theme Builder en vivo: no cambia nada en el sitio.', 'nexo-mcp' )
+				: __( 'El respaldo era de la creación de la plantilla: se ha vuelto a la papelera y fuera del Theme Builder en vivo. Restaura otra vez para recuperar el estado de antes.', 'nexo-mcp' );
+		}
+
+		foreach ( $this->inspect( $tb )['warnings'] as $warning ) {
+			$ids = isset( $warning['template_ids'] ) && is_array( $warning['template_ids'] ) ? $warning['template_ids'] : array();
+
+			if ( ( $warning['template_id'] ?? null ) === $id || in_array( $id, $ids, true ) ) {
+				$warnings[] = (string) $warning['message'];
+			}
+		}
+
+		return array(
+			'id'                 => $id,
+			'restored'           => true,
+			'title'              => $now['title'],
+			'status'             => $status,
+			'mapped'             => $mapped,
+			'enabled'            => $now['enabled'],
+			'default'            => $now['default'],
+			'site_wide'          => $now['site_wide'],
+			'effect'             => $mapped && $now['site_wide'] ? $this->effect( true === $now['enabled'] ) : null,
+			'ours'               => $now['ours'],
+			'use_on'             => $now['use_on'],
+			'exclude_from'       => $now['exclude_from'],
+			'header'             => $now['header'],
+			'body'               => $now['body'],
+			'footer'             => $now['footer'],
+			'previous'           => $before,
+			'restored_from'      => $this->backup_info( $snapshot ),
+			'backup'             => $this->backup_info( $fresh ),
+			'live_theme_builder' => $tb,
+			'cache'              => array(
+				'css'        => $cache['css'],
+				'page_cache' => $cache['page_cache'],
+			),
+			'warnings'           => array_merge( $warnings, $cache['warnings'] ),
 		);
 	}
 
@@ -581,7 +823,7 @@ final class DiviTemplateEditor {
 		return $this->failed(
 			$reason . ' ' . ( true === $restored
 				? __( 'La plantilla volvió a su estado anterior.', 'nexo-mcp' )
-				: __( 'No se pudo volver al estado anterior automáticamente: restáurala con nexo-mcp-restore-builder-backup y su id.', 'nexo-mcp' ) )
+				: __( 'No se pudo volver al estado anterior automáticamente: restáurala con nexo-mcp-restore-divi-template y su id.', 'nexo-mcp' ) )
 		);
 	}
 
@@ -770,14 +1012,32 @@ final class DiviTemplateEditor {
 	 *
 	 * @param int $tb Theme Builder en vivo (0 si no hay).
 	 *
-	 * @return array{items: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>}
+	 * @return array{items: array<int, array<string, mixed>>, warnings: array<int, array<string, mixed>>, truncated: bool}
 	 */
 	private function inspect( int $tb ): array {
-		$items    = array();
-		$warnings = array();
-		$defaults = array();
+		$items     = array();
+		$warnings  = array();
+		$defaults  = array();
+		$mapping   = $this->store->mapping( $tb );
+		$truncated = count( $mapping ) > DiviTemplateStore::MAX_TEMPLATES;
 
-		foreach ( $this->store->mapping( $tb ) as $id ) {
+		if ( $truncated ) {
+			$warnings[] = $this->warning(
+				'mapping_truncated',
+				sprintf(
+					/* translators: 1: filas del mapeo, 2: máximo. */
+					__( 'El Theme Builder en vivo tiene %1$d plantillas y sólo se leen las primeras %2$d (las demás no se listan ni cuentan para quién gana). El conector no administra más de %2$d: quita las que sobren desde el Visual Builder.', 'nexo-mcp' ),
+					count( $mapping ),
+					DiviTemplateStore::MAX_TEMPLATES
+				),
+				array(
+					'total' => count( $mapping ),
+					'max'   => DiviTemplateStore::MAX_TEMPLATES,
+				)
+			);
+		}
+
+		foreach ( array_slice( $mapping, 0, DiviTemplateStore::MAX_TEMPLATES ) as $id ) {
 			$post = $this->store->template( $id );
 
 			if ( null === $post ) {
@@ -819,8 +1079,9 @@ final class DiviTemplateEditor {
 		}
 
 		return array(
-			'items'    => $items,
-			'warnings' => $warnings,
+			'items'     => $items,
+			'warnings'  => $warnings,
+			'truncated' => $truncated,
 		);
 	}
 
@@ -871,6 +1132,20 @@ final class DiviTemplateEditor {
 					__( 'El layout %1$d no existe o no es un layout de tipo %2$s: Divi lo ignora y esa área sale como si no hubiera layout.', 'nexo-mcp' ),
 					$layout,
 					$slot
+				),
+				$at
+			);
+
+			return $out;
+		}
+
+		if ( 'trash' === $out['status'] ) {
+			$warnings[] = $this->warning(
+				'layout_trashed',
+				sprintf(
+					/* translators: %d: id. */
+					__( 'El layout %d está en la papelera: Divi no lo muestra y esa área sale como si no hubiera layout. Sácalo de la papelera o quítalo de la plantilla.', 'nexo-mcp' ),
+					$layout
 				),
 				$at
 			);

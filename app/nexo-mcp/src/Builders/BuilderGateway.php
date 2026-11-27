@@ -1168,6 +1168,17 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Devuelve una plantilla del Theme Builder en vivo al estado de su respaldo (también una borrada).
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta: `id`, `confirm_site_wide`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_divi_template( array $input ) {
+		return $this->template_editor()->restore_template( $input );
+	}
+
+	/**
 	 * Editor de plantillas del Theme Builder con los componentes de producción.
 	 */
 	private function template_editor(): DiviTemplateEditor {
