@@ -76,12 +76,16 @@ namespace {
 		/** @var int Veces que se consultó. */
 		public int $queries = 0;
 
+		/** @var string Última consulta que se hizo (ya con los valores puestos). */
+		public string $last_sql = '';
+
 		public function esc_like( string $text ): string {
 			return addcslashes( $text, '_%\\' );
 		}
 
 		public function get_results( $sql, $output = null ): array {
 			++$this->queries;
+			$this->last_sql = (string) $sql;
 			preg_match( '/ID > (\d+) AND ID <> (\d+)/', (string) $sql, $m );
 			$rows = array();
 

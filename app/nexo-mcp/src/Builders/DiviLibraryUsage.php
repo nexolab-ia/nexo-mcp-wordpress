@@ -60,14 +60,23 @@ final class DiviLibraryUsage {
 	private $can_edit;
 
 	/**
+	 * Permiso de lectura de un contenido (para mostrar su título): fn( int $id ): bool.
+	 *
+	 * @var callable
+	 */
+	private $can_read;
+
+	/**
 	 * Construye la consulta.
 	 *
 	 * @param callable|null $fetch    Lote de candidatos. Por omisión, una consulta a `$wpdb->posts`.
 	 * @param callable|null $can_edit fn( int ): bool. Por omisión, `current_user_can( 'edit_post', $id )`.
+	 * @param callable|null $can_read fn( int ): bool. Por omisión, `current_user_can( 'read_post', $id )`.
 	 */
-	public function __construct( ?callable $fetch = null, ?callable $can_edit = null ) {
+	public function __construct( ?callable $fetch = null, ?callable $can_edit = null, ?callable $can_read = null ) {
 		$this->fetch    = $fetch ?? array( self::class, 'fetch_batch' );
 		$this->can_edit = $can_edit ?? static fn( int $id ): bool => current_user_can( 'edit_post', $id );
+		$this->can_read = $can_read ?? static fn( int $id ): bool => current_user_can( 'read_post', $id );
 	}
 
 	/**
@@ -196,12 +205,19 @@ final class DiviLibraryUsage {
 	 * @return array<string, mixed>
 	 */
 	private function entry( int $id, string $type, string $status, string $title, bool $editable ): array {
+		// Un privado, un borrador o un contenido de otro usuario no deja ver su título sin `read_post` (aviso R1 de T10).
+		$readable = $this->readable( $id );
 		$entry    = array(
 			'id'        => $id,
-			'title'     => $title,
+			'title'     => $readable ? $title : '',
 			'post_type' => $type,
 			'status'    => $status,
 		);
+
+		if ( ! $readable ) {
+			$entry['title_hidden'] = true;
+		}
+
 		$original = WorkingCopy::original_id_for( $id );
 
 		if ( $original !== $id ) {
@@ -211,6 +227,19 @@ final class DiviLibraryUsage {
 		$entry['editable'] = $editable;
 
 		return $entry;
+	}
+
+	/**
+	 * Permiso de lectura sin lanzar: si no se puede saber, no se puede.
+	 *
+	 * @param int $id Contenido.
+	 */
+	private function readable( int $id ): bool {
+		try {
+			return (bool) ( $this->can_read )( $id );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**
@@ -227,7 +256,9 @@ final class DiviLibraryUsage {
 	}
 
 	/**
-	 * Lote de candidatos de la tabla de contenidos.
+	 * Lote de candidatos de la tabla de contenidos: los que mencionan una referencia global Y el id del ítem (condición necesaria de
+	 * cualquier forma de la referencia), así no se leen los contenidos que sólo usan OTROS globales. El filtro exacto sigue en
+	 * {@see self::references()}.
 	 *
 	 * @param int $after Último id visto.
 	 * @param int $item  Ítem (se excluye).
@@ -240,9 +271,10 @@ final class DiviLibraryUsage {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Búsqueda puntual de uso, sin caché a propósito.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT ID, post_type, post_status, post_title, post_content FROM {$wpdb->posts} WHERE ID > %d AND ID <> %d AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY ID ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
+				"SELECT ID, post_type, post_status, post_title, post_content FROM {$wpdb->posts} WHERE ID > %d AND ID <> %d AND post_content LIKE %s AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY ID ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tablas de Core.
 				$after,
 				$item,
+				'%' . $wpdb->esc_like( (string) $item ) . '%',
 				'%' . $wpdb->esc_like( 'globalModule' ) . '%',
 				'%' . $wpdb->esc_like( 'global_module' ) . '%',
 				self::BATCH
