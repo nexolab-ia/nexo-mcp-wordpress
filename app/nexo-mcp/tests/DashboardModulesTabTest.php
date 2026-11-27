@@ -73,7 +73,7 @@ final class DashboardModulesTabTest extends NexoTestCase {
 	}
 
 	private function panel( string $html ): string {
-		$start = (int) strpos( $html, 'data-nexo-panel="modulos"' );
+		$start = $this->pos( $html, 'data-nexo-panel="modulos"' );
 		$next  = strpos( $html, 'data-nexo-panel="', $start + 10 );
 
 		return substr( $html, $start, ( false === $next ? strlen( $html ) : $next ) - $start );
@@ -157,7 +157,7 @@ final class DashboardModulesTabTest extends NexoTestCase {
 		$panel = $this->panel( $this->render( $this->fixture(), true ) );
 
 		foreach ( ConnectionMap::module_groups( true ) as $label => $modules ) {
-			$from  = (int) strpos( $panel, '<h3>' . $label . '</h3>' );
+			$from  = $this->pos( $panel, '<h3>' . $label . '</h3>' );
 			$to    = strpos( $panel, '</section>', $from );
 			$this->assertNotFalse( $to, $label );
 			$chunk = substr( $panel, $from, (int) $to - $from );

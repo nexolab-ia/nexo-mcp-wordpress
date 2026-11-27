@@ -59,7 +59,7 @@ final class DashboardSystemPanelTest extends NexoTestCase {
 	}
 
 	private function system( string $html ): string {
-		$start = (int) strpos( $html, 'data-nexo-panel="sistema"' );
+		$start = $this->pos( $html, 'data-nexo-panel="sistema"' );
 
 		return substr( $html, $start );
 	}
@@ -78,11 +78,11 @@ final class DashboardSystemPanelTest extends NexoTestCase {
 			$this->assertGreaterThan( $last, $link );
 			$last = (int) $link;
 			// El índice va antes que la sección que enlaza.
-			$this->assertLessThan( (int) strpos( $panel, 'id="nexo-mcp-sec-' . $slug . '"' ), $link );
+			$this->assertLessThan( $this->pos( $panel, 'id="nexo-mcp-sec-' . $slug . '"' ), $link );
 		}
 
 		foreach ( array( 'Actividad', 'Licencia y sitio', 'Actualizaciones', 'Endpoint MCP', 'Soporte' ) as $label ) {
-			$this->assertStringContainsString( '>' . $label . '<', substr( $panel, 0, (int) strpos( $panel, 'id="nexo-mcp-sec-actividad"' ) ) );
+			$this->assertStringContainsString( '>' . $label . '<', substr( $panel, 0, $this->pos( $panel, 'id="nexo-mcp-sec-actividad"' ) ) );
 		}
 	}
 
@@ -110,13 +110,13 @@ final class DashboardSystemPanelTest extends NexoTestCase {
 
 	public function test_updates_card_keeps_head_followed_by_its_siblings(): void {
 		$panel = $this->system( $this->render() );
-		$start = (int) strpos( $panel, 'class="nexo-mcp-card nexo-mcp-updates"' );
-		$card  = substr( $panel, $start, (int) strpos( $panel, 'id="nexo-mcp-sec-endpoint"' ) - $start );
+		$start = $this->pos( $panel, 'class="nexo-mcp-card nexo-mcp-updates"' );
+		$card  = substr( $panel, $start, $this->pos( $panel, 'id="nexo-mcp-sec-endpoint"' ) - $start );
 
-		$head   = (int) strpos( $card, 'nexo-mcp-card__head' );
-		$box    = (int) strpos( $card, 'nexo-mcp-box' );
-		$action = (int) strpos( $card, 'data-nexo-check-updates' );
-		$msg    = (int) strpos( $card, 'nexo-mcp-updates__message' );
+		$head   = $this->pos( $card, 'nexo-mcp-card__head' );
+		$box    = $this->pos( $card, 'nexo-mcp-box' );
+		$action = $this->pos( $card, 'data-nexo-check-updates' );
+		$msg    = $this->pos( $card, 'nexo-mcp-updates__message' );
 
 		$this->assertGreaterThan( $head, $box );
 		$this->assertGreaterThan( $box, $action );

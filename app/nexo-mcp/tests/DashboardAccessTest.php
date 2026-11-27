@@ -58,15 +58,15 @@ final class DashboardAccessTest extends NexoTestCase {
 	}
 
 	private function panel( string $html, string $id ): string {
-		$start = (int) strpos( $html, 'data-nexo-panel="' . $id . '"' );
+		$start = $this->pos( $html, 'data-nexo-panel="' . $id . '"' );
 		$next  = strpos( $html, 'data-nexo-panel="', $start + 10 );
 
 		return substr( $html, $start, ( false === $next ? strlen( $html ) : $next ) - $start );
 	}
 
 	private function activity( string $html ): string {
-		$start = (int) strpos( $html, 'id="nexo-mcp-sec-actividad"' );
-		$end   = (int) strpos( $html, 'id="nexo-mcp-sec-licencia"', $start );
+		$start = $this->pos( $html, 'id="nexo-mcp-sec-actividad"' );
+		$end   = $this->pos( $html, 'id="nexo-mcp-sec-licencia"', $start );
 
 		return substr( $html, $start, $end - $start );
 	}
