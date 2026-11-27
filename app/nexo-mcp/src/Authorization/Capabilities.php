@@ -107,6 +107,14 @@ final class Capabilities {
 	public const DIVI_CONDITIONS = 'nexo_mcp_divi_conditions';
 
 	/**
+	 * Crear y cambiar plantillas del Theme Builder de Divi 5 y sus layouts.
+	 *
+	 * Va aparte de BUILDERS, DIVI_DYNAMIC y DIVI_CONDITIONS: una plantilla decide el encabezado, el pie y el cuerpo de
+	 * todo el sitio. Además lo enciende aparte el interruptor `divi_theme_builder_tools_enabled`.
+	 */
+	public const DIVI_THEME_BUILDER = 'nexo_mcp_divi_theme_builder';
+
+	/**
 	 * Impide instanciar el catálogo.
 	 */
 	private function __construct() {
