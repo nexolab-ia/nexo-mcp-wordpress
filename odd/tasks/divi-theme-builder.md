@@ -152,3 +152,4 @@ Fase D8, la última del soporte de Divi 5 (ver `odd/tasks/divi-5.md`, S2). Rama 
   - el CSS después de editar un global.
 
   Comprobaciones del padre en el docker: PHPUnit 2939 OK (1 deprecación), PHPCS 0, PHPStan sin errores. Siguiente: T11.
+- L16 (2026-11-26): decisión del usuario sobre la base del docker: «Seguir con la base actual (Recomendado)». La primera e2e de línea base salió con 1 y 10 fallos, todos de la copia de trabajo de Elementor. El script del worker de T10 había dejado en `nexo_mcp_settings` `working_copy_default=false` y `divi_library_tools_enabled=true`. Los volví a sus valores por defecto (true y false) y la e2e salió con 0: cero fallos, D8a 14/14 y todas las secciones OK. Para T11: la sección 7k tiene que dejar los ajustes como los encontró, y ningún script en vivo puede borrar por consultas amplias.
