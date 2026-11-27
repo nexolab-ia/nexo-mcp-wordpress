@@ -1415,13 +1415,16 @@
 
 .nexo-mcp-conn-list {
 	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 12px;
 }
 
 .nexo-mcp-conn-card {
-	padding: 16px;
+	min-width: 0;
+	padding: 14px 16px;
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
 }
 
 .nexo-mcp-conn-card__top {
@@ -1438,12 +1441,13 @@
 .nexo-mcp-conn-name {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 700;
 	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-conn-meta {
 	display: block;
+	margin-top: 2px;
 	color: var(--nexo-muted-fg);
 	font-size: 12px;
 }
@@ -1452,24 +1456,68 @@
 	content: " · ";
 }
 
-.nexo-mcp-conn-scopes {
+.nexo-mcp-admin .nexo-mcp-conn-scopes {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-	margin-top: 12px;
+	margin: 12px 0 0;
+	padding: 0;
+	list-style: none;
 }
 
-.nexo-mcp-admin .nexo-mcp-conn-scopes code {
+.nexo-mcp-admin .nexo-mcp-scope {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
 	margin: 0;
-	padding: 2px 8px;
+	padding: 1px 6px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 4px;
-	background: var(--nexo-muted-soft);
-	color: var(--nexo-muted-fg);
-	font-family: var(--nexo-font);
+	border-radius: 2px;
+	background: var(--nexo-muted);
+	color: var(--nexo-fg-soft);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope code {
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	color: inherit;
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+}
+
+.nexo-mcp-admin .nexo-mcp-scope--risky {
+	border-color: var(--nexo-warn-line);
+	background: var(--nexo-warn-bg);
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-scope__flag {
 	font-size: 11px;
-	font-weight: 500;
-	line-height: 1.5;
+	font-weight: 700;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth {
+	flex: none;
+	min-height: 32px;
+	border: 1px solid var(--nexo-err-line);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-err-text);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:hover {
+	background: var(--nexo-err-soft);
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: 2px;
 }
 
 /* ------------------------------------------------------ Módulos y límites */
@@ -1478,34 +1526,63 @@
 	margin-bottom: 20px;
 }
 
-.nexo-mcp-toggles > * + *,
-.nexo-mcp-proxy {
-	border-top: 1px solid var(--nexo-border);
+.nexo-mcp-modules-lead {
+	margin: 0 0 16px;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
 }
 
-.nexo-mcp-toggle {
-	position: relative;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	margin: 0 -8px;
-	padding: 12px 8px;
-	border-radius: 10px;
-	cursor: pointer;
+/* Cada grupo: título en versalitas con filete grueso y filas finas debajo. */
+.nexo-mcp-modset {
+	margin: 0 0 24px;
+}
+
+.nexo-mcp-modset > h3 {
+	margin: 0;
+	padding: 6px 0;
+	border-bottom: 2px solid var(--nexo-fg);
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.6px;
+	text-transform: uppercase;
 }
 
 /*
- * Opciones sensibles: las que amplían lo que la IA puede hacer. Todas llevan
- * el mismo tinte y la etiqueta «Sensible»; el resto de las filas queda neutro.
+ * La fila es la propia etiqueta del interruptor: nombre y descripción,
+ * alcance en mono, interruptor y su estado en texto.
+ */
+.nexo-mcp-toggle {
+	position: relative;
+	display: grid;
+	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 44px 64px;
+	gap: 12px;
+	align-items: center;
+	padding: 10px 4px;
+	border-bottom: 1px solid var(--nexo-border);
+	cursor: pointer;
+}
+
+.nexo-mcp-toggle:has(input:checked) {
+	padding-left: 12px;
+	box-shadow: inset 3px 0 0 var(--nexo-primary);
+}
+
+.nexo-mcp-toggle:has(input:focus-visible) {
+	outline: 3px solid var(--nexo-focus);
+	outline-offset: -3px;
+}
+
+/*
+ * Opciones sensibles: las que amplían lo que la IA puede hacer. Llevan un
+ * tinte suave y la etiqueta en texto; el resto de las filas queda neutro.
  */
 .nexo-mcp-toggle--sensitive {
 	background: var(--nexo-err-soft);
 }
 
-.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive {
-	margin-left: 6px;
-	vertical-align: 1px;
+.nexo-mcp-toggle--sensitive:has(input:checked) {
+	box-shadow: inset 3px 0 0 var(--nexo-err);
 }
 
 .nexo-mcp-toggle__text {
@@ -1515,7 +1592,17 @@
 .nexo-mcp-toggle__text strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
+}
+
+.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive {
+	margin-left: 6px;
+	vertical-align: 1px;
+}
+
+.nexo-mcp-toggle__text .nexo-mcp-tag--sensitive::before {
+	content: "\25B2";
+	font-size: 9px;
 }
 
 .nexo-mcp-toggle__text small {
@@ -1526,18 +1613,33 @@
 	line-height: 1.5;
 }
 
+.nexo-mcp-toggle__scopes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 8px;
+	min-width: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-toggle__scopes code {
+	margin: 0;
+	padding: 0;
+	background: none;
+	color: var(--nexo-muted-fg);
+	font: 12px/1.6 var(--nexo-mono);
+	overflow-wrap: anywhere;
+}
+
 /*
- * La casilla real queda encima del interruptor, invisible: recibe el clic y
- * el foco, y el <i> sólo la dibuja.
+ * La casilla real cubre toda la fila, invisible: recibe el clic y el foco, y
+ * el <i> sólo la dibuja.
  */
 .nexo-mcp-admin .nexo-mcp-toggle input[type="checkbox"] {
 	position: absolute;
-	top: 50%;
-	right: 8px;
+	inset: 0;
 	z-index: 1;
-	width: 44px;
-	height: 24px;
-	margin: -12px 0 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
 	opacity: 0;
 	cursor: pointer;
 }
@@ -1581,6 +1683,48 @@
 
 .nexo-mcp-toggle input:focus-visible + i {
 	box-shadow: var(--nexo-ring);
+}
+
+/* Estado en texto: sigue a la casilla, sin JavaScript. */
+.nexo-mcp-toggle__state {
+	color: var(--nexo-muted-fg-strong);
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.nexo-mcp-toggle__on,
+.nexo-mcp-toggle input:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__off {
+	display: none;
+}
+
+.nexo-mcp-toggle input:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__on {
+	display: inline;
+	color: var(--nexo-ok);
+}
+
+.nexo-mcp-toggle input[data-nexo-risk="on"]:checked ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__on,
+.nexo-mcp-toggle input[data-nexo-risk="off"]:not(:checked) ~ .nexo-mcp-toggle__state .nexo-mcp-toggle__off {
+	color: var(--nexo-err-text);
+}
+
+@media (max-width: 1100px) {
+	.nexo-mcp-toggle {
+		grid-template-columns: minmax(0, 1fr) 44px 64px;
+	}
+
+	.nexo-mcp-toggle__scopes {
+		grid-column: 1;
+		grid-row: 2;
+	}
+
+	.nexo-mcp-toggle__text {
+		grid-column: 1;
+	}
+
+	.nexo-mcp-toggle > i,
+	.nexo-mcp-toggle__state {
+		grid-row: 1 / span 2;
+	}
 }
 
 .nexo-mcp-admin .nexo-mcp-proxy-field {
@@ -1789,15 +1933,29 @@
 }
 
 .nexo-mcp-table__user {
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+	white-space: nowrap;
+}
+
+.nexo-mcp-log__detail {
+	min-width: 140px;
+	color: var(--nexo-fg-soft);
+	font-size: 13px;
+	overflow-wrap: anywhere;
 }
 
 .nexo-mcp-admin .nexo-mcp-table code {
 	margin: 0;
-	padding: 2px 6px;
-	border-radius: 6px;
-	background: var(--nexo-muted);
+	padding: 0;
+	background: transparent;
+	font-family: var(--nexo-mono);
 	font-size: 12px;
+}
+
+.nexo-mcp-log tbody tr:hover td {
+	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-table__empty {
@@ -2747,4 +2905,18 @@
 
 .nexo-mcp-admin .nexo-mcp-api-missing .nexo-mcp-callout {
 	margin: 12px 0;
+}
+
+/* Accesos y Actividad: una columna bajo 1100px. */
+@media (max-width: 1099px) {
+	.nexo-mcp-conn-list {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth,
+	.nexo-mcp-log tbody tr td {
+		transition: none;
+	}
 }
