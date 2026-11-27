@@ -565,6 +565,112 @@ Reglas que siempre se cumplen:
     las exclusiones, la lista ajena, `dropped_conditions` y que el estado quede como estaba se comprueban
     por la herramienta; las condiciones de WooCommerce se probaron sólo con pruebas unitarias, sin
     productos en vivo; sin Divi 5 se saltea).
+- **Theme Builder de Divi 5 (permiso propio)**: las plantillas del Theme Builder deciden lo que
+  ve **todo el sitio** (encabezado, pie, cuerpo, archivo, 404, búsqueda), así que tienen su
+  scope OAuth `mcp:divi_theme_builder` (capacidad `nexo_mcp_divi_theme_builder`, sólo el
+  administrador; el instalador la da al subir a 1.12.0) y su interruptor
+  `divi_theme_builder_tools_enabled`, **apagado por defecto** (toggle sensible con
+  confirmación, palabra «themebuilder»; habilitar los constructores, el contenido dinámico, las
+  condiciones o el resto de Divi no lo habilita, ni al revés). Además del scope exige
+  `edit_theme_options`, `edit_others_posts` y el permiso **`theme_builder` de los roles de Divi**
+  (Divi lo limita a administradores, pero se puede dar a otros roles con su editor de roles: el
+  conector además exige su propia capacidad, que sólo recibe el administrador, también para
+  leer), y no funciona en «Solo revisar». La comprobación va antes de mirar la entrada (`nexo_mcp_divi_template_denied`
+  o `nexo_mcp_divi_layout_denied`). Sin Divi 5 activo: `nexo_mcp_divi5_required`.
+  - `list-divi-theme-builder {}`: sólo lee las plantillas del Theme Builder **en vivo** (el que ve
+    el sitio): cada una con `ours`, `enabled`, `default`, `site_wide`, `use_on`/`exclude_from`
+    tipados, sus layouts (con `status` y, en el cuerpo, `has_post_content`), qué plantilla gana en
+    cada contexto (`contexts`), cuál tapa a cuál (`shadows`), el catálogo de contextos con su
+    prioridad, límites y `warnings`. Un borrador (`auto-draft`) del Visual Builder se muestra
+    aparte y se ignora.
+  - `create-divi-layout {type: header|body|footer, title, sections}`: crea el layout con módulos
+    reales, **`publish` y sin asignar** (inerte hasta enlazarlo); devuelve `id`, `post_type`
+    (`et_header_layout`…), `nodes` (`path` + `fingerprint`) y `warnings`. Además de los módulos de
+    página admite, sólo en layouts y dentro de una columna, `divi/post-content` (el contenido de la
+    página o entrada que muestra la plantilla), `divi/post-title` y `divi/menu` (el `menuId` debe
+    ser un menú que exista: Divi cambiaría uno inexistente por el primero).
+  - `set-divi-template {id?, title, enabled, default?, use_on[], exclude_from[], header|body|footer:
+    {layout_id|null, enabled}, confirm_site_wide?, replace_foreign?, allow_without_post_content?}`
+    **crea o REEMPLAZA UNA plantilla** del Theme Builder en vivo (reemplazar es reemplazar: lo que
+    no pasas vuelve a su valor por defecto; `enabled` es obligatorio). Catálogo **cerrado** de
+    contextos (≤ 20 por lista, sin repetir ni estar en las dos): `homepage`, `404`, `search`,
+    `singular:post_type:<tipo>:all|id:<id>`, `singular:taxonomy:<tax>:term:id:<id>`, `archive:all`,
+    `archive:post_type:<tipo>`, `archive:taxonomy:<tax>:all|term:id:<id>`, `archive:user:all|id:<id>`,
+    `archive:date:all` y, con WooCommerce, `woocommerce:shop|cart|checkout|my_account`; los ids deben
+    existir y los contenidos estar publicados. Título ≤ 100, hasta 50 plantillas. **Una plantilla
+    nueva se crea SIEMPRE deshabilitada** (aunque pidas `enabled: true`): no cambia nada hasta una
+    segunda llamada con su `id` y `enabled: true` (`needs_enable` en la respuesta).
+  - `delete-divi-template {id, confirm_site_wide?, replace_foreign?}`: saca UNA plantilla del
+    Theme Builder en vivo y la manda a la papelera, como Divi (no hay pantalla de WordPress para
+    recuperarla). Sus layouts no se borran.
+  - `restore-divi-template {id, confirm_site_wide?, replace_foreign?}`: **deshace** un cambio de
+    plantilla (`set-divi-template` o `delete-divi-template`; también una creación, que la manda a
+    la papelera) devolviéndola al estado de su respaldo `_nexo_mcp_template_backup` (metas, título,
+    estado, su fila del Theme Builder; una sola copia, la del último cambio). Antes de escribir
+    guarda el respaldo del estado de ahora, así que **restaurar dos veces alterna** entre los dos
+    estados. Una plantilla sacada de la papelera vuelve a su fila y recupera su slug sin el
+    sufijo `__trashed`. `restore-builder-backup` **no** acepta plantillas.
+  - **Los layouts y las herramientas de constructor**: `get-page-structure`, `edit-divi-section`,
+    `edit-divi-module` y las demás de constructores (y `get-working-copy-diff`, `restore-revision`
+    y la publicación de copias con `set-content-status`) aceptan el id de un layout o de su copia
+    de trabajo, pero entonces piden el permiso del Theme Builder **en vez del `edit_post` de una
+    página** (más el scope propio de la herramienta, p. ej. el de los atributos o el dinámico): sin
+    él, `nexo_mcp_divi_layout_denied`. Cualquier otro tipo interno de Divi (`et_template`,
+    `et_theme_builder`, la biblioteca `et_pb_layout`…) se rechaza siempre
+    (`nexo_mcp_divi_post_type_denied`). Escribir un layout ya asignado va a su copia de trabajo (el
+    layout vivo no cambia hasta publicarla); un layout se publica o se descarta con
+    `set-content-status` (`publish`/`trash`).
+  - **Confirmaciones**: `confirm_site_wide: true` es obligatorio si la plantilla es la **por
+    defecto** o su `use_on` incluye un `…:all`, `archive:all` o `404` (y para cambiarle o quitarle
+    eso, borrarla o restaurarla; `nexo_mcp_divi_template_site_wide`); la respuesta explica el efecto
+    y qué plantillas la tapan o tapa. `replace_foreign: true` es obligatorio para reemplazar,
+    borrar o restaurar sobre una plantilla que **no es del conector** (hecha en el Visual Builder
+    con ajustes que no representa: `nexo_mcp_divi_template_foreign` con el resumen en `data.summary`;
+    lo que el esquema no entiende queda en el respaldo).
+  - **Avisos importantes**:
+    - **Divi usa UNA sola plantilla por petición, no las fusiona**: gana la de `use_on` con
+      mayor prioridad (las deshabilitadas y las que cumplen alguna `exclude_from` se descartan) y,
+      si ninguna aplica, la plantilla por defecto habilitada. Una plantilla más específica (por
+      ejemplo una por id de página) **hace desaparecer el encabezado y el pie de la plantilla por
+      defecto** en esa página. Un encabezado o pie reemplaza al del tema (se pierden su menú,
+      buscador y carrito).
+    - **Un cuerpo sin `divi/post-content` REEMPLAZA el contenido** de la página (el carrito, el
+      pago o un formulario de WooCommerce dejan de verse). Se crea igual como layout (con aviso),
+      pero asignarlo al inicio, a un contenido, a WooCommerce o a la plantilla por defecto se
+      rechaza (`nexo_mcp_divi_template_body_replaces_content`) salvo `allow_without_post_content: true`.
+    - **Un layout que no es `publish` igual se muestra** al público (Divi sólo omite los de la
+      papelera): por eso `create-divi-layout` crea siempre en `publish` y una plantilla sólo
+      acepta layouts `publish` del tipo de su ranura. Uno en la papelera deja el área vacía y se avisa
+      (`layout_trashed`).
+    - **Divi manda a la papelera a los 7 días** las plantillas y los layouts que no están en el
+      Theme Builder en vivo (los marca como «sin uso» al guardar): asigna un layout nuevo a una
+      plantilla antes de que pase; asignar o restaurar le quita la marca. Los borradores
+      `auto-draft` los barre WordPress.
+    - **Efecto inmediato en todo el sitio**: tras escribir se borra el CSS estático de todo el sitio
+      (`ET_Core_PageResource::remove_static_resources('all','all')`: la primera visita es lenta) y las
+      cachés de página; Divi no hace nada, sin avisar, si el usuario de la conexión no tiene
+      `edit_posts` (la respuesta lo avisa). Una **caché de página completa** externa puede seguir
+      sirviendo lo viejo. Un Visual Builder abierto pisa el mapeo en vivo al guardar; el conector
+      sólo toca la fila de la plantilla propia del mapeo y rechaza una escritura simultánea con
+      `nexo_mcp_busy` (reintenta).
+  - Errores: `nexo_mcp_divi_template_denied`, `nexo_mcp_divi_layout_denied`,
+    `nexo_mcp_divi_post_type_denied`, `nexo_mcp_divi_template_invalid` (con `data.path`),
+    `nexo_mcp_divi_template_site_wide`, `nexo_mcp_divi_template_body_replaces_content`,
+    `nexo_mcp_divi_template_foreign`, `nexo_mcp_divi_template_not_found`,
+    `nexo_mcp_divi_template_default_exists`, `nexo_mcp_divi_template_too_many`,
+    `nexo_mcp_divi_template_no_backup`, `nexo_mcp_divi_template_backup_failed`,
+    `nexo_mcp_divi_template_unavailable` (restaurar sin Theme Builder en vivo),
+    `nexo_mcp_divi_template_save_failed` (si falla a medias la plantilla vuelve a su estado) y los de
+    `create-divi-page` para el árbol (`nexo_mcp_divi_tree_invalid`, `nexo_mcp_divi_module_denied`…).
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D8a: como visitante anónimo, una
+    página, una 404, `?s=` y el archivo de una categoría muestran el encabezado, el cuerpo y el pie de
+    su plantilla; una plantilla nueva no cambia nada hasta activarla; gana una sola plantilla por
+    petición; en el carrito de WooCommerce un cuerpo con `divi/post-content` conserva el carrito y uno
+    sin él lo reemplaza; borrar → restaurar → restaurar; y el estado del sitio —posts, metas, términos,
+    opciones y `et-cache`— queda exactamente como al empezar; sin Divi 5 se saltea). Nota de la prueba:
+    en el docker, la página del carrito pierde su contenido principal a partir de la segunda visita
+    seguida **también sin ninguna plantilla**, así que la prueba mira cada estado del carrito con una sola
+    visita, la primera tras borrar el CSS.
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -770,7 +876,7 @@ de Divi 5 (D4) igual (SKIP sin Divi 5): enciende `divi_presets_tools_enabled` (y
 devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. La de contenido
 dinámico y bucles de Divi 5 (D5/D6) igual (SKIP sin Divi 5): enciende `divi_dynamic_tools_enabled` (y la capacidad, si falta) sólo durante la
 sección, crea entradas de prueba (publicadas, privada, con contraseña y borrador) que borra al final, comprueba como visitante anónimo lo que se ve
-y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. La de condiciones de visualización de Divi 5 (D7) igual (SKIP sin Divi 5): enciende `divi_conditions_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea una página de prueba que borra al final, comprueba como visitante anónimo qué módulos se ven y devuelve crudos los ajustes y los roles, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. La de condiciones de visualización de Divi 5 (D7) igual (SKIP sin Divi 5): enciende `divi_conditions_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea una página de prueba que borra al final, comprueba como visitante anónimo qué módulos se ven y devuelve crudos los ajustes y los roles, también si la corrida se corta. La del Theme Builder de Divi 5 (D8a) igual (SKIP sin Divi 5): **cambia plantillas que afectan a todo el sitio**, así que antes toma una foto (posts, metas, términos, relaciones, opciones, metas del administrador y archivos de `et-cache`) y las opciones crudas (ajustes, versión, bloqueos y roles), enciende `divi_theme_builder_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea dos páginas y los layouts y plantillas de prueba, mira como visitante anónimo una página, una 404, `?s=` y la categoría, y al final borra todo lo creado (plantillas, layouts, Theme Builder en vivo, términos, páginas y `et-cache`) y comprueba que la foto es idéntica, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el
