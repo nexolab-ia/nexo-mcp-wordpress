@@ -57,6 +57,7 @@ abstract class NexoTestCase extends TestCase {
 			Capabilities::DIVI_DYNAMIC,
 			Capabilities::DIVI_CONDITIONS,
 			Capabilities::DIVI_THEME_BUILDER,
+			Capabilities::DIVI_LIBRARY,
 			'read',
 			'edit_posts',
 			'edit_pages',

@@ -61,6 +61,8 @@ final class WP_Test_State {
 
 	/** @var array<int, array<string, array<string, int>>> Términos por contenido y taxonomía: slug => ID. */
 	public static array $terms = array();
+	/** Taxonomía cuya lectura de términos falla con WP_Error (doble de una taxonomía sin registrar). */
+	public static ?string $terms_error = null;
 
 	/** @var array<int, array<string, mixed>> */
 	public static array $audit = array();
@@ -154,6 +156,7 @@ final class WP_Test_State {
 		self::$abilities = array();
 		self::$object_taxonomies = array();
 		self::$terms     = array();
+		self::$terms_error = null;
 		self::$audit     = array();
 		self::$rate_hits = array();
 		self::$hooks     = array();
@@ -628,6 +631,9 @@ function get_object_taxonomies( $object_type, $output = 'names' ) {
 	return WP_Test_State::$object_taxonomies[ (string) $object_type ] ?? array();
 }
 function wp_get_object_terms( $object_ids, $taxonomies, $args = array() ) {
+	if ( WP_Test_State::$terms_error === (string) $taxonomies ) {
+		return new WP_Error( 'invalid_taxonomy', 'Invalid taxonomy.' );
+	}
 	$terms  = WP_Test_State::$terms[ (int) $object_ids ][ (string) $taxonomies ] ?? array();
 	$fields = $args['fields'] ?? 'all';
 	if ( 'slugs' === $fields ) {

@@ -223,6 +223,45 @@ final class PermissionPolicy {
 	}
 
 	/**
+	 * Comprueba si esta solicitud puede escribir en la biblioteca de Divi 5.
+	 *
+	 * Como las rutas REST de la biblioteca de Divi: `edit_posts` y el permiso `divi_library` de Divi cuando Divi está
+	 * cargado, más la capacidad `nexo_mcp_divi_library` con su interruptor `divi_library_tools_enabled` (y su scope en
+	 * el token). Sin id (alta de un ítem) pide además `save_library`. Con id, el post tiene que existir, ser un ítem de
+	 * la biblioteca (`et_pb_layout`) y el usuario poder editarlo; si el ítem es global (término `global` de `scope`)
+	 * pide `edit_global_library`, porque cambiarlo cambia todas las páginas que lo usan.
+	 *
+	 * @param int|null $item_id Ítem de la biblioteca, o null para dar de alta uno nuevo.
+	 */
+	public function can_write_divi_library( ?int $item_id = null ): bool {
+		$divi = function_exists( 'et_pb_is_allowed' );
+
+		if ( ! $this->can_module_write( 'divi_library_tools_enabled', Capabilities::DIVI_LIBRARY, 'edit_posts' )
+			|| ( $divi && ! et_pb_is_allowed( 'divi_library' ) ) ) {
+			return false;
+		}
+
+		if ( null === $item_id ) {
+			return ! $divi || (bool) et_pb_is_allowed( 'save_library' );
+		}
+
+		$post = $item_id > 0 ? get_post( $item_id ) : null;
+		if ( ! $post instanceof \WP_Post || 'et_pb_layout' !== $post->post_type || ! current_user_can( 'edit_post', $item_id ) ) {
+			return false;
+		}
+
+		if ( ! $divi ) {
+			return true;
+		}
+
+		// Si no se pueden leer los términos (taxonomía sin registrar), se trata como global: falla cerrado.
+		$scopes = wp_get_object_terms( $item_id, 'scope', array( 'fields' => 'slugs' ) );
+		$global = ! is_array( $scopes ) || in_array( 'global', $scopes, true );
+
+		return ! $global || (bool) et_pb_is_allowed( 'edit_global_library' );
+	}
+
+	/**
 	 * Comprueba una acción destructiva separada.
 	 *
 	 * @param string $wordpress_capability Capacidad nativa.
