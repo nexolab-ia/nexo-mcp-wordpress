@@ -612,10 +612,10 @@ final class AuthorizationController {
 	private function styles(): string {
 		return ":root{
 			/* Paleta base: cada literal vive aquí una sola vez. */
-			--slate-200:#e2e8f0; --slate-300:#cbd5e1; --slate-400:#a5b4c8; --slate-700:#334155;
+			--slate-200:#e2e8f0; --slate-300:#cbd5e1; --slate-muted:#a5b4c8; --slate-700:#334155;
 			--bg:#e9eef4; --panel:#f8fafc; --fg:#0f172a; --fg-soft:#475569; --muted:var(--fg-soft);
 			--border:#c7d2de; --input:#64748b; --row:#eef2f7; --rail:#0f172a;
-			--rail-fg:var(--slate-200); --rail-muted:var(--slate-400); --rail-line:var(--slate-700);
+			--rail-fg:var(--slate-200); --rail-muted:var(--slate-muted); --rail-line:var(--slate-700);
 			--primary:#0f766e; --primary-hover:#115e59; --accent:#22d3ee; --focus:#4f46e5;
 			--accent-ink:var(--primary);
 			--err:#b91c1c;
@@ -624,7 +624,7 @@ final class AuthorizationController {
 		}
 		@media (prefers-color-scheme:dark){
 			:root{
-				--bg:#0b1220; --panel:#111c2e; --fg:var(--slate-200); --fg-soft:var(--slate-300); --muted:var(--slate-400);
+				--bg:#0b1220; --panel:#111c2e; --fg:var(--slate-200); --fg-soft:var(--slate-300); --muted:var(--slate-muted);
 				--border:var(--slate-700); --row:#16233a;
 				--focus:#22d3ee; --accent-ink:#5eead4;
 				--err:#f87171;
