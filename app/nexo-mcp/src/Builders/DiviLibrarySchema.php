@@ -359,6 +359,12 @@ final class DiviLibrarySchema {
 
 		try {
 			foreach ( $names as $name ) {
+				// Un nombre distinto con el MISMO slug que otra categoría no da `term_exists` en WordPress: crea un duplicado vacío
+				// (con otro slug). Si el slug ya existe se reutiliza, que es lo que hace `wp_set_object_terms()` después.
+				if ( function_exists( 'get_term_by' ) && is_object( get_term_by( 'slug', self::category_key( $name ), 'layout_category' ) ) ) {
+					continue;
+				}
+
 				$term = function_exists( 'wp_insert_term' ) ? wp_insert_term( $name, 'layout_category' ) : null;
 
 				if ( is_array( $term ) ) {

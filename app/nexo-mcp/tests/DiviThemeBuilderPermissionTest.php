@@ -303,8 +303,8 @@ final class DiviThemeBuilderPermissionTest extends NexoTestCase {
 		$this->assertSame( $header[1], $constant[1], 'cabecera y constante coinciden' );
 		$this->assertSame( $header[1], $stable[1], 'cabecera y Stable tag coinciden' );
 		$this->assertTrue( version_compare( $header[1], '1.11.0', '>' ), 'maybe_upgrade sólo concede la capacidad si la versión cambia respecto a la instalada (1.11.0)' );
-		$this->assertStringContainsString( '= ' . $header[1] . ' =', $readme, 'el changelog documenta esta versión' );
-		$this->assertStringContainsString( 'mcp:divi_theme_builder', substr( $readme, (int) strpos( $readme, '= ' . $header[1] . ' =' ), 600 ), 'y menciona el scope nuevo' );
+		$this->assertStringContainsString( '= 1.12.0 =', $readme, 'el changelog documenta la versión que trajo la capacidad' );
+		$this->assertStringContainsString( 'mcp:divi_theme_builder', substr( $readme, (int) strpos( $readme, '= 1.12.0 =' ), 600 ), 'y menciona el scope nuevo' );
 	}
 
 	private function input_tag( string $html ): string {

@@ -102,6 +102,19 @@
 #    opciones crudas que se tocan (ajustes, versión, bloqueos y roles); al final se borra todo lo creado (plantillas,
 #    layouts, Theme Builder en vivo, términos, páginas, et-cache) y se compara la foto: el estado vuelve a ser exactamente
 #    el de antes (también si la corrida se corta).
+# 7k. Biblioteca de Divi 5 (D8b; sólo con Divi 5 activo, con SKIP si falta): con el interruptor divi_library_tools_enabled
+#    encendido sólo durante el bloque y la capacidad nexo_mcp_divi_library: un módulo global usado por dos páginas (insert-divi-
+#    library-item mode global en la copia de trabajo de cada una y publicar: las dos lo referencian y las dos lo muestran al
+#    visitante); mode copy en una tercera no inserta referencia y no sigue al ítem; editar sin confirm_global se rechaza sin
+#    escribir y con él lo ven las dos páginas sin tocarlas (mismo contenido y fecha de modificación) y affected_pages las lista
+#    (con título: hay read_post); pages_forbidden cuando el usuario no puede editar una página que lo usa (una nota de Divi,
+#    et_divi_note, que nadie puede editar) y no cambia nada; borrar con confirm_global despega (las dos páginas siguen mostrándolo,
+#    still_referenced 0); restore-divi-library-item devuelve el ítem y NO vuelve a enlazar; un global privado, en borrador o en la
+#    papelera deja de renderizarse (y vuelve al publicarlo); una fila global y un módulo guardados bajo divi/placeholder los abren
+#    el parser y el renderizador de bloques de Divi y la fila global se dibuja dentro de una página. Antes de empezar se toma la
+#    misma foto que en 7j (posts, metas, términos, relaciones, opciones, incluido nexo_mcp_settings, metas del admin, usuarios y
+#    et-cache) más las opciones crudas que se tocan; cada id que crea la prueba se anota y al final se borran SÓLO esos (nunca por
+#    consulta amplia) y se compara la foto: el estado vuelve a ser exactamente el de antes (también si la corrida se corta).
 # 8. Concurrencia (bloqueo por original): dispara en paralelo 5 primeras ediciones
 #    sobre la misma página publicada, con update-page y con edit-elementor-section, y
 #    comprueba que existe una sola copia, que cada llamada tuvo éxito en esa copia o
@@ -665,6 +678,151 @@ fi
 if [ "${1:-}" = "--divi-tb-categoria" ]; then php_wpr 'echo (int) get_option( "default_category" );'; exit 0; fi
 if [ "${1:-}" = "--divi-tb-slug" ]; then php_wpr '$p = get_post( (int) getenv( "NEXO_A1" ) ); echo $p ? $p->post_name : "";' "$2"; exit 0; fi
 if [ "${1:-}" = "--divi-tb-carrito" ]; then php_wpr 'echo function_exists( "wc_get_page_id" ) ? max( 0, (int) wc_get_page_id( "cart" ) ) : "";'; exit 0; fi
+# Subcomandos y funciones del bloque de la biblioteca de Divi 5 (D8b). Esta prueba cambia ítems globales que cambian varias
+# páginas a la vez: antes guarda una foto (--divi-lib-foto), cada id que crea se anota (--divi-lib-anotar) y al final se borran
+# SÓLO esos ids (nunca por consulta amplia: la limpieza de un script anterior borró entradas de esta base) y la huella
+# (--divi-tb-huella, la misma de 7j) tiene que ser idéntica a la de antes.
+#   --divi-lib-foto / -restaurar        foto cruda (ajustes, versión, roles, bloqueos, et-cache) y limpieza por ids anotados
+#   --divi-lib-anotar <id>              anota un id creado por la prueba (sólo ids posteriores a la foto)
+#   --divi-lib-faltantes                ids de páginas con directorio en et-cache al empezar que ya no lo tienen
+#   --divi-lib-nota <ítem> <sufijo>     crea (y anota) una nota de Divi (et_divi_note, que ningún usuario puede editar) que referencia el ítem
+#   --divi-lib-borrar <id>              borra (force) un id anotado
+#   --divi-lib-estado <id> <estado>     cambia el estado de un id anotado
+#   --divi-lib-pagina <id>              huella del contenido y la fecha de modificación de un contenido
+#   --divi-lib-render <id> <marca>      cómo abre el parser y el renderizador de bloques de Divi el contenido de un ítem
+restaurar_divi_lib() {
+	php_wp '
+global $wpdb;
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+$borrados = array();
+foreach ( array_unique( array_map( "intval", $foto["ids"] ) ) as $id ) {
+	if ( $id > (int) $foto["max_post"] && null !== get_post( $id ) ) { wp_delete_post( $id, true ); $borrados[] = $id; }
+}
+foreach ( $foto["opciones"] as $nombre => $fila ) {
+	if ( false === $fila ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+	elseif ( null !== $wpdb->get_var( $wpdb->prepare( "SELECT option_id FROM {$wpdb->options} WHERE option_name = %s", $nombre ) ) ) { $wpdb->update( $wpdb->options, array( "option_value" => $fila[0], "autoload" => $fila[1] ), array( "option_name" => $nombre ) ); }
+	else { $wpdb->insert( $wpdb->options, array( "option_name" => $nombre, "option_value" => $fila[0], "autoload" => $fila[1] ) ); }
+	wp_cache_delete( $nombre, "options" );
+}
+foreach ( $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE \"nexo\\_mcp\\_lock\\_%\"" ) as $nombre ) {
+	if ( ! in_array( $nombre, $foto["bloqueos"], true ) ) { $wpdb->delete( $wpdb->options, array( "option_name" => $nombre ) ); }
+}
+wp_cache_delete( "alloptions", "options" ); wp_cache_delete( "notoptions", "options" );
+$raiz = WP_CONTENT_DIR . "/et-cache";
+if ( is_dir( $raiz ) ) {
+	$it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $raiz, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
+	foreach ( $it as $f ) {
+		if ( in_array( substr( $f->getPathname(), strlen( $raiz ) + 1 ), $foto["cache"], true ) ) { continue; }
+		$f->isDir() ? @rmdir( $f->getPathname() ) : @unlink( $f->getPathname() );
+	}
+}
+echo "restaurado (posts borrados: " . implode( ",", $borrados ) . ")";'
+}
+# Las páginas que tenían su directorio en et-cache al empezar se visitan una vez (como visitante) para que Divi lo regenere.
+cerrar_divi_lib() {
+	local id
+	for id in $(tools/prueba_adaptadores.sh --divi-lib-faltantes); do
+		curl -sL --max-time 120 -o /dev/null "http://localhost:8080/?page_id=$id"
+	done
+	curl -sL --max-time 120 -o /dev/null "http://localhost:8080/"
+	php_wp 'delete_option( "nexo_prueba_divi_lib_foto" );' >/dev/null
+}
+if [ "${1:-}" = "--divi-lib-foto" ]; then
+	php_wp '
+global $wpdb;
+$opciones = array();
+foreach ( '"$divi_tb_opciones"' as $nombre ) {
+	$fila = $wpdb->get_row( $wpdb->prepare( "SELECT option_value, autoload FROM {$wpdb->options} WHERE option_name = %s", $nombre ), ARRAY_N );
+	$opciones[ $nombre ] = is_array( $fila ) ? array( (string) $fila[0], (string) $fila[1] ) : false;
+}
+$cache = array();
+$raiz = WP_CONTENT_DIR . "/et-cache";
+if ( is_dir( $raiz ) ) {
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $raiz, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $f ) { $cache[] = substr( $f->getPathname(), strlen( $raiz ) + 1 ); }
+}
+update_option( "nexo_prueba_divi_lib_foto", array(
+	"opciones" => $opciones,
+	"max_post" => (int) $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts}" ),
+	"bloqueos" => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE \"nexo\\_mcp\\_lock\\_%\"" ),
+	"cache"    => $cache,
+	"ids"      => array(),
+), false );
+echo "foto";' >/dev/null
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-anotar" ]; then
+	php_wp '
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+$id = (int) getenv( "NEXO_A1" );
+if ( ! is_array( $foto ) || $id <= (int) $foto["max_post"] ) { echo "no"; return; }
+$foto["ids"][] = $id;
+update_option( "nexo_prueba_divi_lib_foto", $foto, false );
+echo "anotado";' "$2"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-restaurar" ]; then restaurar_divi_lib; exit 0; fi
+if [ "${1:-}" = "--divi-lib-faltantes" ]; then
+	php_wpr '
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+$faltan = array();
+foreach ( is_array( $foto ) ? $foto["cache"] : array() as $ruta ) {
+	if ( 1 === preg_match( "/^[0-9]+$/", $ruta ) && ! is_dir( WP_CONTENT_DIR . "/et-cache/" . $ruta ) ) { $faltan[] = $ruta; }
+}
+echo implode( " ", $faltan );'
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-nota" ]; then
+	php_wp '
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+if ( ! is_array( $foto ) ) { echo "sin foto"; return; }
+$id = wp_insert_post( array( "post_type" => "et_divi_note", "post_status" => "publish", "post_title" => "Nota divi5-mcp-" . getenv( "NEXO_A2" ), "post_content" => "x <!-- wp:divi/global-layout {\"globalModule\":\"" . (int) getenv( "NEXO_A1" ) . "\",\"blockName\":\"divi/heading\"} /-->" ) );
+if ( ! $id || is_wp_error( $id ) ) { echo "error"; return; }
+$foto["ids"][] = (int) $id;
+update_option( "nexo_prueba_divi_lib_foto", $foto, false );
+echo (int) $id;' "$2" "$3"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-borrar" ]; then
+	php_wp '
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+$id = (int) getenv( "NEXO_A1" );
+if ( ! is_array( $foto ) || ! in_array( $id, array_map( "intval", $foto["ids"] ), true ) ) { echo "no es de la prueba"; return; }
+wp_delete_post( $id, true );
+echo null === get_post( $id ) ? "borrado" : "no se borró";' "$2"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-estado" ]; then
+	php_wp '
+$foto = get_option( "nexo_prueba_divi_lib_foto", false );
+$id = (int) getenv( "NEXO_A1" );
+if ( ! is_array( $foto ) || ! in_array( $id, array_map( "intval", $foto["ids"] ), true ) ) { echo "no es de la prueba"; return; }
+$estado = (string) getenv( "NEXO_A2" );
+// wp_update_post y no wp_trash_post: éste pasa por el filtro de Divi que DESPEGA las instancias (lo que se prueba es que el ítem deje de verse).
+wp_update_post( array( "ID" => $id, "post_status" => $estado ) );
+clean_post_cache( $id );
+echo get_post_status( $id );' "$2" "$3"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-pagina" ]; then
+	php_wpr '$p = get_post( (int) getenv( "NEXO_A1" ) ); echo $p ? md5( $p->post_content ) . " " . $p->post_modified_gmt . " " . $p->post_status : "no existe";' "$2"
+	exit 0
+fi
+if [ "${1:-}" = "--divi-lib-render" ]; then
+	php_wpr '
+$p = get_post( (int) getenv( "NEXO_A1" ) );
+if ( ! $p ) { echo "{}"; return; }
+$bloques = parse_blocks( $p->post_content );
+$primero = $bloques[0] ?? array();
+$html = (string) do_blocks( $p->post_content );
+echo wp_json_encode( array(
+	"superior" => $primero["blockName"] ?? "",
+	"hijo"     => $primero["innerBlocks"][0]["blockName"] ?? "",
+	"marca"    => false !== strpos( $html, (string) getenv( "NEXO_A2" ) ),
+	"largo"    => strlen( $html ),
+) );' "$2" "$3"
+	exit 0
+fi
 if [ "${1:-}" = "--ajuste" ]; then
 	php_wp '$s = get_option( "nexo_mcp_settings" ); $s[ (string) getenv( "NEXO_A1" ) ] = "true" === getenv( "NEXO_A2" ); update_option( "nexo_mcp_settings", $s );' "$2" "$3" >/dev/null
 	exit 0
@@ -772,6 +930,7 @@ divi_dinamico_cap_agregada=""
 divi_condiciones_foto_tomada=""
 divi_condiciones_cap_agregada=""
 divi_tb_foto_tomada=""
+divi_lib_foto_tomada=""
 exp_names="e_opt_in_v4 e_atomic_elements"
 # Estado previo de cada experimento ("__sin__" si la opción no existía) y de las
 # variables del Kit, para dejarlo exactamente como estaba. Las variables van como
@@ -920,6 +1079,13 @@ cleanup() {
 		echo "Theme Builder de Divi: $(restaurar_divi_tb)"
 		cerrar_divi_tb
 		divi_tb_foto_tomada=""
+	fi
+	# Divi 5, biblioteca: se borran SÓLO los ids que anotó la prueba y se devuelven las opciones crudas (ajustes, versión, bloqueos, roles).
+	if [ -n "$divi_lib_foto_tomada" ]; then
+		barrer_divi || fallidas=$((fallidas + 1))
+		echo "Biblioteca de Divi: $(restaurar_divi_lib)"
+		cerrar_divi_lib
+		divi_lib_foto_tomada=""
 	fi
 	barrer_divi || fallidas=$((fallidas + 1))
 	if [ -n "$divi_tema_previo" ]; then
@@ -3732,6 +3898,256 @@ PY
 	divi_tb_foto_tomada=""
 	divi_tb_huella_final="$(tools/prueba_adaptadores.sh --divi-tb-huella)"
 	check_eq "Divi D8a: el estado quedó exactamente como al empezar (posts, metas, términos, relaciones, opciones, metas del admin, usuarios y et-cache)" "$divi_tb_huella_inicial" "$divi_tb_huella_final"
+fi
+echo
+echo "### Biblioteca de Divi 5 (D8b: save-/delete-/restore-divi-library-item e insert-divi-library-item; un ítem global cambia varias páginas a la vez)"
+if [ "$divi_listo" != si ]; then
+	echo "SKIP: Divi 5 no está activo ni instalado; la prueba de la biblioteca de Divi 5 se saltea (no cuenta como falla)."
+else
+	# Foto del estado y de las opciones crudas que se tocan; la limpieza lo devuelve todo también si la corrida se corta.
+	tools/prueba_adaptadores.sh --divi-lib-foto
+	divi_lib_foto_tomada=1
+	divi_lib_huella_inicial="$(tools/prueba_adaptadores.sh --divi-tb-huella)"
+	echo "Huella inicial:"
+	printf '%s\n' "$divi_lib_huella_inicial" | sed 's/^/  /'
+	# La capacidad nexo_mcp_divi_library la da el instalador al subir de versión; si falta se concede (los roles se devuelven crudos).
+	if [ "$(php_wpr 'echo get_role( "administrator" )->has_cap( "nexo_mcp_divi_library" ) ? "si" : "no";')" = no ]; then
+		php_wp 'get_role( "administrator" )->add_cap( "nexo_mcp_divi_library" );' >/dev/null
+		echo "Capacidad nexo_mcp_divi_library concedida al administrador (los roles se devuelven crudos al final)."
+	fi
+	# Interruptor apagado por omisión: sólo durante el bloque (se enciende antes de conectar para que la lista de herramientas lo vea).
+	tools/prueba_adaptadores.sh --ajuste divi_library_tools_enabled true
+	python3 -I - "$suffix" <<'PY'
+import importlib.util, json, pathlib, re, subprocess, sys, time, urllib.error, urllib.request
+
+suffix = sys.argv[1]
+spec = importlib.util.spec_from_file_location("adaptadores", pathlib.Path("tools/prueba_adaptadores.py").resolve())
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+cli = mod.Cliente("http://localhost:8080", "admin", "admin")
+fallas = []
+total = [0]
+BASE = "http://localhost:8080"
+TITULO = f"Prueba biblioteca divi5-mcp-{suffix}"
+NOMBRES = ("A", "B", "C", "FILA", "MOD")
+M = {k: f"LIB{k}MK{suffix}" for k in NOMBRES}
+
+def comprobar(nombre, fn):
+    total[0] += 1
+    try:
+        fn()
+        print(f"OK   {nombre}")
+    except Exception as err:  # noqa: BLE001 - una falla no debe ocultar las demás
+        print(f"FALLA {nombre}: {err}")
+        fallas.append(nombre)
+
+def script(*args):
+    return subprocess.run(["tools/prueba_adaptadores.sh", *map(str, args)], capture_output=True, text=True, timeout=240).stdout.strip()
+
+def huella():
+    return script("--divi-tb-huella")
+
+def anotar(id_):
+    """Cada id que crea la prueba se anota: la limpieza borra sólo esos."""
+    assert script("--divi-lib-anotar", id_) == "anotado", f"no se pudo anotar {id_}"
+    return id_
+
+def anonimo(ruta):
+    """GET sin cookies: lo que ve un visitante."""
+    try:
+        with urllib.request.urlopen(BASE + ruta, timeout=60) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+
+def visibles(pagina):
+    """Marcas de esta prueba que el visitante ve en la página."""
+    estado, html = anonimo(f"/?page_id={pagina}")
+    assert estado == 200, f"página {pagina}: código {estado}"
+    return [k for k in NOMBRES if M[k] in html]
+
+def valor(v):
+    return {"desktop": {"value": v}}
+
+def titulo(clave):
+    return {"type": "divi/heading", "attrs": {"title": {"innerContent": valor(M[clave])}}}
+
+def secciones(*modulos):
+    return [{"type": "divi/section", "children": [{"type": "divi/row", "children": [{"type": "divi/column", "children": list(modulos)}]}]}]
+
+def fila(clave):
+    return [{"type": "divi/row", "children": [{"type": "divi/column", "children": [titulo(clave)]}]}]
+
+def huella_nodo(pagina, ruta):
+    _, d = cli.ok("get-page-structure", {"id": pagina})
+    assert d["builder"] == "divi5", d.get("builder")
+    return next(n for n in d["nodes"] if n["id"] == ruta)["attributes"]["fingerprint"]
+
+def publicar(copia, original):
+    _, m = cli.ok("set-content-status", {"id": copia, "status": "publish"})
+    assert (m["id"], m["merged_from"]) == (original, copia), m
+    time.sleep(1.2)  # Divi regenera su CSS y sus cachés con la marca de un segundo: la primera visita llega después
+
+def insertar(item, pagina, ruta, posicion, modo):
+    """Inserta en la copia de trabajo de la página (el original no cambia hasta publicar) y publica."""
+    _, d = cli.ok("insert-divi-library-item", {"id": item, "post_id": pagina, "path": ruta, "fingerprint": huella_nodo(pagina, ruta), "position": posicion, "mode": modo})
+    assert d["mode"] == modo and d["id"] != pagina, f"se esperaba la copia de trabajo de {pagina}: {d.get('id')}"
+    copia = d["id"]
+    contenido = script("--contenido", copia)
+    assert ("globalModule" in contenido) == (modo == "global"), f"modo {modo}: la copia {'no ' if modo == 'global' else ''}debía llevar la referencia"
+    publicar(copia, pagina)
+    return d
+
+def crear(titulo_, tipo, ambito, nodos, **extra):
+    _, d = cli.ok("save-divi-library-item", {"title": f"{titulo_} divi5-mcp-{suffix}", "type": tipo, "scope": ambito, "nodes": nodos, **extra})
+    anotar(d["id"])
+    assert d["status"] == "publish" and d["scope"] == ambito and d["type"] == tipo, d
+    return d
+
+def pagina(clave):
+    _, d = cli.ok("create-divi-page", {"title": f"{TITULO} {clave}", "sections": secciones({"type": "divi/text", "attrs": {"content": {"innerContent": valor("<p>base</p>")}}})})
+    anotar(d["id"])
+    cli.ok("set-content-status", {"id": d["id"], "status": "publish"})
+    return d["id"]
+
+def contiene_referencia(i):
+    return "globalModule" in script("--contenido", i)
+
+st = {}
+COLUMNA = "0.0.0.0"  # raíz (placeholder) > sección > fila > columna
+SECCION = "0.0"
+
+def preparar():
+    st["p"], st["q"], st["t"] = pagina("uno"), pagina("dos"), pagina("tres")
+    time.sleep(1.2)
+    for i in (st["p"], st["q"], st["t"]):
+        assert visibles(i) == [], f"la página {i} no debe mostrar nada de la prueba todavía"
+    d = crear("Global", "module", "global", [titulo("A")])
+    st["g"] = d["id"]
+    st["huella0"] = huella()
+
+def insertar_global_en_dos_paginas():
+    for i in (st["p"], st["q"]):
+        d = insertar(st["g"], i, COLUMNA, "inside", "global")
+        assert d["item"]["id"] == st["g"] and d["item"]["scope"] == "global", d["item"]
+        assert any("POR REFERENCIA" in w for w in d["warnings"]), d["warnings"]
+        assert contiene_referencia(i) and script("--estado", i) == "publish"
+    assert visibles(st["p"]) == ["A"] and visibles(st["q"]) == ["A"], (visibles(st["p"]), visibles(st["q"]))
+
+def copia_no_enlaza():
+    d = insertar(st["g"], st["t"], COLUMNA, "inside", "copy")
+    assert d["mode"] == "copy" and any("COPIA" in w for w in d["warnings"]), d["warnings"]
+    assert not contiene_referencia(st["t"]), "el modo copy no inserta referencia"
+    assert visibles(st["t"]) == ["A"], "la copia lleva el contenido del ítem"
+
+def editar_sin_confirmar():
+    antes = huella()
+    es_error, texto, _ = cli.call("save-divi-library-item", {"id": st["g"], "nodes": [titulo("B")]})
+    assert es_error and "confirm_global" in texto, texto[:300]
+    assert huella() == antes, "el rechazo cambió el estado"
+    assert visibles(st["p"]) == ["A"]
+
+def editar_con_confirmar():
+    antes = {i: script("--divi-lib-pagina", i) for i in (st["p"], st["q"], st["t"])}
+    _, d = cli.ok("save-divi-library-item", {"id": st["g"], "nodes": [titulo("B")], "confirm_global": True})
+    time.sleep(1.2)
+    afectadas = d["affected_pages"]
+    assert afectadas["count"] == 2 and not afectadas["truncated"], afectadas
+    assert sorted(p["id"] for p in afectadas["pages"]) == sorted((st["p"], st["q"])), afectadas
+    assert all(p["editable"] is True and p["title"].startswith(TITULO) and "title_hidden" not in p for p in afectadas["pages"]), afectadas["pages"]
+    assert d["cache_not_cleared"] == 0 and d["backup"]["operation"] == "save", d
+    assert any("global" in w for w in d["warnings"]), d["warnings"]
+    despues = {i: script("--divi-lib-pagina", i) for i in antes}
+    assert despues == antes, "las páginas no se tocan: Divi lee el ítem al renderizar"
+    assert visibles(st["p"]) == ["B"] and visibles(st["q"]) == ["B"], (visibles(st["p"]), visibles(st["q"]))
+    assert visibles(st["t"]) == ["A"], "la copia no se sincroniza"
+
+def paginas_prohibidas():
+    # Ningún usuario puede editar una nota de Divi (et_divi_note, edit_post → do_not_allow): referencia el ítem como cualquier página.
+    nota = script("--divi-lib-nota", st["g"], suffix)
+    assert nota.isdigit(), nota
+    try:
+        antes, contenidos = huella(), {i: script("--divi-lib-pagina", i) for i in (st["p"], st["q"])}
+        es_error, texto, datos = cli.call("delete-divi-library-item", {"id": st["g"], "confirm_global": True})
+        assert es_error and "No puedes editar todos los contenidos que usan este ítem global" in texto and nota in texto, texto[:400]
+        assert huella() == antes, "el rechazo cambió el estado"
+        assert {i: script("--divi-lib-pagina", i) for i in contenidos} == contenidos
+        assert script("--estado", st["g"]) == "publish" and visibles(st["p"]) == ["B"], "el ítem sigue publicado y las páginas lo siguen mostrando"
+    finally:
+        assert script("--divi-lib-borrar", nota) == "borrado", "la nota de prueba no se borró"
+
+def borrar_despega():
+    _, d = cli.ok("delete-divi-library-item", {"id": st["g"], "confirm_global": True})
+    time.sleep(1.2)
+    assert d["deleted"] is True and d["status"] == "trash" and d["backup"]["operation"] == "delete", d
+    assert d["still_referenced"] == 0, d
+    assert d["affected_pages"]["count"] == 2 and sorted(p["id"] for p in d["affected_pages"]["pages"]) == sorted((st["p"], st["q"])), d["affected_pages"]
+    assert script("--estado", st["g"]) == "trash"
+    for i in (st["p"], st["q"]):
+        assert not contiene_referencia(i), f"la página {i} sigue referenciando el ítem borrado"
+        assert visibles(i) == ["B"], f"la página {i} conserva el contenido del ítem despegado: {visibles(i)}"
+    assert visibles(st["t"]) == ["A"]
+
+def restaurar_no_enlaza():
+    _, d = cli.ok("restore-divi-library-item", {"id": st["g"], "confirm_global": True})
+    time.sleep(1.2)
+    assert d["restored"] is True and d["status"] == "publish" and d["restored_from"]["operation"] == "delete", d
+    assert d["affected_pages"]["count"] == 0, "restaurar no vuelve a enlazar las páginas"
+    for i in (st["p"], st["q"]):
+        assert not contiene_referencia(i), f"la página {i} no debía volver a enlazarse"
+        assert visibles(i) == ["B"]
+    # Un cambio posterior del ítem ya no las alcanza.
+    _, e = cli.ok("save-divi-library-item", {"id": st["g"], "nodes": [titulo("C")], "confirm_global": True})
+    assert e["affected_pages"]["count"] == 0, e["affected_pages"]
+    time.sleep(1.2)
+    assert visibles(st["p"]) == ["B"] and visibles(st["q"]) == ["B"], "las páginas despegadas no siguen al ítem"
+
+def global_no_publicado():
+    insertar(st["g"], st["p"], COLUMNA, "inside", "global")
+    assert contiene_referencia(st["p"]) and "C" in visibles(st["p"]), visibles(st["p"])
+    for estado in ("private", "draft", "trash"):
+        assert script("--divi-lib-estado", st["g"], estado) == estado
+        time.sleep(1.2)
+        assert "C" not in visibles(st["p"]), f"un global {estado} no debe renderizarse: {visibles(st['p'])}"
+        assert "B" in visibles(st["p"]), "el resto de la página sigue"
+        assert script("--divi-lib-estado", st["g"], "publish") == "publish"
+        time.sleep(1.2)
+        assert "C" in visibles(st["p"]), f"publicado otra vez vuelve a verse (venía de {estado})"
+
+def fila_y_modulo_abren_en_divi():
+    fila_item = crear("Fila global", "row", "global", fila("FILA"))
+    modulo = crear("Módulo", "module", "non_global", [titulo("MOD")])
+    for item, hijo in ((fila_item["id"], "divi/row"), (modulo["id"], "divi/heading")):
+        d = json.loads(script("--divi-lib-render", item, M["FILA"] if item == fila_item["id"] else M["MOD"]))
+        assert d["superior"] == "divi/placeholder" and d["hijo"] == hijo, f"el parser de Divi lee otra forma: {d}"
+        assert d["marca"] is True, f"el renderizador de Divi no pinta el contenido del ítem {item}: {d}"
+    # La fila global, por referencia, la dibuja el renderizador de Divi dentro de una página.
+    insertar(fila_item["id"], st["t"], SECCION, "inside", "global")
+    assert "FILA" in visibles(st["t"]), visibles(st["t"])
+
+comprobar("tres páginas Divi 5 publicadas y un módulo global sin usar: el visitante no ve nada de la prueba", preparar)
+if "g" in st:
+    comprobar("insert-divi-library-item mode global en la copia de trabajo de dos páginas y publicar: las dos referencian el ítem y las dos lo muestran", insertar_global_en_dos_paginas)
+    comprobar("mode copy no inserta referencia: la tercera página lleva el contenido y no sigue al ítem", copia_no_enlaza)
+    comprobar("editar un global sin confirm_global se rechaza sin escribir", editar_sin_confirmar)
+    comprobar("editar con confirm_global: lo ven las dos páginas sin tocarlas y affected_pages las lista (con título, porque hay read_post)", editar_con_confirmar)
+    comprobar("pages_forbidden: si el usuario no puede editar una página que lo usa, borrar se rechaza y no cambia nada", paginas_prohibidas)
+    comprobar("borrar con confirm_global despega: las dos páginas siguen mostrándolo y still_referenced es 0", borrar_despega)
+    comprobar("restore-divi-library-item devuelve el ítem y no vuelve a enlazar las páginas", restaurar_no_enlaza)
+    comprobar("un global privado, en borrador o en la papelera deja de mostrarse (y vuelve al publicarlo)", global_no_publicado)
+    comprobar("una fila global y un módulo guardados bajo divi/placeholder los abre el parser y el renderizador de Divi", fila_y_modulo_abren_en_divi)
+
+print(f"\n{total[0] - len(fallas)}/{total[0]} comprobaciones de la biblioteca de Divi 5 (D8b) OK.")
+sys.exit(1 if fallas else 0)
+PY
+	[ $? -eq 0 ] || falla "la prueba de la biblioteca de Divi 5 (D8b) tuvo comprobaciones fallidas"
+	# Se borran las páginas por su marcador y SÓLO los ids anotados, y se vuelve a la foto cruda (ajustes incluidos).
+	barrer_divi || falla "no se pudieron borrar las páginas de Divi 5 (o sus et-cache)"
+	echo "Biblioteca de Divi: $(restaurar_divi_lib)"
+	cerrar_divi_lib
+	divi_lib_foto_tomada=""
+	divi_lib_huella_final="$(tools/prueba_adaptadores.sh --divi-tb-huella)"
+	check_eq "Divi D8b: el estado quedó exactamente como al empezar (posts, metas, términos, relaciones, opciones incluido nexo_mcp_settings, metas del admin, usuarios y et-cache)" "$divi_lib_huella_inicial" "$divi_lib_huella_final"
 fi
 echo "### Concurrencia: primeras ediciones simultáneas sobre una página publicada"
 # Tres páginas publicadas propias, sin copia: 5 update-page con el mismo campo, 3 update-page

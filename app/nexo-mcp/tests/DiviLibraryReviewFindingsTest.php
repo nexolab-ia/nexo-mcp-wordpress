@@ -61,7 +61,11 @@ final class DiviLibraryReviewFindingsTest extends NexoTestCase implements DiviLi
 		\WP_Test_State::$mangle_insert                    = true;
 
 		$this->assertError( $this->run_tool( self::SAVE, array( 'title' => 'X', 'type' => 'section', 'nodes' => $this->section_nodes(), 'categories' => array( 'Nueva' ) ) ), 'nexo_mcp_divi_library_save_failed' );
-		$this->assertArrayHasKey( 'Vacía', \WP_Library_Stub_State::registry()['layout_category'] );
+		$registry = \WP_Library_Stub_State::registry()['layout_category'];
+
+		$this->assertArrayHasKey( 'Vacía', $registry );
+		$this->assertArrayHasKey( 'Nueva', $registry, 'sin poder leer los términos no se borra ni la que creó esta llamada' );
+		$this->assertSame( 0, \WP_Library_Stub_State::$fail_get_terms, 'el fallo de get_terms() se consumió: el camino seguro se recorrió de verdad' );
 	}
 
 	public function test_a_rollback_keeps_an_existing_empty_category_that_the_write_asked_for(): void {

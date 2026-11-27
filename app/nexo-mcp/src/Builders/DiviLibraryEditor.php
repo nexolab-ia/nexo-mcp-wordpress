@@ -545,7 +545,10 @@ final class DiviLibraryEditor {
 			);
 		}
 
-		if ( $this->schema->is_global( $id ) && $this->usage->of( $id )['unknown'] ) {
+		// Un solo escaneo de uso por llamada (con el bloqueo tomado): sirve para la comprobación y para la respuesta.
+		$usage = $this->schema->is_global( $id ) ? $this->usage->of( $id ) : null;
+
+		if ( null !== $usage && $usage['unknown'] ) {
 			return $this->usage_unknown();
 		}
 
@@ -592,7 +595,8 @@ final class DiviLibraryEditor {
 					),
 				)
 			),
-			$id
+			$id,
+			$usage
 		);
 	}
 
@@ -828,7 +832,10 @@ final class DiviLibraryEditor {
 			);
 		}
 
-		if ( $this->schema->is_global( $id ) && $this->usage->of( $id )['unknown'] ) {
+		// Un solo escaneo de uso por llamada (con el bloqueo tomado): sirve para la comprobación y para la respuesta.
+		$usage = $this->schema->is_global( $id ) ? $this->usage->of( $id ) : null;
+
+		if ( null !== $usage && $usage['unknown'] ) {
 			return $this->usage_unknown();
 		}
 
@@ -868,7 +875,7 @@ final class DiviLibraryEditor {
 
 		$answer = $this->answer( $id, false, $warnings, $previous, $this->backup->describe( $id ) );
 
-		return $answer instanceof \WP_Error ? $answer : $this->with_usage( $answer, $id );
+		return $answer instanceof \WP_Error ? $answer : $this->with_usage( $answer, $id, $usage );
 	}
 
 	/**
@@ -1085,17 +1092,18 @@ final class DiviLibraryEditor {
 	 * Suma a la respuesta las páginas afectadas si el ítem es global, y renueva su caché (Divi las sincroniza al renderizar, pero
 	 * el CSS estático y los plugins de caché guardan la versión anterior).
 	 *
-	 * @param array<string, mixed> $answer Respuesta.
-	 * @param int                  $id     Ítem.
+	 * @param array<string, mixed>      $answer Respuesta.
+	 * @param int                       $id     Ítem.
+	 * @param array<string, mixed>|null $usage  Escaneo de uso que ya hizo la llamada (se reutiliza); si es null se hace uno.
 	 *
 	 * @return array<string, mixed>
 	 */
-	private function with_usage( array $answer, int $id ): array {
+	private function with_usage( array $answer, int $id, ?array $usage = null ): array {
 		if ( ! $this->schema->is_global( $id ) ) {
 			return $answer;
 		}
 
-		$usage = $this->usage->of( $id );
+		$usage ??= $this->usage->of( $id );
 
 		// A todas las afectadas (hasta el tope), en lotes: la lista de la respuesta sólo trae las primeras.
 		$flushed = 0;

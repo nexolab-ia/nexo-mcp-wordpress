@@ -62,6 +62,7 @@ abstract class NexoTestCase extends TestCase {
 			'edit_posts',
 			'edit_pages',
 			'edit_post',
+			'read_post',
 			'publish_posts',
 			'publish_pages',
 			'delete_post',

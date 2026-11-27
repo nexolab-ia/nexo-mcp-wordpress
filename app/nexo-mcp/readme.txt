@@ -4,7 +4,7 @@ Tags: mcp, ai, abilities-api, woocommerce, oauth
 Requires at least: 6.9
 Tested up to: 6.9
 Requires PHP: 8.1
-Stable tag: 1.12.0
+Stable tag: 1.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,12 @@ Sí. En Accesos (OAuth) cada conexión muestra sus alcances y puedes ampliarlos 
 No. Su módulo sólo se habilita si WooCommerce está activo.
 
 == Changelog ==
+
+= 1.13.0 =
+* Nuevo: biblioteca de Divi 5 con scope propio `mcp:divi_library` (capacidad `nexo_mcp_divi_library` que el instalador da al administrador al actualizar a 1.13.0, también a los sitios que ya están en 1.12.0; interruptor `divi_library_tools_enabled` apagado por defecto). Exige además `edit_posts` y los permisos de biblioteca de los roles de Divi (`divi_library`, `save_library` para crear y `edit_global_library` para los ítems globales). Herramientas: `list-divi-library`, `get-divi-library-item`, `save-divi-library-item` (crea o actualiza), `delete-divi-library-item`, `restore-divi-library-item` e `insert-divi-library-item` (copia o referencia global). No importa ni exporta.
+* Importante: un ítem GLOBAL se usa por referencia y cambia TODAS las páginas que lo usan sin tocarlas (Divi lo lee al renderizar). Cambiarlo, borrarlo o restaurarlo exige `confirm_global: true` y la respuesta lista las páginas afectadas (`affected_pages`; el título sólo sale si el usuario puede leerlas). Borrar un global despega sus páginas (Divi incrusta su contenido en cada una) y restaurarlo NO las vuelve a enlazar; si no puedes editar todas las páginas que lo usan, el borrado se rechaza (`nexo_mcp_divi_library_pages_forbidden`). Un global que no está publicado (privado, borrador o papelera) deja de verse en las páginas que lo referencian.
+* Importante: cada ítem guarda UN solo respaldo (`_nexo_mcp_library_backup`, el del último cambio): `restore-divi-library-item` lo devuelve a ese estado (también tras borrarlo) y restaurar dos veces alterna. Reemplazar contenido hecho en el Visual Builder que el conector no sabe representar exige `replace_foreign`. `insert-divi-library-item` escribe en la copia de trabajo de la página, salvo que el administrador apague la copia de trabajo por defecto: entonces escribe EN VIVO en la página publicada (usa `draft: true` para ir siempre a la copia).
+* Corrección: `affected_pages` ya no muestra el título de contenidos privados, en borrador o de otros usuarios que el usuario no puede leer (`title_hidden`); una llamada sobre un global hace un solo escaneo de uso; una categoría con otro nombre pero el mismo slug que una existente se reutiliza en vez de crear un duplicado vacío.
 
 = 1.12.0 =
 * Nuevo: Theme Builder de Divi 5 con scope propio `mcp:divi_theme_builder` (capacidad `nexo_mcp_divi_theme_builder` que el instalador da al administrador al actualizar a 1.12.0; interruptor `divi_theme_builder_tools_enabled` apagado por defecto). Exige además `edit_theme_options`, `edit_others_posts` y el permiso `theme_builder` de los roles de Divi, también para leer. Herramientas: `list-divi-theme-builder` (plantillas en vivo, qué plantilla gana en cada contexto y cuál tapa a cuál), `create-divi-layout` (encabezado, cuerpo o pie, publicado y sin asignar), `set-divi-template` (crea o reemplaza UNA plantilla; las nuevas nacen deshabilitadas), `delete-divi-template` y `restore-divi-template` (deshace un cambio de plantilla, también un borrado, desde su respaldo; restaurar dos veces alterna).

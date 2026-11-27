@@ -319,6 +319,45 @@ final class DiviLibraryPermissionTest extends NexoTestCase {
 		}
 	}
 
+	public function test_la_version_publicada_es_posterior_a_1_12_0_para_que_los_sitios_instalados_reciban_la_capacidad(): void {
+		$plugin = (string) file_get_contents( dirname( __DIR__ ) . '/nexo-mcp.php' );
+		$readme = (string) file_get_contents( dirname( __DIR__ ) . '/readme.txt' );
+
+		$this->assertSame( 1, preg_match( '/^ \* Version:\s+(\S+)$/m', $plugin, $header ) );
+		$this->assertSame( 1, preg_match( "/define\( 'NEXO_MCP_VERSION', '([^']+)' \)/", $plugin, $constant ) );
+		$this->assertSame( 1, preg_match( '/^Stable tag:\s+(\S+)$/m', $readme, $stable ) );
+
+		$this->assertSame( $header[1], $constant[1], 'cabecera y constante coinciden' );
+		$this->assertSame( $header[1], $stable[1], 'cabecera y Stable tag coinciden' );
+		$this->assertTrue( version_compare( $header[1], '1.12.0', '>' ), 'maybe_upgrade sólo concede la capacidad si la versión cambia respecto a la instalada (1.12.0, que no la tiene)' );
+		$this->assertStringContainsString( '= ' . $header[1] . ' =', $readme, 'el changelog documenta esta versión' );
+		$this->assertStringContainsString( 'mcp:divi_library', substr( $readme, (int) strpos( $readme, '= ' . $header[1] . ' =' ), 600 ), 'y menciona el scope nuevo' );
+	}
+
+	public function test_un_sitio_en_1_12_0_sin_la_capacidad_la_recibe_al_actualizar(): void {
+		$real_wpdb = $GLOBALS['wpdb'];
+		// Doble con lo que pide la creación de tablas (sin base de datos real).
+		$GLOBALS['wpdb'] = new class() extends \WPDB_Test_Double {
+			public function get_charset_collate(): string {
+				return '';
+			}
+		};
+		$GLOBALS['nexo_test_dbdelta'] = array();
+
+		\WP_Test_State::$roles['administrator']              = new \WP_Role_Double( 'Administrator', array( Capabilities::CONNECT => true, Capabilities::DIVI_THEME_BUILDER => true ) );
+		\WP_Test_State::$options[ Settings::VERSION_OPTION ] = '1.12.0';
+
+		try {
+			( new Installer() )->maybe_upgrade();
+
+			$this->assertTrue( \WP_Test_State::$roles['administrator']->has_cap( Capabilities::DIVI_LIBRARY ) );
+			$this->assertNotSame( '1.12.0', \WP_Test_State::$options[ Settings::VERSION_OPTION ], 'la versión instalada pasa a la nueva' );
+		} finally {
+			$GLOBALS['wpdb'] = $real_wpdb;
+			unset( $GLOBALS['nexo_test_dbdelta'] );
+		}
+	}
+
 	private function input_tag( string $html ): string {
 		$start = (int) strpos( $html, 'name="nexo_mcp_settings[' . self::SWITCH . ']"' );
 		$from  = (int) strrpos( substr( $html, 0, $start ), '<input' );

@@ -154,7 +154,8 @@ if ( ! function_exists( 'get_terms' ) ) {
 
 if ( ! function_exists( 'wp_insert_term' ) ) {
 	/**
-	 * Como WordPress: un nombre o slug que ya existe da `term_exists` (con el id en los datos).
+	 * Como WordPress: un NOMBRE que ya existe da `term_exists` (con el id en los datos); un nombre distinto con el mismo slug NO
+	 * da error, crea un término nuevo (WordPress le saca un slug único con `wp_unique_term_slug()`) y deja un duplicado vacío.
 	 *
 	 * @param string $term     Nombre.
 	 * @param string $taxonomy Taxonomía.
@@ -162,19 +163,46 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 	 * @return array{term_id: int}|\WP_Error
 	 */
 	function wp_insert_term( $term, $taxonomy ) {
-		WP_Library_Stub_State::registry();
-		$slug = WP_Library_Stub_State::slug( (string) $term );
+		$stored = str_replace( '&', '&amp;', html_entity_decode( (string) $term, ENT_QUOTES ) );
 
 		foreach ( WP_Library_Stub_State::registry()[ $taxonomy ] ?? array() as $existing => $id ) {
-			if ( WP_Library_Stub_State::slug( (string) $existing ) === $slug ) {
+			if ( 0 === strcasecmp( (string) $existing, $stored ) ) {
 				return new WP_Error( 'term_exists', 'El término ya existe.', $id );
 			}
 		}
 
-		$id                                                          = WP_Library_Stub_State::$next_term++;
-		WP_Library_Stub_State::$known[ $taxonomy ][ str_replace( '&', '&amp;', html_entity_decode( (string) $term, ENT_QUOTES ) ) ] = $id;
+		$id = WP_Library_Stub_State::$next_term++;
+		WP_Library_Stub_State::$known[ $taxonomy ][ $stored ] = $id;
 
 		return array( 'term_id' => $id );
+	}
+}
+
+if ( ! function_exists( 'get_term_by' ) ) {
+	/**
+	 * Sólo `slug` y `name`: el primer término de la taxonomía con ese slug (el que da el nombre) o nombre.
+	 *
+	 * @param string $field    Campo.
+	 * @param string $value    Valor.
+	 * @param string $taxonomy Taxonomía.
+	 *
+	 * @return \stdClass|false
+	 */
+	function get_term_by( $field, $value, $taxonomy = '' ) {
+		foreach ( WP_Library_Stub_State::registry()[ $taxonomy ] ?? array() as $name => $id ) {
+			$same = 'slug' === $field ? WP_Library_Stub_State::slug( (string) $name ) === (string) $value : 0 === strcasecmp( (string) $name, (string) $value );
+
+			if ( $same ) {
+				return (object) array(
+					'term_id'  => $id,
+					'name'     => (string) $name,
+					'slug'     => WP_Library_Stub_State::slug( (string) $name ),
+					'taxonomy' => $taxonomy,
+				);
+			}
+		}
+
+		return false;
 	}
 }
 
