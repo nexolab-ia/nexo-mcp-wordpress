@@ -96,6 +96,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/save-divi-library-item',
 		'nexo-mcp/delete-divi-library-item',
 		'nexo-mcp/restore-divi-library-item',
+		'nexo-mcp/insert-divi-library-item',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -975,6 +976,20 @@ final class ExtendedAbilityRegistrar {
 			DiviLibraryToolSpec::id_confirm_schema( 'Ítem de la biblioteca con un respaldo (también uno borrado, en la papelera).' ),
 			fn( array $input ) => $this->builders->restore_divi_library_item( $input ),
 			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
+		);
+		$this->ability(
+			'insert-divi-library-item',
+			'Insertar un ítem de la biblioteca de Divi 5 en una página',
+			DiviLibraryToolSpec::insert_description(),
+			'write',
+			DiviLibraryToolSpec::insert_schema(),
+			fn( array $input ) => $this->builders->insert_divi_library_item( $input ),
+			// Las dos capas: la biblioteca (con el id del ítem: edit_global_library si es global) y constructores sobre la página.
+			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
+				&& $this->layout_gate(
+					(int) ( $input['post_id'] ?? 0 ),
+					fn() => $this->module_write( 'builders_tools_enabled', Capabilities::BUILDERS, 'edit_post', WorkingCopy::original_id_for( (int) ( $input['post_id'] ?? 0 ) ) )
+				)
 		);
 		$this->ability(
 			'edit-divi-section',

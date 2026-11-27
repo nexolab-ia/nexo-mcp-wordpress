@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace NexoDev\NexoMCP\MCP;
 
+use NexoDev\NexoMCP\Builders\Divi5SectionEditor;
+use NexoDev\NexoMCP\Builders\DiviLibraryInserter;
 use NexoDev\NexoMCP\Builders\DiviLibrarySchema;
 
 /**
@@ -237,6 +239,79 @@ final class DiviLibraryToolSpec {
 				'',
 				'ERRORES (no cambian nada): nexo_mcp_divi_library_denied, nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_global_blocked, nexo_mcp_divi_library_no_backup, nexo_mcp_divi_library_backup_failed, nexo_mcp_busy (otra llamada sobre el ítem en curso: reintenta) y nexo_mcp_divi_library_save_failed.',
 			)
+		);
+	}
+
+	/**
+	 * Descripción de insert-divi-library-item.
+	 */
+	public static function insert_description(): string {
+		return implode(
+			"\n",
+			array(
+				'Inserta UN ítem de la biblioteca de Divi 5 en una página de Divi 5, como COPIA de su contenido o, si es global, como REFERENCIA (divi/global-layout). Escribe en la copia de trabajo de la página (se crea o se reutiliza; el original publicado no cambia hasta que revises y publiques la copia; nunca publica), con el mismo camino, bloqueo y respaldo que nexo-mcp-edit-divi-section. ' . self::access() . ' Además exige el permiso de constructores sobre la página (scope mcp:builders y edit_post): las dos capas, sin una de ellas no se escribe nada.',
+				'',
+				'ENTRADA: id (el ítem; de nexo-mcp-list-divi-library), post_id (la página de Divi 5 o su copia de trabajo), path y fingerprint (el nodo de referencia, como los devuelve nexo-mcp-get-page-structure), position (before, after o inside: dónde queda respecto al nodo) y, opcionales, mode (copy por omisión, o global) y draft (como en edit-divi-section).',
+				'',
+				'MODE copy: el contenido del ítem se convierte en nodos y pasa por el mismo validador de Divi 5 que cualquier subárbol; no se sincroniza con el ítem. Un layout y una sección van entre las secciones de la página (path de una sección, before o after; o el placeholder raíz con inside), una fila dentro de una sección (path de una sección con inside, o de una fila con before/after), un módulo dentro de una columna. Un ítem con módulos que el conector no sabe representar (nexo_mcp_divi_library_foreign, con data.foreign) o con atributos que el validador no admite (nexo_mcp_divi_library_copy_invalid, con data.reason y data.path) no se copia: si es global, insértalo con mode global. Copiar un ítem global inserta un contenido propio, sin referencia.',
+				'',
+				'MODE global: sólo un ítem GLOBAL publicado de tipo sección, fila o módulo (nexo_mcp_divi_library_mode_invalid si no: Divi no renderiza un global que no esté publicado, y un layout global no se referencia). Se escribe `<!-- wp:divi/global-layout {"globalModule":"<id>","blockName":"<divi/text|divi/row|divi/section…>"} /-->`, la forma de Divi 5.19.1, sin localAttrs: la página muestra el contenido del ítem en cada render y cualquier cambio del ítem cambia esta página sin tocarla (editarlo pide confirm_global en nexo-mcp-save-divi-library-item). La referencia sólo cabe donde cabe su bloque (nexo_mcp_divi_nesting_invalid).',
+				'',
+				'SALIDA: la de nexo-mcp-edit-divi-section (id y draft_of de la copia de trabajo, operation, nodes [{path, type, fingerprint}], backup, warnings…) más mode e item ({id, title, type, scope}).',
+				'',
+				'ERRORES (no escriben nada): nexo_mcp_divi_library_denied (también un id que no es un ítem de la biblioteca), nexo_mcp_divi5_required, nexo_mcp_divi_library_invalid (con data.path), nexo_mcp_divi_library_trashed, nexo_mcp_divi_library_not_found, nexo_mcp_divi_library_mode_invalid, nexo_mcp_divi_library_foreign, nexo_mcp_divi_library_copy_invalid, nexo_mcp_builder_forbidden / nexo_mcp_builder_not_found / nexo_mcp_divi_post_type_denied (la página), nexo_mcp_divi_node_changed (la huella no coincide: vuelve a leer la página), nexo_mcp_builder_node_missing, nexo_mcp_divi_nesting_invalid y los demás de forma de nexo-mcp-edit-divi-section.',
+			)
+		);
+	}
+
+	/**
+	 * Esquema de insert-divi-library-item.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function insert_schema(): array {
+		return array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'id'          => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Ítem de la biblioteca que se inserta.',
+				),
+				'post_id'     => array(
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'Página de Divi 5 (o su copia de trabajo) donde se inserta.',
+				),
+				'path'        => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 64,
+					'description' => 'Ruta del nodo de referencia (por ejemplo 0.1; ver get-page-structure).',
+				),
+				'fingerprint' => array(
+					'type'        => 'string',
+					'minLength'   => 1,
+					'maxLength'   => 128,
+					'description' => 'Huella del nodo tal como la devolvió la lectura.',
+				),
+				'position'    => array(
+					'type'        => 'string',
+					'enum'        => Divi5SectionEditor::POSITIONS,
+					'description' => 'Antes, después o dentro (al final) del nodo de referencia.',
+				),
+				'mode'        => array(
+					'type'        => 'string',
+					'enum'        => DiviLibraryInserter::MODES,
+					'description' => 'copy (por omisión): copia el contenido. global: referencia a un ítem global publicado (sección, fila o módulo).',
+				),
+				'draft'       => array(
+					'type'        => 'boolean',
+					'description' => 'Si el sitio no usa copia de trabajo por defecto, pide editar la copia de una página publicada.',
+				),
+			),
+			'required'             => array( 'id', 'post_id', 'path', 'fingerprint', 'position' ),
+			'additionalProperties' => false,
 		);
 	}
 
