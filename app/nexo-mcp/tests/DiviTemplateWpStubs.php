@@ -28,6 +28,10 @@ if ( ! function_exists( 'get_posts' ) ) {
 		$found  = array();
 
 		foreach ( \WP_Test_State::$posts as $post ) {
+			if ( isset( $args['meta_key'] ) && (string) get_post_meta( $post->ID, (string) $args['meta_key'], true ) !== (string) ( $args['meta_value'] ?? '' ) ) {
+				continue;
+			}
+
 			if ( ( in_array( 'any', $types, true ) || in_array( $post->post_type, $types, true ) ) && ( in_array( 'any', $status, true ) || in_array( $post->post_status, $status, true ) ) ) {
 				$found[] = $post;
 			}

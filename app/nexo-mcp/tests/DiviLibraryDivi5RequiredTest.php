@@ -32,6 +32,8 @@ final class DiviLibraryDivi5RequiredTest extends NexoTestCase implements DiviLib
 		return array(
 			'list' => array( 'list-divi-library', array() ),
 			'get'  => array( 'get-divi-library-item', array( 'id' => self::SECTION ) ),
+			'create' => array( 'save-divi-library-item', array( 'title' => 'Nuevo', 'type' => 'section', 'nodes' => array( array( 'type' => 'divi/section' ) ) ) ),
+			'update' => array( 'save-divi-library-item', array( 'id' => self::SECTION, 'title' => 'Nuevo' ) ),
 		);
 	}
 

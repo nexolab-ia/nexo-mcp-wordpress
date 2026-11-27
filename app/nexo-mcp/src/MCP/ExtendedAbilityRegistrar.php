@@ -93,6 +93,7 @@ final class ExtendedAbilityRegistrar {
 		'nexo-mcp/restore-divi-template',
 		'nexo-mcp/list-divi-library',
 		'nexo-mcp/get-divi-library-item',
+		'nexo-mcp/save-divi-library-item',
 		'nexo-mcp/edit-divi-section',
 		'nexo-mcp/get-divi-design-system',
 		'nexo-mcp/undo-divi-design-change',
@@ -941,6 +942,16 @@ final class ExtendedAbilityRegistrar {
 			'read',
 			DiviLibraryToolSpec::get_schema(),
 			fn( array $input ) => $this->builders->get_divi_library_item( $input ),
+			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
+		);
+		$this->ability(
+			'save-divi-library-item',
+			'Crear o actualizar un ítem de la biblioteca de Divi 5',
+			DiviLibraryToolSpec::save_description(),
+			'write',
+			DiviLibraryToolSpec::save_schema(),
+			fn( array $input ) => $this->builders->save_divi_library_item( $input ),
+			// Sin id es un alta (save_library); con id, el permiso del ítem (tipo, edit_post y, si es global, edit_global_library).
 			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
 		);
 		$this->ability(
@@ -3189,7 +3200,7 @@ final class ExtendedAbilityRegistrar {
 				'meta'                => array(
 					'annotations' => array(
 						'readonly'    => 'read' === $operation,
-						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset', 'set-divi-template', 'delete-divi-template', 'restore-divi-template' ), true ),
+						'destructive' => in_array( $name, array( 'delete-product', 'execute-plugin-action', 'restore-revision', 'undo-design-system-change', 'delete-global-class', 'delete-design-variable', 'update-kit-globals', 'delete-divi-global-color', 'delete-divi-preset', 'save-divi-library-item', 'set-divi-template', 'delete-divi-template', 'restore-divi-template' ), true ),
 						'idempotent'  => in_array( $name, array( 'get-post-seo', 'get-seo-settings', 'get-site-appearance', 'get-product' ), true ),
 					),
 				),

@@ -753,7 +753,7 @@ function wp_trash_post( $post_id ) {
 }
 function wp_delete_post( $post_id, $force = false ) {
 	$post = WP_Test_State::$posts[ (int) $post_id ] ?? false;
-	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ], WP_Test_State::$multi_meta[ (int) $post_id ] );
+	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ], WP_Test_State::$multi_meta[ (int) $post_id ], WP_Test_State::$terms[ (int) $post_id ] );
 	return $post;
 }
 

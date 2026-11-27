@@ -1203,13 +1203,29 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Crea (sin `id`) o actualiza (con `id`) un ítem de la biblioteca de Divi 5.
+	 *
+	 * Exige el permiso de la biblioteca (con el id del ítem si lo hay) ANTES de mirar la entrada. Ver {@see DiviLibraryEditor::save_item()}.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id?`, `title`, `type`, `scope`, `nodes`, `categories`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function save_divi_library_item( array $input ) {
+		return $this->library_editor()->save_item( $input );
+	}
+
+	/**
 	 * Editor de la biblioteca de Divi 5 con los componentes de producción.
 	 */
 	private function library_editor(): DiviLibraryEditor {
 		return new DiviLibraryEditor(
 			new DiviLibrarySchema(),
 			new DiviLibraryBackup(),
-			fn( ?int $item_id ): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_library( $item_id )
+			$this->divi_validator(),
+			fn( ?int $item_id ): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_library( $item_id ),
+			null,
+			$this->divi_presets_lock()
 		);
 	}
 

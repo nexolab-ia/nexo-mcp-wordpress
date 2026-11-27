@@ -33,8 +33,19 @@ if ( ! function_exists( 'et_pb_create_layout' ) ) {
 			)
 		);
 
+		// Como Divi: `wp_insert_post()` sin `$wp_error` da 0 si falla, y no hay nada más que hacer.
+		$id = is_wp_error( $id ) ? 0 : $id;
+
+		if ( 0 === $id ) {
+			return 0;
+		}
+
 		foreach ( $meta as $key => $value ) {
 			add_post_meta( $id, $key, sanitize_text_field( $value ) );
+		}
+
+		if ( WP_Library_Stub_State::$throw_after_insert ) {
+			throw new RuntimeException( 'fallo de otro plugin' );
 		}
 
 		foreach ( array_filter( array_map( 'trim', explode( ',', $new_category ) ) ) as $category ) {

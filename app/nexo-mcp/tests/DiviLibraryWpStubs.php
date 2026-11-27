@@ -16,6 +16,8 @@ if ( ! class_exists( 'WP_Library_Stub_State' ) ) {
 		public static array $term_calls = array();
 		/** @var int Próximo id de término. */
 		public static int $next_term = 500;
+		/** @var bool `et_pb_create_layout()` lanza justo después de insertar el post. */
+		public static bool $throw_after_insert = false;
 		/** @var string Taxonomía cuyo `wp_set_object_terms()` falla (WP_Error). */
 		public static string $fail_terms_in = '';
 	}
@@ -37,10 +39,12 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 			return new WP_Error( 'invalid_taxonomy', 'Taxonomía inválida.' );
 		}
 
-		$current = $append ? ( WP_Test_State::$terms[ (int) $object_id ][ $taxonomy ] ?? array() ) : array();
+		// Como WordPress: un nombre que ya tenía el ítem conserva su término.
+		$had     = WP_Test_State::$terms[ (int) $object_id ][ $taxonomy ] ?? array();
+		$current = $append ? $had : array();
 
 		foreach ( (array) $terms as $name ) {
-			$current[ (string) $name ] = $current[ (string) $name ] ?? WP_Library_Stub_State::$next_term++;
+			$current[ (string) $name ] = $had[ (string) $name ] ?? WP_Library_Stub_State::$next_term++;
 		}
 
 		WP_Test_State::$terms[ (int) $object_id ][ $taxonomy ] = $current;
