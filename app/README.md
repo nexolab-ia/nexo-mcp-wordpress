@@ -671,6 +671,86 @@ Reglas que siempre se cumplen:
     en el docker, la página del carrito pierde su contenido principal a partir de la segunda visita
     seguida **también sin ninguna plantilla**, así que la prueba mira cada estado del carrito con una sola
     visita, la primera tras borrar el CSS.
+- **Biblioteca de Divi 5 (permiso propio)**: un ítem **global** de la biblioteca no se copia en las
+  páginas, **se referencia** (`divi/global-layout`) y Divi lo lee al renderizar, así que cambiarlo cambia
+  a la vez todas las páginas que lo usan, sin pasar por su copia de trabajo. Por eso tiene su scope OAuth
+  `mcp:divi_library` (capacidad `nexo_mcp_divi_library`, sólo el administrador; el instalador la da al
+  subir a 1.13.0, también a los sitios que ya están en 1.12.0) y su interruptor
+  `divi_library_tools_enabled`, **apagado por defecto** (toggle sensible con confirmación, palabra
+  «biblioteca»). Además exige `edit_posts` y los permisos de biblioteca de los roles de Divi
+  (`divi_library`, `save_library` para crear y `edit_global_library` para los ítems globales), y no
+  funciona en «Solo revisar». La comprobación va antes de mirar la entrada
+  (`nexo_mcp_divi_library_denied`). Sin Divi 5 activo: `nexo_mcp_divi5_required`. No importa ni exporta.
+  - `list-divi-library {type?, scope?, category?, search?, limit?}` y `get-divi-library-item {id}`: sólo
+    leen (con el permiso de escritura): resumen de cada ítem (`type` layout|section|row|module, `scope`
+    global|non_global, categorías) y, el segundo, sus nodos con ruta y huella, `global`, `foreign` y su
+    respaldo. Los ítems de la papelera no salen.
+  - `save-divi-library-item {id?, title, type, scope?, nodes, categories?, replace_foreign?,
+    confirm_global?}`: sin `id` **crea** un ítem (publicado) a partir de un árbol de módulos validado y
+    lo guarda bajo un `divi/placeholder`, con los términos y metas del Visual Builder; con `id`
+    **actualiza** título, contenido (reemplaza todo) y/o categorías. El tipo y el alcance no se pueden
+    cambiar. Antes de actualizar guarda **un solo respaldo** en `_nexo_mcp_library_backup` (el del último
+    cambio) y, si algo falla a medias, el ítem vuelve a su estado.
+  - `delete-divi-library-item {id, confirm_global?}`: lo manda a la papelera de WordPress (no lo
+    elimina) tras guardar el respaldo; se rechaza si la papelera está desactivada
+    (`EMPTY_TRASH_DAYS = 0`) y pide además `delete_post`.
+  - `restore-divi-library-item {id, confirm_global?}`: **deshace** un guardado o un borrado (el ítem
+    sale de la papelera) devolviéndolo al estado de su respaldo único. Antes guarda el estado de ahora,
+    así que **restaurar dos veces alterna** entre los dos estados. `restore-builder-backup` **no**
+    acepta ítems de la biblioteca.
+  - `insert-divi-library-item {id, post_id, path, fingerprint, position, mode?, draft?}`: pone un ítem
+    en una página de Divi 5. `mode: copy` (por omisión) inserta una **copia** validada de su contenido
+    (no se sincroniza con el ítem; un ítem global también se copia sin referencia); `mode: global`
+    inserta una **referencia** a un ítem global **publicado** de tipo sección, fila o módulo. Escribe en
+    la **copia de trabajo** de la página (nunca publica), con su bloqueo y su respaldo, y exige además el
+    permiso de constructores sobre la página: las dos capas o no se escribe nada.
+  - **Avisos importantes**:
+    - **Un global cambia todas las páginas que lo usan.** Cambiarlo (`save`), borrarlo o restaurarlo
+      exige `confirm_global: true` (`nexo_mcp_divi_library_global_blocked` sin él) y la respuesta trae
+      `affected_pages` (`count`, hasta 50 `pages` con `id`, `title`, `post_type`, `status`,
+      `working_copy_of` y `editable`, y `truncated`): las publicadas, borradores, privadas y copias de
+      trabajo que lo referencian. El **título** sólo se muestra si el usuario puede leer ese contenido
+      (`read_post`); si no, sale vacío con `title_hidden: true`. Tras cambiarlo se renueva la caché de
+      esas páginas (`cache_not_cleared` dice cuántas quedaron sin renovar).
+    - **Borrar un global despega las páginas**: antes de mandarlo a la papelera, Divi (su filtro
+      `pre_trash_post`) incrusta el contenido del ítem en cada página, que lo conserva como bloques propios.
+      El conector lo permite sólo si ese filtro existe (`nexo_mcp_divi_library_detach_unavailable`), si el
+      usuario **puede editar todos** los contenidos que lo usan, también la papelera y las revisiones
+      (`nexo_mcp_divi_library_pages_forbidden`, sin cambiar nada) y comprueba después que no queda ninguna
+      referencia (`still_referenced: 0`; si queda, devuelve el ítem con `nexo_mcp_divi_library_detach_failed`).
+      Si la búsqueda de páginas falla, se trata como «no se sabe» y no se cambia nada
+      (`nexo_mcp_divi_library_usage_unknown`). **Restaurar el ítem NO vuelve a enlazar las páginas
+      despegadas**: para usarlo otra vez por referencia hay que insertarlo de nuevo con `mode: global`.
+    - **Un solo respaldo por ítem**: guardar, borrar y restaurar sobrescriben el respaldo anterior (el del
+      último cambio). Si un borrado o un guardado falla, el respaldo anterior se conserva.
+    - **`replace_foreign`**: un ítem hecho en el Visual Builder con módulos que el conector no sabe
+      representar (o de Divi 4) no se reemplaza sin `replace_foreign: true`
+      (`nexo_mcp_divi_library_foreign`, con `data.foreign`); lo reemplazado queda en el respaldo. Tampoco se
+      copia entero con `mode: copy`: si es global, insértalo con `mode: global`.
+    - **Escritura EN VIVO si apagas la copia de trabajo**: `insert-divi-library-item` va a la copia de
+      trabajo de la página, **salvo** que el administrador haya apagado «copia de trabajo por defecto»;
+      entonces escribe directamente en la página publicada. Pasa `draft: true` para ir siempre a la copia.
+    - **Un global que no está publicado deja de verse**: Divi no renderiza una referencia a un ítem
+      privado, en borrador o en la papelera, y por eso `mode: global` exige un ítem `publish`.
+  - Errores: `nexo_mcp_divi_library_denied`, `nexo_mcp_divi_library_invalid` (con `data.path`),
+    `nexo_mcp_divi_library_not_found`, `nexo_mcp_divi_library_trashed`,
+    `nexo_mcp_divi_library_global_blocked`, `nexo_mcp_divi_library_pages_forbidden`,
+    `nexo_mcp_divi_library_detach_unavailable`, `nexo_mcp_divi_library_detach_failed`,
+    `nexo_mcp_divi_library_usage_unknown`, `nexo_mcp_divi_library_foreign`,
+    `nexo_mcp_divi_library_copy_invalid`, `nexo_mcp_divi_library_mode_invalid`,
+    `nexo_mcp_divi_library_no_backup`, `nexo_mcp_divi_library_backup_failed`,
+    `nexo_mcp_divi_library_trash_disabled`, `nexo_mcp_divi_library_save_failed` (si falla a medias el
+    ítem vuelve a su estado), `nexo_mcp_busy` (otra llamada sobre el ítem; reintenta) y los de
+    `create-divi-page` para el árbol.
+  - Se probó con Divi 5.19.1 (`tools/prueba_adaptadores.sh`, sección D8b: un módulo global usado por dos
+    páginas —insertado por referencia en la copia de trabajo de cada una y publicado— lo ven las dos como
+    visitante; `mode: copy` no inserta referencia; editar con `confirm_global` lo cambia en las dos sin
+    tocarlas y `affected_pages` las lista; `pages_forbidden` cuando una no se puede editar; borrar con
+    `confirm_global` despega y las dos siguen mostrándolo; restaurar no vuelve a enlazar; un global
+    privado, en borrador o en la papelera deja de mostrarse; una fila y un módulo guardados bajo
+    `divi/placeholder` los abren el parser y el renderizador de Divi; y el estado del sitio —posts,
+    metas, términos, opciones incluido `nexo_mcp_settings`, usuarios y `et-cache`— queda exactamente como
+    al empezar, borrando sólo los ids que creó la prueba; sin Divi 5 se saltea).
 - **Sistema de diseño de Elementor (permiso propio)**: los cambios a las clases
   globales, las variables y los colores y tipografía del Kit afectan a todo el
   sitio en vivo, así que tienen su propio interruptor en el panel («Sistema de
@@ -876,7 +956,7 @@ de Divi 5 (D4) igual (SKIP sin Divi 5): enciende `divi_presets_tools_enabled` (y
 devuelve crudos `et_divi_builder_global_presets_d5`, el historial, los ajustes y el bloqueo. La de contenido
 dinámico y bucles de Divi 5 (D5/D6) igual (SKIP sin Divi 5): enciende `divi_dynamic_tools_enabled` (y la capacidad, si falta) sólo durante la
 sección, crea entradas de prueba (publicadas, privada, con contraseña y borrador) que borra al final, comprueba como visitante anónimo lo que se ve
-y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. La de condiciones de visualización de Divi 5 (D7) igual (SKIP sin Divi 5): enciende `divi_conditions_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea una página de prueba que borra al final, comprueba como visitante anónimo qué módulos se ven y devuelve crudos los ajustes y los roles, también si la corrida se corta. La del Theme Builder de Divi 5 (D8a) igual (SKIP sin Divi 5): **cambia plantillas que afectan a todo el sitio**, así que antes toma una foto (posts, metas, términos, relaciones, opciones, metas del administrador y archivos de `et-cache`) y las opciones crudas (ajustes, versión, bloqueos y roles), enciende `divi_theme_builder_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea dos páginas y los layouts y plantillas de prueba, mira como visitante anónimo una página, una 404, `?s=` y la categoría, y al final borra todo lo creado (plantillas, layouts, Theme Builder en vivo, términos, páginas y `et-cache`) y comprueba que la foto es idéntica, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
+y devuelve crudos los ajustes, el bloqueo y los roles, también si la corrida se corta. La de condiciones de visualización de Divi 5 (D7) igual (SKIP sin Divi 5): enciende `divi_conditions_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea una página de prueba que borra al final, comprueba como visitante anónimo qué módulos se ven y devuelve crudos los ajustes y los roles, también si la corrida se corta. La del Theme Builder de Divi 5 (D8a) igual (SKIP sin Divi 5): **cambia plantillas que afectan a todo el sitio**, así que antes toma una foto (posts, metas, términos, relaciones, opciones, metas del administrador y archivos de `et-cache`) y las opciones crudas (ajustes, versión, bloqueos y roles), enciende `divi_theme_builder_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea dos páginas y los layouts y plantillas de prueba, mira como visitante anónimo una página, una 404, `?s=` y la categoría, y al final borra todo lo creado (plantillas, layouts, Theme Builder en vivo, términos, páginas y `et-cache`) y comprueba que la foto es idéntica, también si la corrida se corta. La de la biblioteca de Divi 5 (D8b) igual (SKIP sin Divi 5): toma la misma foto, enciende `divi_library_tools_enabled` (y la capacidad, si falta) sólo durante la sección, crea tres páginas, un módulo global y una fila global de prueba, mira como visitante anónimo qué páginas muestran el ítem, anota cada id que crea y al final borra **sólo esos ids** (nunca por una consulta amplia), devuelve crudos los ajustes, la versión, los bloqueos y los roles y comprueba que la foto es idéntica, también si la corrida se corta. Con Pro instalado, wp-cli necesita más
 memoria que los 128M del servicio `setup`: `tools/wpcli.sh` usa
 `php -d memory_limit=1G` cuando la variable `NEXO_WPCLI_MEMORIA` trae un límite,
 y `prueba_adaptadores.sh` la fija solo si detecta `elementor-pro`; sin Pro el
