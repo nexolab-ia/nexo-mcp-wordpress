@@ -632,12 +632,6 @@
 
 /* ---------------------------------------------------------- Resumen: estado */
 
-.nexo-mcp-status-grid {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 16px;
-}
-
 .nexo-mcp-status-card {
 	min-width: 0;
 	padding: 20px;
@@ -907,13 +901,77 @@
 	scroll-margin-top: 48px;
 }
 
-/* --------------------------------------------------------- Resumen: tarjetas */
+/* Índice de secciones de Sistema (04): numerado, con las mismas etiquetas. */
+.nexo-mcp-admin .nexo-mcp-sysnav {
+	margin-bottom: 24px;
+}
 
-.nexo-mcp-summary {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-	gap: 16px;
-	align-items: start;
+.nexo-mcp-admin .nexo-mcp-sysnav__list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	counter-reset: sysnav;
+	list-style: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__list li {
+	margin: 0;
+	counter-increment: sysnav;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 6px 14px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-fg);
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: none;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link::before {
+	content: counter(sysnav, decimal-leading-zero);
+	color: var(--nexo-primary);
+	font: 600 11px var(--nexo-mono);
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link:hover {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-primary-hover);
+}
+
+.nexo-mcp-admin .nexo-mcp-sysnav__link:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: 2px;
+	box-shadow: none;
+}
+
+.nexo-mcp-admin .nexo-mcp-sistema__section > .nexo-mcp-card,
+.nexo-mcp-admin .nexo-mcp-sistema__section > .nexo-mcp-discovery {
+	border-top: 3px solid var(--nexo-primary);
+}
+
+.nexo-mcp-sistema__section + .nexo-mcp-sistema__section {
+	margin-top: 32px;
+}
+
+@media (max-width: 1099px) {
+	.nexo-mcp-admin .nexo-mcp-sysnav__list {
+		flex-direction: column;
+	}
+
+	.nexo-mcp-admin .nexo-mcp-sysnav__link {
+		display: flex;
+	}
 }
 
 .nexo-mcp-admin .nexo-mcp-rows {
@@ -1887,8 +1945,9 @@
 	gap: 16px;
 	padding: 16px;
 	border: 1px solid var(--nexo-border);
+	border-left: 3px solid var(--nexo-primary);
 	border-radius: var(--nexo-radius-md);
-	background: #fcfcfc;
+	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-box > div {
@@ -2766,10 +2825,6 @@
 		border-left: 5px solid transparent;
 	}
 
-	.nexo-mcp-status-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
 	.nexo-mcp-overview {
 		grid-template-columns: minmax(0, 1fr);
 		gap: 24px;
@@ -2790,10 +2845,6 @@
 }
 
 @media (max-width: 960px) {
-	.nexo-mcp-summary {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
 	.nexo-mcp-client-grid,
 	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2930,12 +2981,6 @@
 
 	.nexo-mcp-confirm__actions .button {
 		flex: 1 1 0;
-	}
-}
-
-@media (max-width: 380px) {
-	.nexo-mcp-status-grid {
-		grid-template-columns: minmax(0, 1fr);
 	}
 }
 
