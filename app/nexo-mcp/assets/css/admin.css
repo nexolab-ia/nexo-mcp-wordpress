@@ -750,12 +750,11 @@
 	gap: 12px;
 	align-items: center;
 	margin: 0;
-	padding: 9px 4px;
+	padding: 9px 4px 9px 12px;
 	border-bottom: 1px solid var(--nexo-border);
 }
 
 .nexo-mcp-modrow--on {
-	padding-left: 12px;
 	box-shadow: inset 3px 0 0 var(--nexo-primary);
 }
 
@@ -1694,13 +1693,12 @@
 	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 44px 64px;
 	gap: 12px;
 	align-items: center;
-	padding: 10px 4px;
+	padding: 10px 4px 10px 12px;
 	border-bottom: 1px solid var(--nexo-border);
 	cursor: pointer;
 }
 
 .nexo-mcp-toggle:has(input:checked) {
-	padding-left: 12px;
 	box-shadow: inset 3px 0 0 var(--nexo-primary);
 }
 
