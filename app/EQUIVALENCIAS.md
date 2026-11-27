@@ -19,7 +19,7 @@ Verificación: las reglas de permisos tienen pruebas PHPUnit (`nexo-mcp/tests`).
 | Admin | `SICS\MCPConnector\Admin\SettingsController` | `NexoDev\NexoMCP\Admin\SettingsController` | completa |  |
 | Admin | `SICS\MCPConnector\Admin\WorkingCopyController` | `NexoDev\NexoMCP\Admin\WorkingCopyController` | completa |  |
 | Admin | `vista Admin/views/activacion.php` | `vista Admin/views/activacion.php` | completa | Sólo aparece si NEXO_MCP_API_URL está configurada y falta la licencia. |
-| Admin | `vista Admin/views/dashboard.php` | `vista Admin/views/dashboard.php` | completa | 9 pestañas; nuevos interruptores y editor de alcances; avisos sin servicio. |
+| Admin | `vista Admin/views/dashboard.php` | `vista Admin/views/dashboard.php` | completa | Desde 1.14.0: banda del mapa fija y 5 pestañas (Resumen, Conectar, Accesos, Módulos, Sistema; los `?tab=` viejos abren Sistema), fuentes del sistema; nuevos interruptores y editor de alcances; avisos sin servicio. |
 | Admin | `vista Admin/views/onboarding.php` | — | no portada | El original no la usaba (ninguna clase la incluye). |
 | Audit | `SICS\MCPConnector\Audit\AuditLogger` | `NexoDev\NexoMCP\Audit\AuditLogger` | completa |  |
 | Audit | `SICS\MCPConnector\Audit\AuditRepository` | `NexoDev\NexoMCP\Audit\AuditRepository` | completa |  |

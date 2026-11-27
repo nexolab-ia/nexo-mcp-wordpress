@@ -18,7 +18,7 @@ distribuye bajo **GPL-2.0-or-later** (ver `nexo-mcp/NOTICE.md`).
 | `tools/prueba_punta_a_punta.py` | Prueba real de conectar → autorizar OAuth → usar herramientas. |
 | `empaquetar.sh` | Genera `dist/nexo-mcp-<versión>.zip` y comprueba versión, changelog y contenido. |
 | `EQUIVALENCIAS.md` | Tabla clase original → clase nueva → estado. |
-| `shots/` | Capturas del panel. |
+| `shots/` | Capturas del panel (anteriores al rediseño de 1.14.0). |
 
 ## 1. Levantar el WordPress de prueba
 
@@ -51,7 +51,13 @@ Si el puerto 8080 está ocupado: `NEXO_WP_PORT=8090 docker compose up -d`
 
 ## 2. Conectar tu IA
 
-En el panel, pestaña **Conectar**, elige tu cliente y copia la instrucción.
+El panel (desde 1.14.0) tiene arriba la banda del mapa de conexión (Tu IA ·
+OAuth 2.1 · PKCE · WordPress · módulos activos) y cinco pestañas: **Resumen**,
+**Conectar**, **Accesos**, **Módulos** y **Sistema** (actividad, licencia,
+actualizaciones, endpoint y soporte); usa fuentes del sistema y la pantalla de
+activación y la de autorización OAuth comparten su estilo.
+
+En la pestaña **Conectar**, elige tu cliente y copia la instrucción.
 Las más comunes:
 
 **Claude Code** (terminal):
@@ -845,8 +851,8 @@ Reglas que siempre se cumplen:
 ## 4. Servicio de licencias (opcional)
 
 Nexo MCP no trae ningún servidor de licencias, registro ni actualizaciones.
-Funciona completo sin él, y las pestañas **Licencia y sitio**,
-**Actualizaciones** y **Soporte** lo indican. Si algún día tienes un servicio
+Funciona completo sin él, y las secciones **Licencia**,
+**Actualizaciones** y **Soporte** de la pestaña **Sistema** lo indican. Si algún día tienes un servicio
 compatible, agrega a `wp-config.php`:
 
 ```php
