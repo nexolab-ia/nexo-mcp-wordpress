@@ -3,52 +3,49 @@
  *
  * Todo cuelga de .nexo-mcp-admin (la pantalla) o .nexo-mcp-secret-dialog
  * (el diálogo, que vive fuera del contenedor) para no tocar el resto de
- * wp-admin. Tipografía Inter local: nada se pide a servidores externos.
+ * wp-admin. Tipografía del sistema: nada se pide a servidores externos.
  */
-
-@font-face {
-	font-family: "Inter";
-	font-style: normal;
-	font-weight: 400 600;
-	font-display: swap;
-	src: url("../fonts/inter-latin.woff2") format("woff2");
-}
 
 /* ------------------------------------------------------------------ Tokens */
 
 .nexo-mcp-admin,
 .nexo-mcp-secret-dialog {
-	--nexo-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--nexo-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 	--nexo-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-	--nexo-fg: #121212;
-	--nexo-fg-soft: #3a3a3a;
+	--nexo-fg: #0f172a;
+	--nexo-fg-soft: #334155;
 	--nexo-bg: #fff;
-	--nexo-muted: #f5f5f5;
-	--nexo-muted-soft: #fafafa;
-	--nexo-muted-fg: #6e6e6e;
-	--nexo-muted-fg-strong: #5c5c5c;
-	--nexo-border: #ebebeb;
-	--nexo-input: #d9d9d9;
+	--nexo-muted: #f1f5f9;
+	--nexo-muted-soft: #f8fafc;
+	--nexo-muted-fg: #475569;
+	--nexo-muted-fg-strong: #334155;
+	--nexo-border: #c7d2de;
+	--nexo-input: #64748b;
+	--nexo-primary: #0f766e;
+	--nexo-primary-hover: #115e59;
+	--nexo-primary-soft: #f0fdfa;
+	--nexo-accent: #22d3ee;
+	--nexo-accent-lt: #5eead4;
+	--nexo-focus: #4f46e5;
 	--nexo-ok: #047857;
-	--nexo-ok-dot: #10b981;
-	--nexo-ok-bg: #e7f7f2;
-	--nexo-ok-line: #b7eada;
-	--nexo-warn: #b45309;
-	--nexo-warn-dot: #f59e0b;
-	--nexo-warn-bg: #fef5e7;
-	--nexo-warn-soft: #fffaf3;
-	--nexo-warn-line: #fce2b6;
-	--nexo-err: #dc2626;
+	--nexo-ok-dot: #0f766e;
+	--nexo-ok-bg: #ecfdf5;
+	--nexo-ok-line: #6ee7b7;
+	--nexo-warn: #92400e;
+	--nexo-warn-dot: #d97706;
+	--nexo-warn-bg: #fef3c7;
+	--nexo-warn-soft: #fffbeb;
+	--nexo-warn-line: #d97706;
+	--nexo-err: #b91c1c;
 	--nexo-err-text: #b91c1c;
-	--nexo-err-bg: #fce9e9;
-	--nexo-err-soft: #fdf4f4;
-	--nexo-err-line: #f5bebe;
-	--nexo-radius: 16px;
-	--nexo-radius-md: 12px;
-	--nexo-gradient: linear-gradient(90deg, #22d3ee 0%, #3b82f6 35%, #6366f1 65%, #14b8a6 100%);
-	--nexo-hover: linear-gradient(120deg, #1e3a8a 0%, #4338ca 50%, #0f766e 100%);
-	--nexo-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.08);
-	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #121212;
+	--nexo-err-bg: #fee2e2;
+	--nexo-err-soft: #fef2f2;
+	--nexo-err-line: #fca5a5;
+	--nexo-radius: 8px;
+	--nexo-radius-md: 6px;
+	--nexo-hover: #115e59;
+	--nexo-shadow: none;
+	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #4f46e5;
 }
 
 /* -------------------------------------------------------------------- Base */
@@ -136,60 +133,167 @@
 	font-style: normal;
 }
 
-/* ------------------------------------------------------------------ Header */
+/* ----------------------------------------------------- Banda del mapa */
 
-.nexo-mcp-header {
-	position: relative;
+.nexo-mcp-map {
+	padding: 24px 32px 28px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius);
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
+}
+
+.nexo-mcp-map__top {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: flex-end;
+	align-items: center;
 	justify-content: space-between;
-	gap: 24px;
-	padding: 32px;
-	overflow: hidden;
-	border-radius: var(--nexo-radius);
-	background: var(--nexo-fg);
-	color: #fff;
+	gap: 16px 24px;
 }
 
-.nexo-mcp-header::after {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	height: 4px;
-	background: var(--nexo-gradient);
-	content: "";
-}
-
-.nexo-mcp-admin .nexo-mcp-header__brand {
+.nexo-mcp-admin .nexo-mcp-map__brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	margin: 0;
 	padding: 0;
-	line-height: 0;
+	color: var(--nexo-fg);
+	font-size: 22px;
+	line-height: 1.2;
 }
 
-.nexo-mcp-header__brand img {
-	display: block;
-	width: auto;
-	height: 32px;
+.nexo-mcp-map__brand b {
+	font-weight: 800;
 }
 
-.nexo-mcp-admin .nexo-mcp-header__meta {
+.nexo-mcp-map__brand-mark {
+	color: var(--nexo-muted-fg);
+	font-weight: 300;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__meta {
+	margin: 6px 0 0;
+	color: var(--nexo-muted-fg);
+	font-size: 13px;
+}
+
+.nexo-mcp-map__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.nexo-mcp-admin .nexo-mcp-map__action {
 	margin: 0;
-	text-align: right;
 }
 
-.nexo-mcp-header__meta span {
-	display: block;
-	font-size: 10px;
-	letter-spacing: 0.18em;
-	opacity: 0.6;
+.nexo-mcp-map__diagram {
+	display: grid;
+	grid-template-columns: 1fr 40px 1fr 40px 1.2fr 40px 1fr;
+	align-items: stretch;
+	margin: 24px 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.nexo-mcp-map__node {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px 14px;
+	border: 1px solid var(--nexo-border);
+	border-top: 3px solid var(--nexo-accent);
+	border-radius: 2px;
+	background: var(--nexo-bg);
+}
+
+.nexo-mcp-map__node--hub {
+	border-top-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+}
+
+.nexo-mcp-map__kind {
+	color: var(--nexo-muted-fg);
+	font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	letter-spacing: 0.5px;
 	text-transform: uppercase;
 }
 
-.nexo-mcp-header__meta strong {
-	font-size: 18px;
-	font-weight: 500;
+.nexo-mcp-map__node strong {
+	margin: 2px 0 6px;
+	font-size: 16px;
+	overflow-wrap: anywhere;
+}
+
+.nexo-mcp-map__state {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--nexo-ok);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.nexo-mcp-map__state[data-state='warn'] {
+	color: var(--nexo-warn);
+}
+
+.nexo-mcp-map__state[data-state='off'] {
+	color: var(--nexo-err-text);
+}
+
+.nexo-mcp-map__state[data-state='wait'] {
+	color: var(--nexo-muted-fg-strong);
+}
+
+.nexo-mcp-map__ico {
+	flex: none;
+	width: 16px;
+	height: 16px;
+	background: center / contain no-repeat;
+}
+
+.nexo-mcp-map__state[data-state='ok'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f766e'/%3E%3Cpath d='M4.5 8.2 7 10.5l4.5-5' stroke='%23fff' stroke-width='1.8' fill='none'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='warn'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5 15 14H1z' fill='%23fcd34d' stroke='%2392400e'/%3E%3Cpath d='M8 6v4M8 11.6v1' stroke='%230f172a' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='off'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23b91c1c'/%3E%3Cpath d='M5 5l6 6M11 5l-6 6' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__state[data-state='wait'] .nexo-mcp-map__ico {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.2' fill='%23fff' stroke='%23475569' stroke-width='1.6'/%3E%3Cpath d='M5 8h6' stroke='%23475569' stroke-width='1.8'/%3E%3C/svg%3E");
+}
+
+.nexo-mcp-map__hint {
+	margin-top: 4px;
+	color: var(--nexo-muted-fg);
+	font-size: 12px;
+}
+
+/* Líneas decorativas entre nodos: la flecha apunta hacia el destino. */
+.nexo-mcp-map__link {
+	position: relative;
+	align-self: center;
+	height: 0;
+	margin: 0;
+	border-top: 2px dashed var(--nexo-primary);
+}
+
+.nexo-mcp-map__link::after {
+	content: '';
+	position: absolute;
+	top: -6px;
+	right: -2px;
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	border-left: 8px solid var(--nexo-primary);
 }
 
 .nexo-mcp-admin .wp-header-end {
@@ -209,19 +313,21 @@
 	flex-wrap: wrap;
 	gap: 2px;
 	margin: 24px 0;
-	padding: 4px;
-	border-radius: var(--nexo-radius-md);
-	background: rgba(0, 0, 0, 0.05);
+	padding: 0;
+	border-bottom: 1px solid var(--nexo-border);
+	background: none;
 }
 
 .nexo-mcp-admin .nexo-mcp-tab {
 	display: inline-flex;
 	align-items: center;
-	padding: 6px 12px;
-	border-radius: 9px;
+	margin-bottom: -1px;
+	padding: 8px 14px;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
 	color: var(--nexo-muted-fg-strong);
-	font-size: 12px;
-	font-weight: 500;
+	font-size: 13px;
+	font-weight: 600;
 	line-height: 1.5;
 	text-decoration: none;
 	white-space: nowrap;
@@ -233,12 +339,13 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-tab[aria-current="page"] {
-	background: var(--nexo-bg);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	border-bottom-color: var(--nexo-primary);
+	background: none;
 	color: var(--nexo-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-tab:focus-visible {
+	border-radius: var(--nexo-radius-md);
 	box-shadow: var(--nexo-ring);
 }
 
@@ -311,13 +418,13 @@
 	gap: 6px;
 	padding: 2px 8px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
+	border-radius: 4px;
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-muted-fg);
 	font-family: var(--nexo-font);
 	font-size: 11px;
 	font-style: normal;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.5;
 	white-space: nowrap;
 }
@@ -377,7 +484,7 @@
 	box-shadow: none;
 	color: var(--nexo-fg);
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.4;
 	text-align: center;
 	text-decoration: none;
@@ -411,8 +518,8 @@
 .nexo-mcp-secret-dialog .button.button-primary,
 .nexo-mcp-secret-dialog .button.button-primary:focus,
 .nexo-mcp-secret-dialog .button.button-primary:active {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-fg);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary);
 	color: #fff;
 }
 
@@ -424,13 +531,18 @@
 	color: var(--nexo-err-text);
 }
 
-/* El hover degradado Nexo del diseño, en tonos que mantienen el contraste AA. */
+/* Hover: el secundario se tiñe de teal claro; el primario, de teal oscuro (AA). */
 .nexo-mcp-admin .button:hover,
+.nexo-mcp-secret-dialog .button:hover {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-fg);
+}
+
 .nexo-mcp-admin .button.button-primary:hover,
-.nexo-mcp-secret-dialog .button:hover,
 .nexo-mcp-secret-dialog .button.button-primary:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
+	border-color: var(--nexo-primary-hover);
+	background: var(--nexo-primary-hover);
 	color: #fff;
 }
 
@@ -886,13 +998,13 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band .button:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
-	color: #fff;
+	border-color: var(--nexo-accent-lt);
+	background: var(--nexo-accent-lt);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band .button:focus-visible {
-	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px #fff;
+	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px var(--nexo-accent);
 }
 
 /* Codex: la banda lleva pasos y el comando del puente. */
@@ -1151,7 +1263,7 @@
 	margin: 0;
 	padding: 2px 8px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
+	border-radius: 4px;
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-muted-fg);
 	font-family: var(--nexo-font);
@@ -1235,8 +1347,8 @@
 	width: 44px;
 	height: 24px;
 	flex: none;
-	border-radius: 999px;
-	background: #e0e0e0;
+	border-radius: 4px;
+	background: #64748b;
 	transition: background-color 0.2s ease;
 }
 
@@ -1246,15 +1358,15 @@
 	left: 2px;
 	width: 20px;
 	height: 20px;
-	border-radius: 50%;
+	border-radius: 2px;
 	background: #fff;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+	box-shadow: none;
 	content: "";
 	transition: transform 0.2s ease;
 }
 
 .nexo-mcp-toggle input:checked + i {
-	background: var(--nexo-fg);
+	background: var(--nexo-primary);
 }
 
 .nexo-mcp-toggle input:checked + i::after {
@@ -1323,25 +1435,25 @@
 .nexo-mcp-admin input[type="url"]:focus,
 .nexo-mcp-admin input[type="email"]:focus,
 .nexo-mcp-admin textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 	outline: none;
 }
 
 .nexo-mcp-admin input::placeholder,
 .nexo-mcp-admin textarea::placeholder {
-	color: #9a9a9a;
+	color: #64748b;
 }
 
 /* Radios nativos de WordPress, recoloreados. */
 .nexo-mcp-admin input[type="radio"]:checked::before {
-	background-color: var(--nexo-fg);
+	background-color: var(--nexo-primary);
 }
 
 .nexo-mcp-admin input[type="radio"]:focus,
 .nexo-mcp-admin input[type="checkbox"]:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 /* ---------------------------------------- Sitio y cupos / Actualizaciones */
@@ -1648,7 +1760,7 @@
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
 	background: var(--nexo-bg);
-	box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
 	color: var(--nexo-fg);
 	font-size: 13px;
 	font-weight: 500;
@@ -1667,7 +1779,7 @@
 
 .nexo-mcp-admin .nexo-mcp-credit {
 	margin: 32px 0 0;
-	color: #8a8a8a;
+	color: #64748b;
 	font-size: 12px;
 	text-align: center;
 }
@@ -1692,7 +1804,7 @@
 	border: 0;
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 	font-family: var(--nexo-font);
 	font-size: 14px;
@@ -1785,8 +1897,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-secret-field input:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-secret-visibility {
@@ -1911,8 +2023,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-setup textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-setup .nexo-mcp-setup__note {
@@ -1937,7 +2049,7 @@
 	border-top: 4px solid var(--nexo-err);
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 }
 
@@ -2046,7 +2158,7 @@
 	bottom: 0;
 	left: 0;
 	height: 4px;
-	background: var(--nexo-gradient);
+	background: var(--nexo-accent);
 	content: "";
 }
 
@@ -2195,6 +2307,29 @@
 /* ------------------------------------------------------------ Responsive */
 
 @media (max-width: 1100px) {
+	.nexo-mcp-map__diagram {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nexo-mcp-map__link {
+		width: 0;
+		height: 24px;
+		margin: 0 auto;
+		border-top: 0;
+		border-left: 2px dashed var(--nexo-primary);
+	}
+
+	.nexo-mcp-map__link::after {
+		top: auto;
+		right: auto;
+		bottom: -2px;
+		left: -6px;
+		border-top: 8px solid var(--nexo-primary);
+		border-right: 5px solid transparent;
+		border-bottom: 0;
+		border-left: 5px solid transparent;
+	}
+
 	.nexo-mcp-status-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -2217,12 +2352,8 @@
 		margin: 16px 12px 40px 0;
 	}
 
-	.nexo-mcp-header {
-		padding: 24px;
-	}
-
-	.nexo-mcp-header__brand img {
-		height: 28px;
+	.nexo-mcp-map {
+		padding: 20px 16px 24px;
 	}
 
 	.nexo-mcp-tabs {
@@ -2341,10 +2472,6 @@
 	.nexo-mcp-client-grid,
 	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
 		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.nexo-mcp-header__meta {
-		display: none;
 	}
 
 	.nexo-mcp-confirm__actions .button {

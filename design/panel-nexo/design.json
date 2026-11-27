@@ -1,0 +1,48 @@
+{
+ "title": "Panel de Nexo MCP",
+ "brief": "Rediseño del panel de administración de Nexo MCP con identidad propia, distinta de MCP Prisma (tarjetas blancas redondeadas, Inter, botones negros, barra degradada)",
+ "artboards": [
+  {
+   "file": "01-consola-lateral.html",
+   "title": "Consola lateral",
+   "tradeoff": "Navegación clara y densa para uso frecuente; más parecida a un panel de SaaS genérico",
+   "width": 1440,
+   "height": 1500
+  },
+  {
+   "file": "02-mapa-de-conexion.html",
+   "title": "Mapa de conexión",
+   "tradeoff": "Muestra el recorrido de la conexión de un vistazo y es la más distintiva, pero la banda y tres columnas ocupan más espacio y los módulos quedan más apretados.",
+   "width": 1440,
+   "height": 1250
+  },
+  {
+   "file": "03-bitacora-tecnica.html",
+   "title": "Bitácora técnica",
+   "tradeoff": "Muy legible y sobria, con identidad propia lejos de un SaaS; es larga de recorrer y menos inmediata para ver el estado de un golpe.",
+   "width": 1440,
+   "height": 1900
+  },
+  {
+   "file": "04-mapa-claro.html",
+   "title": "Mapa claro",
+   "tradeoff": "Más calmo y cercano al escritorio de WordPress, con módulos legibles en filas; pierde el contraste dramático de la banda oscura y el mapa pesa menos.",
+   "width": 1440,
+   "height": 1350
+  },
+  {
+   "file": "05-mapa-y-pestanas.html",
+   "title": "Mapa compacto con pestañas",
+   "tradeoff": "Da todo el ancho a la tarea y ve los módulos en una tabla densa; el mapa queda reducido a una franja y hay que cambiar de pestaña para ver accesos o actividad.",
+   "width": 1440,
+   "height": 1000
+  },
+  {
+   "file": "06-mapa-navegable.html",
+   "title": "Mapa navegable",
+   "tradeoff": "El mapa sirve de navegación y cada punto explica su detalle; es más interactivo y exige descubrir que los nodos se pulsan, y solo se ve un detalle a la vez.",
+   "width": 1440,
+   "height": 1150
+  }
+ ]
+}

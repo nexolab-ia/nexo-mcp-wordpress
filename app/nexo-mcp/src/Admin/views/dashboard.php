@@ -293,19 +293,118 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 }
 ?>
 <div class="wrap nexo-mcp-admin">
-	<header class="nexo-mcp-header">
-		<h1 class="nexo-mcp-header__brand">
-			<img
-				src="<?php echo esc_url( $images_url . 'logo-nexo.svg' ); ?>"
-				alt="<?php esc_attr_e( 'Nexo MCP', 'nexo-mcp' ); ?>"
-				width="175"
-				height="32"
-			>
-		</h1>
-		<p class="nexo-mcp-header__meta">
-			<span><?php esc_html_e( 'Versión', 'nexo-mcp' ); ?></span>
-			<strong><?php echo esc_html( NEXO_MCP_VERSION ); ?></strong>
-		</p>
+	<?php
+	/*
+	 * Banda del mapa: cómo llega una IA a este sitio, de punta a punta.
+	 *
+	 * Los conteos salen de ConnectionMap; el estado del descubrimiento OAuth
+	 * sólo lo conoce el navegador, así que su texto nace en «Comprobando» y
+	 * admin.js lo completa junto con la tarjeta `.nexo-mcp-discovery`.
+	 * Cada estado va en texto con su icono: nunca sólo por color.
+	 */
+	$connection_map = \NexoDev\NexoMCP\Admin\ConnectionMap::summarize( $settings, $oauth_connections, $is_woocommerce );
+	$map_site       = '' !== $site_host ? $site_host : (string) get_bloginfo( 'name' );
+	$map_ai_ready   = $connection_map['connections'] > 0;
+	$map_risk       = $connection_map['risk_active'];
+
+	if ( $is_local_http ) {
+		$map_https = __( 'HTTP local permitido', 'nexo-mcp' );
+	} elseif ( $is_https ) {
+		$map_https = __( 'HTTPS activo', 'nexo-mcp' );
+	} else {
+		$map_https = __( 'Sin HTTPS', 'nexo-mcp' );
+	}
+	?>
+	<header class="nexo-mcp-map" aria-labelledby="nexo-mcp-map-title">
+		<div class="nexo-mcp-map__top">
+			<div class="nexo-mcp-map__id">
+				<h1 class="nexo-mcp-map__brand" id="nexo-mcp-map-title">
+					<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#0f172a"/><circle cx="24" cy="24" r="3.4" fill="#0f172a"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg>
+					<span><b>nexo</b> <span class="nexo-mcp-map__brand-mark">MCP</span></span>
+				</h1>
+				<p class="nexo-mcp-map__meta">
+					<?php
+					printf(
+						/* translators: 1: dominio del sitio, 2: versión de WordPress, 3: versión de Nexo MCP. */
+						esc_html__( '%1$s · WordPress %2$s · Nexo %3$s', 'nexo-mcp' ),
+						esc_html( $map_site ),
+						esc_html( (string) get_bloginfo( 'version' ) ),
+						esc_html( NEXO_MCP_VERSION )
+					);
+					?>
+				</p>
+			</div>
+			<div class="nexo-mcp-map__actions">
+				<a class="button nexo-mcp-map__action" href="<?php echo esc_url( add_query_arg( 'tab', 'conectar', $panel_url ) ); ?>" data-nexo-tab="conectar"><?php esc_html_e( 'Probar OAuth', 'nexo-mcp' ); ?></a>
+				<a class="button button-primary nexo-mcp-map__action" href="<?php echo esc_url( add_query_arg( 'tab', 'conectar', $panel_url ) ); ?>" data-nexo-tab="conectar"><?php esc_html_e( 'Conectar una IA', 'nexo-mcp' ); ?></a>
+			</div>
+		</div>
+
+		<ol class="nexo-mcp-map__diagram" aria-label="<?php esc_attr_e( 'Recorrido de la conexión', 'nexo-mcp' ); ?>">
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Origen', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'Tu IA', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $map_ai_ready ? 'ok' : 'wait'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php
+					echo esc_html(
+						$map_ai_ready
+							/* translators: %d: número de clientes OAuth autorizados. */
+							? sprintf( _n( '%d cliente autorizado', '%d clientes autorizados', $connection_map['connections'], 'nexo-mcp' ), $connection_map['connections'] )
+							: __( 'Ninguna IA conectada', 'nexo-mcp' )
+					);
+					?>
+				</span>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Autorización', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'OAuth 2.1 · PKCE', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state nexo-mcp-map__discovery" data-nexo-https="<?php echo $is_https ? '1' : '0'; ?>" data-state="<?php echo $is_https ? 'wait' : 'warn'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<span class="nexo-mcp-map__discovery-text"><?php echo esc_html( $is_https ? __( 'Comprobando', 'nexo-mcp' ) : $map_https ); ?></span>
+				</span>
+				<?php if ( $is_https ) : ?>
+					<small class="nexo-mcp-map__hint"><?php echo esc_html( $map_https ); ?></small>
+				<?php else : ?>
+					<small class="nexo-mcp-map__hint"><?php esc_html_e( 'Las conexiones remotas serán bloqueadas.', 'nexo-mcp' ); ?></small>
+				<?php endif; ?>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node nexo-mcp-map__node--hub">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Destino', 'nexo-mcp' ); ?></span>
+				<strong><?php esc_html_e( 'WordPress', 'nexo-mcp' ); ?></strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $is_server_ready ? 'ok' : 'off'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php echo esc_html( $is_server_ready ? __( 'Conector respondiendo', 'nexo-mcp' ) : __( 'Conector inactivo', 'nexo-mcp' ) ); ?>
+				</span>
+			</li>
+			<li class="nexo-mcp-map__link" aria-hidden="true"></li>
+			<li class="nexo-mcp-map__node">
+				<span class="nexo-mcp-map__kind"><?php esc_html_e( 'Alcance', 'nexo-mcp' ); ?></span>
+				<strong>
+					<?php
+					printf(
+						/* translators: 1: módulos activos, 2: módulos disponibles. */
+						esc_html__( 'Módulos activos %1$d/%2$d', 'nexo-mcp' ),
+						(int) $connection_map['modules_active'],
+						(int) $connection_map['modules_total']
+					);
+					?>
+				</strong>
+				<span class="nexo-mcp-map__state" data-state="<?php echo $map_risk > 0 ? 'warn' : 'ok'; ?>">
+					<span class="nexo-mcp-map__ico" aria-hidden="true"></span>
+					<?php
+					echo esc_html(
+						$map_risk > 0
+							/* translators: %d: módulos de riesgo alto que están encendidos. */
+							? sprintf( _n( '%d de riesgo alto activo', '%d de riesgo alto activos', $map_risk, 'nexo-mcp' ), $map_risk )
+							: __( 'Ninguno de riesgo alto', 'nexo-mcp' )
+					);
+					?>
+				</span>
+			</li>
+		</ol>
 	</header>
 
 	<?php

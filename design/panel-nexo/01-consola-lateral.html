@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexo MCP — Consola lateral</title>
+<style>
+  :root {
+    --wp-menu: #1d2327;
+    --ink: #0f172a;
+    --ink-2: #1e293b;
+    --ink-line: #334155;
+    --fg: #0f172a;
+    --fg-soft: #475569;
+    --bg: #f1f5f9;
+    --surface: #ffffff;
+    --line: #e2e8f0;
+    --cyan: #0e7490;
+    --cyan-bright: #22d3ee;
+    --teal: #0f766e;
+    --indigo: #4f46e5;
+    --ok: #047857; --ok-bg: #ecfdf5;
+    --warn: #b45309; --warn-bg: #fffbeb;
+    --err: #b91c1c; --err-bg: #fef2f2;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --r: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 var(--sans); color: var(--fg); background: var(--bg); }
+  a { color: var(--cyan); }
+  :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+  .wpbar { height: 32px; background: var(--wp-menu); color: #c3c4c7; font-size: 13px; display: flex; align-items: center; padding: 0 12px; gap: 16px; }
+  .shell { display: grid; grid-template-columns: 160px 232px 1fr; min-height: calc(100vh - 32px); }
+  .wpmenu { background: var(--wp-menu); color: #f0f0f1; padding: 8px 0; font-size: 13px; }
+  .wpmenu a { display: block; color: #f0f0f1; text-decoration: none; padding: 7px 12px; }
+  .wpmenu a[aria-current] { background: #2271b1; }
+
+  /* Nexo's own side navigation */
+  .side { background: var(--ink); color: #cbd5e1; padding: 20px 14px; display: flex; flex-direction: column; gap: 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -.2px; }
+  .brand small { font-weight: 400; color: #94a3b8; letter-spacing: .4px; }
+  .site { background: var(--ink-2); border: 1px solid var(--ink-line); border-radius: var(--r); padding: 10px 12px; }
+  .site strong { display: block; color: #f8fafc; font-size: 13px; }
+  .site span { font-size: 12px; color: #94a3b8; }
+  .live { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: #6ee7b7; font-size: 12px; }
+  .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #34d399; }
+  .nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .nav a { display: flex; justify-content: space-between; align-items: center; color: #cbd5e1; text-decoration: none; padding: 8px 10px; border-radius: 6px; }
+  .nav a:hover { background: var(--ink-2); color: #fff; }
+  .nav a[aria-current="page"] { background: var(--ink-2); color: #fff; box-shadow: inset 3px 0 0 var(--cyan-bright); }
+  .nav .count { font: 12px var(--mono); color: #94a3b8; }
+  .side-foot { margin-top: auto; font-size: 12px; color: #94a3b8; border-top: 1px solid var(--ink-line); padding-top: 12px; }
+
+  main { padding: 28px 32px 48px; max-width: 1080px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -.3px; }
+  .sub { margin: 4px 0 0; color: var(--fg-soft); }
+  .btn { font: 600 13px var(--sans); border-radius: 6px; padding: 8px 14px; border: 1px solid transparent; cursor: pointer; }
+  .btn-primary { background: var(--ink); color: #fff; }
+  .btn-primary:hover { background: var(--ink-2); }
+  .btn-ghost { background: var(--surface); color: var(--fg); border-color: var(--line); }
+  .btn-ghost:hover { border-color: #94a3b8; }
+  .btn-danger { background: transparent; color: var(--err); border-color: #fecaca; }
+
+  .checks { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 24px; }
+  .check { padding: 14px 16px; border-left: 1px solid var(--line); }
+  .check:first-child { border-left: 0; }
+  .check dt { font-size: 12px; color: var(--fg-soft); }
+  .check dd { margin: 2px 0 0; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .ico { width: 16px; height: 16px; flex: none; }
+
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: 24px; }
+  .sec-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  h2 { margin: 0; font-size: 15px; }
+  .sec-head p { margin: 2px 0 0; color: var(--fg-soft); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font: 600 12px var(--sans); color: var(--fg-soft); padding: 10px 18px; background: #f8fafc; border-bottom: 1px solid var(--line); }
+  td { padding: 12px 18px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  .client { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .avatar { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: #fff; font: 700 12px var(--sans); }
+  .scope { font: 12px var(--mono); color: var(--ink-2); background: #f1f5f9; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin: 0 4px 4px 0; display: inline-block; }
+  .scope.risky { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
+  .muted { color: var(--fg-soft); font-size: 13px; }
+
+  .group-title { font: 600 12px var(--sans); color: var(--fg-soft); text-transform: uppercase; letter-spacing: .6px; padding: 14px 18px 6px; }
+  .mod { display: grid; grid-template-columns: 1fr 150px 108px; align-items: center; gap: 16px; padding: 10px 18px; border-top: 1px solid var(--line); }
+  .mod:first-of-type { border-top: 0; }
+  .mod strong { display: block; font-size: 14px; }
+  .mod span.desc { color: var(--fg-soft); font-size: 13px; }
+  .mod code { font: 12px var(--mono); color: var(--fg-soft); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 4px; font: 600 13px var(--sans); color: var(--fg); cursor: pointer; border-radius: 6px; }
+  .track { width: 34px; height: 20px; border-radius: 999px; background: #cbd5e1; position: relative; transition: background .15s; }
+  .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .switch[aria-checked="true"] .track { background: var(--teal); }
+  .switch[aria-checked="true"] .track::after { transform: translateX(14px); }
+  .tag { font: 600 11px var(--sans); padding: 2px 8px; border-radius: 999px; }
+  .tag-warn { color: var(--warn); background: var(--warn-bg); }
+  .tag-info { color: var(--cyan); background: #ecfeff; }
+
+  .log td { font-size: 13px; padding: 9px 18px; }
+  .log .t { font-family: var(--mono); color: var(--fg-soft); width: 70px; }
+  .log .tool { font-family: var(--mono); }
+  .res-ok { color: var(--ok); font-weight: 600; }
+  .res-err { color: var(--err); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 1fr; }
+    .wpmenu { display: none; }
+    .side { flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .nav { grid-auto-flow: column; overflow-x: auto; }
+    .side-foot, .site { display: none; }
+    .checks { grid-template-columns: repeat(2, 1fr); }
+    .check:nth-child(3) { border-left: 0; }
+    .mod { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wpbar" aria-hidden="true">Ferretería Los Andes · 3 comentarios · + Nuevo</div>
+<div class="shell">
+  <nav class="wpmenu" aria-label="Menú de WordPress">
+    <a href="#">Escritorio</a><a href="#">Entradas</a><a href="#">Páginas</a><a href="#">WooCommerce</a><a href="#">Apariencia</a><a href="#">Plugins</a><a href="#" aria-current="page">Nexo MCP</a><a href="#">Ajustes</a>
+  </nav>
+
+  <aside class="side" aria-label="Secciones de Nexo MCP">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#fff"/><circle cx="24" cy="24" r="3.4" fill="#fff"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg>
+      <span>nexo <small>MCP</small></span>
+    </div>
+    <div class="site">
+      <strong>tienda-losandes.cl</strong>
+      <span>WordPress 6.9.4 · Nexo 1.13.0</span>
+      <div class="live">Conector respondiendo</div>
+    </div>
+    <ul class="nav">
+      <li><a href="#" aria-current="page">Resumen</a></li>
+      <li><a href="#">Conectar una IA</a></li>
+      <li><a href="#">Accesos <span class="count">3</span></a></li>
+      <li><a href="#">Módulos <span class="count">9/17</span></a></li>
+      <li><a href="#">Actividad</a></li>
+      <li><a href="#">Licencia y cupos</a></li>
+      <li><a href="#">Reportar un problema</a></li>
+    </ul>
+    <div class="side-foot">Endpoint<br><code style="color:#e2e8f0;font-size:11px">/wp-json/nexo-mcp/v1/mcp</code></div>
+  </aside>
+
+  <main>
+    <div class="head">
+      <div>
+        <h1>Resumen</h1>
+        <p class="sub">Qué IA tiene acceso a este sitio, qué puede hacer y qué hizo hoy.</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" type="button">Probar OAuth</button>
+        <button class="btn btn-primary" type="button">Conectar una IA</button>
+      </div>
+    </div>
+
+    <dl class="checks" aria-label="Estado del conector">
+      <div class="check"><dt>Conector</dt><dd><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#047857"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Activo</dd></div>
+      <div class="check"><dt>HTTPS</dt><dd><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#047857"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Certificado válido</dd></div>
+      <div class="check"><dt>Descubrimiento OAuth</dt><dd><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#047857"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Las dos direcciones responden</dd></div>
+      <div class="check"><dt>Actualizaciones</dt><dd><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="#047857"/><path d="M4.5 8.2 7 10.5l4.5-5" stroke="#fff" stroke-width="1.8" fill="none"/></svg>Al día (1.13.0)</dd></div>
+    </dl>
+
+    <section aria-labelledby="acc">
+      <div class="sec-head">
+        <div><h2 id="acc">Accesos vigentes</h2><p>Clientes autorizados por OAuth. Revocar corta el acceso en la siguiente petición.</p></div>
+      </div>
+      <table>
+        <thead><tr><th scope="col">Cliente</th><th scope="col">Puede</th><th scope="col">Último uso</th><th scope="col"><span class="sr" style="position:absolute;left:-9999px">Acciones</span></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="client"><span class="avatar" style="background:#b45309">C</span>Claude Desktop<span class="muted" style="font-weight:400">· María Pérez</span></div></td>
+            <td><span class="scope">read</span><span class="scope">content</span><span class="scope">seo</span><span class="scope">divi_library</span></td>
+            <td class="muted">hace 12 min</td>
+            <td style="text-align:right"><button class="btn btn-ghost" type="button">Editar alcances</button> <button class="btn btn-danger" type="button">Revocar</button></td>
+          </tr>
+          <tr>
+            <td><div class="client"><span class="avatar" style="background:#334155">C</span>Cursor<span class="muted" style="font-weight:400">· Tomás Rivas</span></div></td>
+            <td><span class="scope">read</span><span class="scope">write</span><span class="scope">builders</span><span class="scope risky">publish</span></td>
+            <td class="muted">hace 5 h</td>
+            <td style="text-align:right"><button class="btn btn-ghost" type="button">Editar alcances</button> <button class="btn btn-danger" type="button">Revocar</button></td>
+          </tr>
+          <tr>
+            <td><div class="client"><span class="avatar" style="background:#0f766e">C</span>Codex<span class="muted" style="font-weight:400">· María Pérez</span></div></td>
+            <td><span class="scope">read</span></td>
+            <td class="muted">hace 2 días</td>
+            <td style="text-align:right"><button class="btn btn-ghost" type="button">Editar alcances</button> <button class="btn btn-danger" type="button">Revocar</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="mod">
+      <div class="sec-head">
+        <div><h2 id="mod">Módulos</h2><p>Lo que ninguna IA puede usar mientras esté apagado, aunque tenga el alcance.</p></div>
+        <span class="muted">9 de 17 activos</span>
+      </div>
+      <div class="group-title">Sitio</div>
+      <div class="mod"><div><strong>Contenido</strong><span class="desc">Entradas, páginas y medios.</span></div><code>mcp:content</code><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></div>
+      <div class="mod"><div><strong>SEO</strong><span class="desc">Títulos y descripciones de Yoast o Rank Math.</span></div><code>mcp:seo</code><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></div>
+      <div class="mod"><div><strong>Comercio <span class="tag tag-info">WooCommerce</span></strong><span class="desc">Productos, precios y stock.</span></div><code>mcp:commerce</code><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></div>
+      <div class="group-title">Divi 5</div>
+      <div class="mod"><div><strong>Theme Builder <span class="tag tag-warn">Cambia todo el sitio</span></strong><span class="desc">Plantillas de encabezado, cuerpo y pie.</span></div><code>mcp:divi_theme_builder</code><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></div>
+      <div class="mod"><div><strong>Biblioteca</strong><span class="desc">Ítems guardados y globales, con confirmación.</span></div><code>mcp:divi_library</code><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></div>
+      <div class="mod"><div><strong>Presets de módulos</strong><span class="desc">Estilos reutilizables de cada módulo.</span></div><code>mcp:divi_presets</code><button class="switch" role="switch" aria-checked="true" type="button"><span class="track"></span>Activo</button></div>
+      <div class="group-title">Riesgo alto</div>
+      <div class="mod"><div><strong>Acciones destructivas</strong><span class="desc">Borrar contenido y deshacer cambios del sistema de diseño.</span></div><code>mcp:destructive</code><button class="switch" role="switch" aria-checked="false" type="button"><span class="track"></span>Apagado</button></div>
+      <div style="padding:10px 18px;border-top:1px solid var(--line)"><a href="#">Ver los 17 módulos y sus límites</a></div>
+    </section>
+
+    <section aria-labelledby="act">
+      <div class="sec-head"><div><h2 id="act">Actividad de hoy</h2><p>Últimas llamadas a herramientas, de la más reciente a la más antigua.</p></div><a href="#">Ver todo</a></div>
+      <table class="log">
+        <tbody>
+          <tr><td class="t">10:42</td><td>Claude Desktop</td><td class="tool">edit-divi-module</td><td>Inicio → copia de trabajo</td><td class="res-ok">OK</td></tr>
+          <tr><td class="t">10:39</td><td>Claude Desktop</td><td class="tool">get-page-structure</td><td>Inicio</td><td class="res-ok">OK</td></tr>
+          <tr><td class="t">09:15</td><td>Cursor</td><td class="tool">set-divi-template</td><td>Falta confirm_site_wide</td><td class="res-err">Rechazada</td></tr>
+          <tr><td class="t">09:02</td><td>Cursor</td><td class="tool">insert-divi-library-item</td><td>Contacto · ítem global «Banner envíos»</td><td class="res-ok">OK</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</div>
+</body>
+</html>
