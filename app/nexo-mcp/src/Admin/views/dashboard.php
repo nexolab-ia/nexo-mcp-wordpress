@@ -1011,391 +1011,121 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 					</div>
 				</div>
 
-				<div class="nexo-mcp-toggles">
-					<label class="nexo-mcp-toggle">
+				<?php
+				/*
+				 * Cada ajuste es una fila: nombre y descripción, alcance en mono,
+				 * interruptor y su estado en texto («Activo» / «Apagado», que
+				 * cambia con la casilla vía CSS). La casilla conserva `name`,
+				 * `value` y los `data-nexo-*` de confirmación: admin.js los lee.
+				 */
+				$render_toggle = static function ( string $key, bool $is_on, string $label, string $description, array $scopes, string $tag ) use ( $sensitive_options, $print_sensitive ): void {
+					?>
+					<label class="nexo-mcp-toggle<?php echo '' !== $tag ? ' nexo-mcp-toggle--sensitive' : ''; ?>">
 						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Servidor MCP', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Habilita el endpoint autenticado del conector.', 'nexo-mcp' ); ?></small>
+							<strong><?php echo esc_html( $label ); ?><?php echo '' !== $tag ? ' <em class="nexo-mcp-tag nexo-mcp-tag--sensitive">' . esc_html( $tag ) . '</em>' : ''; ?></strong>
+							<small><?php echo esc_html( $description ); ?></small>
+						</span>
+						<span class="nexo-mcp-toggle__scopes">
+							<?php foreach ( $scopes as $toggle_scope ) : ?>
+								<code><?php echo esc_html( $toggle_scope ); ?></code>
+							<?php endforeach; ?>
 						</span>
 						<input
 							type="checkbox"
-							name="nexo_mcp_settings[server_enabled]"
+							name="nexo_mcp_settings[<?php echo esc_attr( $key ); ?>]"
 							value="1"
-							<?php checked( ! empty( $settings['server_enabled'] ) ); ?>
+							<?php
+							if ( isset( $sensitive_options[ $key ] ) ) {
+								$print_sensitive( $key );
+							}
+							?>
+							<?php checked( $is_on ); ?>
 						>
 						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Herramientas WordPress', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Páginas, artículos, medios y categorías.', 'nexo-mcp' ); ?></small>
+						<span class="nexo-mcp-toggle__state" aria-hidden="true">
+							<span class="nexo-mcp-toggle__on"><?php esc_html_e( 'Activo', 'nexo-mcp' ); ?></span>
+							<span class="nexo-mcp-toggle__off"><?php esc_html_e( 'Apagado', 'nexo-mcp' ); ?></span>
 						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[wordpress_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['wordpress_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
 					</label>
+					<?php
+				};
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Contenido avanzado', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Medios, taxonomías y revisiones con permisos editoriales.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[content_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['content_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				$module_descriptions = array(
+					'wordpress_tools_enabled'          => __( 'Páginas, artículos, medios y categorías.', 'nexo-mcp' ),
+					'content_tools_enabled'            => __( 'Medios, taxonomías y revisiones con permisos editoriales.', 'nexo-mcp' ),
+					'seo_tools_enabled'                => __( 'Metadatos, Open Graph, Schema, sitemap y robots.', 'nexo-mcp' ),
+					'appearance_tools_enabled'         => __( 'Identidad, CSS adicional y menús sin editar archivos del tema.', 'nexo-mcp' ),
+					'woocommerce_tools_enabled'        => __( 'Productos simples, variables, precios, stock e imágenes.', 'nexo-mcp' ),
+					'builders_tools_enabled'           => __( 'Textos, enlaces e imágenes en páginas de Elementor, Divi y WPBakery, con respaldo antes de cada cambio.', 'nexo-mcp' ),
+					'design_system_tools_enabled'      => __( 'Cambia clases, variables, colores y tipografía de todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'builders_dynamic_enabled'         => __( 'Asocia datos del sitio (título, fecha, imagen destacada…) a textos e imágenes de Elementor 4. Requiere Elementor Pro y el módulo de constructores.', 'nexo-mcp' ),
+					'builders_components_enabled'      => __( 'Crea componentes reutilizables de Elementor 4 (en borrador). Requiere Elementor Pro con licencia activa y el módulo de constructores.', 'nexo-mcp' ),
+					'divi_design_tools_enabled'        => __( 'Cambia paleta, variables, fuentes y tipografía globales de Divi 5 en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'divi_presets_tools_enabled'       => __( 'Crea, cambia y borra los presets de módulos y de grupos de opciones de Divi 5, y fija el predeterminado, en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ),
+					'divi_dynamic_tools_enabled'       => __( 'Pone contenido dinámico y bucles de consulta en las páginas de Divi 5 (copia de trabajo, con respaldo): muestra datos del sitio a cualquier visitante.', 'nexo-mcp' ),
+					'divi_conditions_tools_enabled'    => __( 'Pone condiciones para mostrar u ocultar módulos de Divi 5 (copia de trabajo, con respaldo): decide qué ve cada visitante.', 'nexo-mcp' ),
+					'divi_theme_builder_tools_enabled' => __( 'Crea y cambia plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo, 404): decide qué ve todo el sitio.', 'nexo-mcp' ),
+					'divi_library_tools_enabled'       => __( 'Guarda, cambia y reutiliza elementos de la biblioteca de Divi 5: un elemento global cambia todas las páginas que lo usan.', 'nexo-mcp' ),
+					'maintenance_tools_enabled'        => __( 'Actualiza, instala, activa o desactiva con aprobación temporal.', 'nexo-mcp' ),
+					'extension_deletion_enabled'       => __( 'Permite borrar plugins y temas desactivados. No se puede deshacer.', 'nexo-mcp' ),
+					'publishing_enabled'               => __( 'Permite cambiar estados y publicar cuando el usuario tiene capacidad.', 'nexo-mcp' ),
+					'destructive_enabled'              => __( 'Habilita eliminaciones explícitas. Déjalo apagado si no es imprescindible.', 'nexo-mcp' ),
+				);
+				?>
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'SEO técnico', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Metadatos, Open Graph, Schema, sitemap y robots.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[seo_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['seo_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<p class="nexo-mcp-modules-lead"><?php esc_html_e( 'Apagado = ninguna IA lo usa, aunque tenga el alcance. Los módulos con la etiqueta «Riesgo alto» piden una confirmación al encenderse.', 'nexo-mcp' ); ?></p>
 
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Apariencia global', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Identidad, CSS adicional y menús sin editar archivos del tema.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[appearance_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['appearance_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Constructores visuales', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Textos, enlaces e imágenes en páginas de Elementor, Divi y WPBakery, con respaldo antes de cada cambio.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_tools_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['builders_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Sistema de diseño de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cambia clases, variables, colores y tipografía de todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[design_system_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'design_system_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['design_system_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Datos dinámicos de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Asocia datos del sitio (título, fecha, imagen destacada…) a textos e imágenes de Elementor 4. Requiere Elementor Pro y el módulo de constructores.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_dynamic_enabled]"
-							value="1"
-							<?php $print_sensitive( 'builders_dynamic_enabled' ); ?>
-							<?php checked( ! empty( $settings['builders_dynamic_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Componentes de Elementor', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea componentes reutilizables de Elementor 4 (en borrador). Requiere Elementor Pro con licencia activa y el módulo de constructores.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[builders_components_enabled]"
-							value="1"
-							<?php $print_sensitive( 'builders_components_enabled' ); ?>
-							<?php checked( ! empty( $settings['builders_components_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Diseño global de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cambia paleta, variables, fuentes y tipografía globales de Divi 5 en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_design_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_design_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_design_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Presets de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea, cambia y borra los presets de módulos y de grupos de opciones de Divi 5, y fija el predeterminado, en todo el sitio en vivo, con respaldo y deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_presets_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_presets_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_presets_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Contenido dinámico de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Pone contenido dinámico y bucles de consulta en las páginas de Divi 5 (copia de trabajo, con respaldo): muestra datos del sitio a cualquier visitante.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_dynamic_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_dynamic_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_dynamic_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Condiciones de visualización de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Pone condiciones para mostrar u ocultar módulos de Divi 5 (copia de trabajo, con respaldo): decide qué ve cada visitante.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_conditions_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_conditions_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_conditions_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Theme Builder de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Crea y cambia plantillas del Theme Builder de Divi 5 y sus layouts (encabezado, pie, cuerpo, archivo, 404): decide qué ve todo el sitio.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_theme_builder_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_theme_builder_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_theme_builder_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Biblioteca de Divi', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Guarda, cambia y reutiliza elementos de la biblioteca de Divi 5: un elemento global cambia todas las páginas que lo usan.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[divi_library_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'divi_library_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['divi_library_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Mantenimiento de plugins', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Actualiza, instala, activa o desactiva con aprobación temporal.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[maintenance_tools_enabled]"
-							value="1"
-							<?php $print_sensitive( 'maintenance_tools_enabled' ); ?>
-							<?php checked( ! empty( $settings['maintenance_tools_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Borrar plugins y temas', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Permite borrar plugins y temas desactivados. No se puede deshacer.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[extension_deletion_enabled]"
-							value="1"
-							<?php $print_sensitive( 'extension_deletion_enabled' ); ?>
-							<?php checked( ! empty( $settings['extension_deletion_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<?php if ( $is_woocommerce ) : ?>
-						<label class="nexo-mcp-toggle">
-							<span class="nexo-mcp-toggle__text">
-								<strong><?php esc_html_e( 'Herramientas WooCommerce', 'nexo-mcp' ); ?></strong>
-								<small><?php esc_html_e( 'Productos simples, variables, precios, stock e imágenes.', 'nexo-mcp' ); ?></small>
-							</span>
-							<input
-								type="checkbox"
-								name="nexo_mcp_settings[woocommerce_tools_enabled]"
-								value="1"
-								<?php checked( ! empty( $settings['woocommerce_tools_enabled'] ) ); ?>
-							>
-							<i aria-hidden="true"></i>
-						</label>
+				<?php foreach ( \NexoDev\NexoMCP\Admin\ConnectionMap::module_groups( $is_woocommerce ) as $modules_group_label => $modules_group ) : ?>
+					<?php if ( array() === $modules_group ) : ?>
+						<?php continue; ?>
 					<?php endif; ?>
+					<section class="nexo-mcp-modset">
+						<h3><?php echo esc_html( $modules_group_label ); ?></h3>
+						<div class="nexo-mcp-toggles">
+							<?php foreach ( $modules_group as $group_module ) : ?>
+								<?php
+								$render_toggle(
+									$group_module['key'],
+									! empty( $settings[ $group_module['key'] ] ),
+									$group_module['label'],
+									$module_descriptions[ $group_module['key'] ] ?? '',
+									$group_module['scopes'],
+									$group_module['risk'] ? __( 'Riesgo alto', 'nexo-mcp' ) : ''
+								);
+								?>
+							<?php endforeach; ?>
+						</div>
+					</section>
+				<?php endforeach; ?>
 
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Modo sólo lectura', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Impide cualquier creación o modificación.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[read_only]"
-							value="1"
-							<?php $print_sensitive( 'read_only' ); ?>
-							<?php checked( ! empty( $settings['read_only'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<section class="nexo-mcp-modset">
+					<h3><?php esc_html_e( 'Servidor y política', 'nexo-mcp' ); ?></h3>
+					<div class="nexo-mcp-toggles">
+						<?php
+						$render_toggle( 'server_enabled', ! empty( $settings['server_enabled'] ), __( 'Servidor MCP', 'nexo-mcp' ), __( 'Habilita el endpoint autenticado del conector.', 'nexo-mcp' ), array(), '' );
+						$render_toggle( 'read_only', ! empty( $settings['read_only'] ), __( 'Modo sólo lectura', 'nexo-mcp' ), __( 'Impide cualquier creación o modificación.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'drafts_only', ! empty( $settings['drafts_only'] ), __( 'Crear sólo borradores', 'nexo-mcp' ), __( 'La política prevalecerá sobre los permisos del usuario.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'working_copy_default', ! empty( $settings['working_copy_default'] ), __( 'Editar lo publicado en una copia de trabajo', 'nexo-mcp' ), __( 'Los cambios a páginas y entradas publicadas van primero a un borrador enlazado. Publícalo o descártalo desde la lista de páginas o entradas.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'enforce_connection_scopes', ! empty( $settings['enforce_connection_scopes'] ), __( 'Respetar los alcances de cada conexión', 'nexo-mcp' ), __( 'Cada conexión OAuth sólo puede usar los permisos que se le concedieron (editables en Accesos). Los módulos del panel siguen siendo el límite superior.', 'nexo-mcp' ), array(), __( 'Sensible', 'nexo-mcp' ) );
+						$render_toggle( 'cache_purge_enabled', ! empty( $settings['cache_purge_enabled'] ), __( 'Purgar la caché al escribir', 'nexo-mcp' ), __( 'Sin esto un cambio se guarda pero el visitante sigue viendo lo anterior. Purga sólo la página afectada, salvo en cambios globales.', 'nexo-mcp' ), array(), '' );
+						?>
+					</div>
+				</section>
 
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Crear sólo borradores', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'La política prevalecerá sobre los permisos del usuario.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[drafts_only]"
-							value="1"
-							<?php $print_sensitive( 'drafts_only' ); ?>
-							<?php checked( ! empty( $settings['drafts_only'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Editar lo publicado en una copia de trabajo', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Los cambios a páginas y entradas publicadas van primero a un borrador enlazado. Publícalo o descártalo desde la lista de páginas o entradas.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[working_copy_default]"
-							value="1"
-							<?php $print_sensitive( 'working_copy_default' ); ?>
-							<?php checked( ! empty( $settings['working_copy_default'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Respetar los alcances de cada conexión', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Cada conexión OAuth sólo puede usar los permisos que se le concedieron (editables en Accesos). Los módulos del panel siguen siendo el límite superior.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[enforce_connection_scopes]"
-							value="1"
-							<?php $print_sensitive( 'enforce_connection_scopes' ); ?>
-							<?php checked( ! empty( $settings['enforce_connection_scopes'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Purgar la caché al escribir', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Sin esto un cambio se guarda pero el visitante sigue viendo lo anterior. Purga sólo la página afectada, salvo en cambios globales.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[cache_purge_enabled]"
-							value="1"
-							<?php checked( ! empty( $settings['cache_purge_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Publicación remota', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Permite cambiar estados y publicar cuando el usuario tiene capacidad.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[publishing_enabled]"
-							value="1"
-							<?php $print_sensitive( 'publishing_enabled' ); ?>
-							<?php checked( ! empty( $settings['publishing_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-
-					<label class="nexo-mcp-toggle nexo-mcp-toggle--sensitive">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'Acciones destructivas', 'nexo-mcp' ); ?> <em class="nexo-mcp-tag nexo-mcp-tag--sensitive"><?php esc_html_e( 'Sensible', 'nexo-mcp' ); ?></em></strong>
-							<small><?php esc_html_e( 'Habilita eliminaciones explícitas. Déjalo apagado si no es imprescindible.', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[destructive_enabled]"
-							value="1"
-							<?php $print_sensitive( 'destructive_enabled' ); ?>
-							<?php checked( ! empty( $settings['destructive_enabled'] ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
-				</div>
-
-				<div class="nexo-mcp-proxy">
-					<label class="nexo-mcp-toggle">
-						<span class="nexo-mcp-toggle__text">
-							<strong><?php esc_html_e( 'El sitio se publica por un túnel o proxy', 'nexo-mcp' ); ?></strong>
-							<small><?php esc_html_e( 'Actívalo si tus clientes de IA llegan por una dirección distinta a la del sitio, como un túnel de desarrollo. Sin esto la autorización se rechaza con «invalid_target».', 'nexo-mcp' ); ?></small>
-						</span>
-						<input
-							type="checkbox"
-							name="nexo_mcp_settings[proxy_enabled]"
-							value="1"
-							<?php checked( '' !== (string) ( $settings['proxy_resource'] ?? '' ) ); ?>
-						>
-						<i aria-hidden="true"></i>
-					</label>
+				<section class="nexo-mcp-modset nexo-mcp-proxy">
+					<h3><?php esc_html_e( 'Túnel o proxy', 'nexo-mcp' ); ?></h3>
+					<div class="nexo-mcp-toggles">
+						<?php
+						$render_toggle(
+							'proxy_enabled',
+							'' !== (string) ( $settings['proxy_resource'] ?? '' ),
+							__( 'El sitio se publica por un túnel o proxy', 'nexo-mcp' ),
+							__( 'Actívalo si tus clientes de IA llegan por una dirección distinta a la del sitio, como un túnel de desarrollo. Sin esto la autorización se rechaza con «invalid_target».', 'nexo-mcp' ),
+							array(),
+							''
+						);
+						?>
+					</div>
 
 					<p class="nexo-mcp-proxy-field">
 						<label for="nexo-mcp-proxy-resource">
@@ -1420,7 +1150,7 @@ if ( isset( $panel_tabs[ $requested_tab ] ) ) {
 							?>
 						</small>
 					</p>
-				</div>
+				</section>
 
 				<?php submit_button( __( 'Guardar configuración', 'nexo-mcp' ), 'primary', 'submit', false ); ?>
 			</form>
