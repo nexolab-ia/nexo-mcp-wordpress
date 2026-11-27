@@ -3,52 +3,49 @@
  *
  * Todo cuelga de .nexo-mcp-admin (la pantalla) o .nexo-mcp-secret-dialog
  * (el diálogo, que vive fuera del contenedor) para no tocar el resto de
- * wp-admin. Tipografía Inter local: nada se pide a servidores externos.
+ * wp-admin. Tipografía del sistema: nada se pide a servidores externos.
  */
-
-@font-face {
-	font-family: "Inter";
-	font-style: normal;
-	font-weight: 400 600;
-	font-display: swap;
-	src: url("../fonts/inter-latin.woff2") format("woff2");
-}
 
 /* ------------------------------------------------------------------ Tokens */
 
 .nexo-mcp-admin,
 .nexo-mcp-secret-dialog {
-	--nexo-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--nexo-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 	--nexo-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-	--nexo-fg: #121212;
-	--nexo-fg-soft: #3a3a3a;
+	--nexo-fg: #0f172a;
+	--nexo-fg-soft: #334155;
 	--nexo-bg: #fff;
-	--nexo-muted: #f5f5f5;
-	--nexo-muted-soft: #fafafa;
-	--nexo-muted-fg: #6e6e6e;
-	--nexo-muted-fg-strong: #5c5c5c;
-	--nexo-border: #ebebeb;
-	--nexo-input: #d9d9d9;
+	--nexo-muted: #f1f5f9;
+	--nexo-muted-soft: #f8fafc;
+	--nexo-muted-fg: #475569;
+	--nexo-muted-fg-strong: #334155;
+	--nexo-border: #c7d2de;
+	--nexo-input: #64748b;
+	--nexo-primary: #0f766e;
+	--nexo-primary-hover: #115e59;
+	--nexo-primary-soft: #f0fdfa;
+	--nexo-accent: #22d3ee;
+	--nexo-accent-lt: #5eead4;
+	--nexo-focus: #4f46e5;
 	--nexo-ok: #047857;
-	--nexo-ok-dot: #10b981;
-	--nexo-ok-bg: #e7f7f2;
-	--nexo-ok-line: #b7eada;
-	--nexo-warn: #b45309;
-	--nexo-warn-dot: #f59e0b;
-	--nexo-warn-bg: #fef5e7;
-	--nexo-warn-soft: #fffaf3;
-	--nexo-warn-line: #fce2b6;
-	--nexo-err: #dc2626;
+	--nexo-ok-dot: #0f766e;
+	--nexo-ok-bg: #ecfdf5;
+	--nexo-ok-line: #6ee7b7;
+	--nexo-warn: #92400e;
+	--nexo-warn-dot: #d97706;
+	--nexo-warn-bg: #fef3c7;
+	--nexo-warn-soft: #fffbeb;
+	--nexo-warn-line: #d97706;
+	--nexo-err: #b91c1c;
 	--nexo-err-text: #b91c1c;
-	--nexo-err-bg: #fce9e9;
-	--nexo-err-soft: #fdf4f4;
-	--nexo-err-line: #f5bebe;
-	--nexo-radius: 16px;
-	--nexo-radius-md: 12px;
-	--nexo-gradient: linear-gradient(90deg, #22d3ee 0%, #3b82f6 35%, #6366f1 65%, #14b8a6 100%);
-	--nexo-hover: linear-gradient(120deg, #1e3a8a 0%, #4338ca 50%, #0f766e 100%);
-	--nexo-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.08);
-	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #121212;
+	--nexo-err-bg: #fee2e2;
+	--nexo-err-soft: #fef2f2;
+	--nexo-err-line: #fca5a5;
+	--nexo-radius: 8px;
+	--nexo-radius-md: 6px;
+	--nexo-hover: #115e59;
+	--nexo-shadow: none;
+	--nexo-ring: 0 0 0 2px #fff, 0 0 0 4px #4f46e5;
 }
 
 /* -------------------------------------------------------------------- Base */
@@ -145,26 +142,20 @@
 	align-items: flex-end;
 	justify-content: space-between;
 	gap: 24px;
-	padding: 32px;
-	overflow: hidden;
+	padding: 24px 32px;
+	border: 1px solid var(--nexo-border);
+	border-bottom: 3px solid var(--nexo-accent);
 	border-radius: var(--nexo-radius);
-	background: var(--nexo-fg);
-	color: #fff;
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
 }
 
-.nexo-mcp-header::after {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	height: 4px;
-	background: var(--nexo-gradient);
-	content: "";
-}
-
+/* El logotipo es claro: va sobre una pastilla slate dentro de la banda clara. */
 .nexo-mcp-admin .nexo-mcp-header__brand {
 	margin: 0;
-	padding: 0;
+	padding: 10px 14px;
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-fg);
 	line-height: 0;
 }
 
@@ -183,7 +174,7 @@
 	display: block;
 	font-size: 10px;
 	letter-spacing: 0.18em;
-	opacity: 0.6;
+	color: var(--nexo-muted-fg);
 	text-transform: uppercase;
 }
 
@@ -209,19 +200,21 @@
 	flex-wrap: wrap;
 	gap: 2px;
 	margin: 24px 0;
-	padding: 4px;
-	border-radius: var(--nexo-radius-md);
-	background: rgba(0, 0, 0, 0.05);
+	padding: 0;
+	border-bottom: 1px solid var(--nexo-border);
+	background: none;
 }
 
 .nexo-mcp-admin .nexo-mcp-tab {
 	display: inline-flex;
 	align-items: center;
-	padding: 6px 12px;
-	border-radius: 9px;
+	margin-bottom: -1px;
+	padding: 8px 14px;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
 	color: var(--nexo-muted-fg-strong);
-	font-size: 12px;
-	font-weight: 500;
+	font-size: 13px;
+	font-weight: 600;
 	line-height: 1.5;
 	text-decoration: none;
 	white-space: nowrap;
@@ -233,12 +226,13 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-tab[aria-current="page"] {
-	background: var(--nexo-bg);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+	border-bottom-color: var(--nexo-primary);
+	background: none;
 	color: var(--nexo-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-tab:focus-visible {
+	border-radius: var(--nexo-radius-md);
 	box-shadow: var(--nexo-ring);
 }
 
@@ -311,13 +305,13 @@
 	gap: 6px;
 	padding: 2px 8px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
+	border-radius: 4px;
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-muted-fg);
 	font-family: var(--nexo-font);
 	font-size: 11px;
 	font-style: normal;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.5;
 	white-space: nowrap;
 }
@@ -377,7 +371,7 @@
 	box-shadow: none;
 	color: var(--nexo-fg);
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 700;
 	line-height: 1.4;
 	text-align: center;
 	text-decoration: none;
@@ -411,8 +405,8 @@
 .nexo-mcp-secret-dialog .button.button-primary,
 .nexo-mcp-secret-dialog .button.button-primary:focus,
 .nexo-mcp-secret-dialog .button.button-primary:active {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-fg);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary);
 	color: #fff;
 }
 
@@ -424,13 +418,18 @@
 	color: var(--nexo-err-text);
 }
 
-/* El hover degradado Nexo del diseño, en tonos que mantienen el contraste AA. */
+/* Hover: el secundario se tiñe de teal claro; el primario, de teal oscuro (AA). */
 .nexo-mcp-admin .button:hover,
+.nexo-mcp-secret-dialog .button:hover {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-fg);
+}
+
 .nexo-mcp-admin .button.button-primary:hover,
-.nexo-mcp-secret-dialog .button:hover,
 .nexo-mcp-secret-dialog .button.button-primary:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
+	border-color: var(--nexo-primary-hover);
+	background: var(--nexo-primary-hover);
 	color: #fff;
 }
 
@@ -886,13 +885,13 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band .button:hover {
-	border-color: transparent;
-	background: var(--nexo-hover);
-	color: #fff;
+	border-color: var(--nexo-accent-lt);
+	background: var(--nexo-accent-lt);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band .button:focus-visible {
-	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px #fff;
+	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px var(--nexo-accent);
 }
 
 /* Codex: la banda lleva pasos y el comando del puente. */
@@ -1151,7 +1150,7 @@
 	margin: 0;
 	padding: 2px 8px;
 	border: 1px solid var(--nexo-border);
-	border-radius: 999px;
+	border-radius: 4px;
 	background: var(--nexo-muted-soft);
 	color: var(--nexo-muted-fg);
 	font-family: var(--nexo-font);
@@ -1235,8 +1234,8 @@
 	width: 44px;
 	height: 24px;
 	flex: none;
-	border-radius: 999px;
-	background: #e0e0e0;
+	border-radius: 4px;
+	background: #64748b;
 	transition: background-color 0.2s ease;
 }
 
@@ -1246,15 +1245,15 @@
 	left: 2px;
 	width: 20px;
 	height: 20px;
-	border-radius: 50%;
+	border-radius: 2px;
 	background: #fff;
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.1);
+	box-shadow: none;
 	content: "";
 	transition: transform 0.2s ease;
 }
 
 .nexo-mcp-toggle input:checked + i {
-	background: var(--nexo-fg);
+	background: var(--nexo-primary);
 }
 
 .nexo-mcp-toggle input:checked + i::after {
@@ -1323,25 +1322,25 @@
 .nexo-mcp-admin input[type="url"]:focus,
 .nexo-mcp-admin input[type="email"]:focus,
 .nexo-mcp-admin textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 	outline: none;
 }
 
 .nexo-mcp-admin input::placeholder,
 .nexo-mcp-admin textarea::placeholder {
-	color: #9a9a9a;
+	color: #64748b;
 }
 
 /* Radios nativos de WordPress, recoloreados. */
 .nexo-mcp-admin input[type="radio"]:checked::before {
-	background-color: var(--nexo-fg);
+	background-color: var(--nexo-primary);
 }
 
 .nexo-mcp-admin input[type="radio"]:focus,
 .nexo-mcp-admin input[type="checkbox"]:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 /* ---------------------------------------- Sitio y cupos / Actualizaciones */
@@ -1648,7 +1647,7 @@
 	border: 1px solid var(--nexo-border);
 	border-radius: var(--nexo-radius-md);
 	background: var(--nexo-bg);
-	box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
 	color: var(--nexo-fg);
 	font-size: 13px;
 	font-weight: 500;
@@ -1667,7 +1666,7 @@
 
 .nexo-mcp-admin .nexo-mcp-credit {
 	margin: 32px 0 0;
-	color: #8a8a8a;
+	color: #64748b;
 	font-size: 12px;
 	text-align: center;
 }
@@ -1692,7 +1691,7 @@
 	border: 0;
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 	font-family: var(--nexo-font);
 	font-size: 14px;
@@ -1785,8 +1784,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-secret-field input:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-secret-visibility {
@@ -1911,8 +1910,8 @@
 }
 
 .nexo-mcp-secret-dialog .nexo-mcp-setup textarea:focus {
-	border-color: var(--nexo-fg);
-	box-shadow: 0 0 0 1px var(--nexo-fg);
+	border-color: var(--nexo-focus);
+	box-shadow: 0 0 0 1px var(--nexo-focus);
 }
 
 .nexo-mcp-setup .nexo-mcp-setup__note {
@@ -1937,7 +1936,7 @@
 	border-top: 4px solid var(--nexo-err);
 	border-radius: var(--nexo-radius);
 	background: var(--nexo-bg);
-	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
 	color: var(--nexo-fg);
 }
 
@@ -2046,7 +2045,7 @@
 	bottom: 0;
 	left: 0;
 	height: 4px;
-	background: var(--nexo-gradient);
+	background: var(--nexo-accent);
 	content: "";
 }
 
