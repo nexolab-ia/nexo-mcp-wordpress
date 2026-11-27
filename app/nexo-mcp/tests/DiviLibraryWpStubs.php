@@ -23,6 +23,10 @@ if ( ! class_exists( 'WP_Library_Stub_State' ) ) {
 		public static array $known = array();
 		/** @var string Taxonomía cuyo `wp_set_object_terms()` falla (WP_Error). */
 		public static string $fail_terms_in = '';
+		/** @var int Cuántas de las próximas llamadas a `get_terms()` fallan (WP_Error). */
+		public static int $fail_get_terms = 0;
+		/** @var callable|null Se llama dentro de `wp_set_object_terms()`, como otra petición que crea un término a la vez. */
+		public static $during_terms = null;
 		/** @var string Taxonomía cuyo `wp_set_object_terms()` crea los términos y después falla (WP_Error). */
 		public static string $leak_terms_in = '';
 		/** @var string Taxonomía cuyo `wp_set_object_terms()` dice que va bien pero no guarda nada. */
@@ -76,6 +80,10 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 			return new WP_Error( 'invalid_taxonomy', 'Taxonomía inválida.' );
 		}
 
+		if ( null !== WP_Library_Stub_State::$during_terms ) {
+			( WP_Library_Stub_State::$during_terms )();
+		}
+
 		// Un término que un ítem tenía existe aunque el ítem deje de tenerlo.
 		WP_Library_Stub_State::$known = WP_Library_Stub_State::registry();
 		$known                        = WP_Library_Stub_State::$known[ $taxonomy ] ?? array();
@@ -118,9 +126,15 @@ if ( ! function_exists( 'get_terms' ) ) {
 	 *
 	 * @param array<string, mixed> $args Argumentos.
 	 *
-	 * @return array<int, int>
+	 * @return array<int, int>|\WP_Error
 	 */
-	function get_terms( $args = array() ): array {
+	function get_terms( $args = array() ) {
+		if ( WP_Library_Stub_State::$fail_get_terms > 0 ) {
+			--WP_Library_Stub_State::$fail_get_terms;
+
+			return new WP_Error( 'db_error', 'No se pudo leer.' );
+		}
+
 		$taxonomy = (string) ( $args['taxonomy'] ?? '' );
 		$all      = WP_Library_Stub_State::registry()[ $taxonomy ] ?? array();
 
@@ -135,6 +149,32 @@ if ( ! function_exists( 'get_terms' ) ) {
 		}
 
 		return array_values( $all );
+	}
+}
+
+if ( ! function_exists( 'wp_insert_term' ) ) {
+	/**
+	 * Como WordPress: un nombre o slug que ya existe da `term_exists` (con el id en los datos).
+	 *
+	 * @param string $term     Nombre.
+	 * @param string $taxonomy Taxonomía.
+	 *
+	 * @return array{term_id: int}|\WP_Error
+	 */
+	function wp_insert_term( $term, $taxonomy ) {
+		WP_Library_Stub_State::registry();
+		$slug = WP_Library_Stub_State::slug( (string) $term );
+
+		foreach ( WP_Library_Stub_State::registry()[ $taxonomy ] ?? array() as $existing => $id ) {
+			if ( WP_Library_Stub_State::slug( (string) $existing ) === $slug ) {
+				return new WP_Error( 'term_exists', 'El término ya existe.', $id );
+			}
+		}
+
+		$id                                                          = WP_Library_Stub_State::$next_term++;
+		WP_Library_Stub_State::$known[ $taxonomy ][ str_replace( '&', '&amp;', html_entity_decode( (string) $term, ENT_QUOTES ) ) ] = $id;
+
+		return array( 'term_id' => $id );
 	}
 }
 

@@ -318,39 +318,56 @@ final class DiviLibrarySchema {
 	}
 
 	/**
-	 * Ids de todas las categorías de la biblioteca que existen (con o sin ítems).
+	 * Crea las categorías que no existen y devuelve SÓLO los ids de las que creó esta llamada (las que ya existían, con el
+	 * mismo nombre o slug, dan `term_exists` y no cuentan). Así un deshacer sabe qué es suyo ({@see self::drop_categories()}).
 	 *
-	 * @param bool $used_only Sólo las que tienen algún ítem.
+	 * @param array<int, string> $names Nombres pedidos.
 	 *
 	 * @return array<int, int>
 	 */
-	public function category_ids( bool $used_only = false ): array {
+	public function ensure_categories( array $names ): array {
+		$created = array();
+
 		try {
-			$ids = function_exists( 'get_terms' ) ? get_terms(
-				array(
-					'taxonomy'   => 'layout_category',
-					'hide_empty' => $used_only,
-					'fields'     => 'ids',
-				)
-			) : array();
+			foreach ( $names as $name ) {
+				$term = function_exists( 'wp_insert_term' ) ? wp_insert_term( $name, 'layout_category' ) : null;
+
+				if ( is_array( $term ) ) {
+					$created[] = (int) $term['term_id'];
+				}
+			}
 		} catch ( \Throwable $e ) {
-			return array();
+			return $created;
 		}
 
-		return is_array( $ids ) ? array_map( 'intval', $ids ) : array();
+		return $created;
 	}
 
 	/**
-	 * Borra las categorías que se crearon desde `$before` (una foto de {@see self::category_ids()}) y que ningún ítem usa:
-	 * lo que deja una escritura que se deshace.
+	 * Borra categorías creadas por esta llamada ({@see self::ensure_categories()}) que ningún ítem usa. Si no se puede saber
+	 * cuáles se usan no borra ninguna; nunca toca otras.
 	 *
-	 * @param array<int, int> $before Ids que existían antes.
+	 * @param array<int, int> $created Ids que creó esta llamada.
 	 */
-	public function drop_categories_since( array $before ): void {
-		try {
-			$used = $this->category_ids( true );
+	public function drop_categories( array $created ): void {
+		if ( array() === $created ) {
+			return;
+		}
 
-			foreach ( array_diff( $this->category_ids(), $before, $used ) as $term_id ) {
+		try {
+			$used = function_exists( 'get_terms' ) ? get_terms(
+				array(
+					'taxonomy'   => 'layout_category',
+					'hide_empty' => true,
+					'fields'     => 'ids',
+				)
+			) : null;
+
+			if ( ! is_array( $used ) ) {
+				return;
+			}
+
+			foreach ( array_diff( $created, array_map( 'intval', $used ) ) as $term_id ) {
 				wp_delete_term( $term_id, 'layout_category' );
 			}
 		} catch ( \Throwable $e ) {

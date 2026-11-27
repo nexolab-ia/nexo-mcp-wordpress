@@ -963,7 +963,9 @@ final class ExtendedAbilityRegistrar {
 			'write',
 			DiviLibraryToolSpec::id_schema( 'Ítem de la biblioteca que se manda a la papelera.' ),
 			fn( array $input ) => $this->builders->delete_divi_library_item( $input ),
+			// Mandar a la papelera es delete_post, además de poder editar el ítem.
 			fn( array $input ) => $this->policy->can_write_divi_library( $this->library_item_id( $input ) )
+				&& ( null === $this->library_item_id( $input ) || current_user_can( 'delete_post', $this->library_item_id( $input ) ) )
 		);
 		$this->ability(
 			'restore-divi-library-item',

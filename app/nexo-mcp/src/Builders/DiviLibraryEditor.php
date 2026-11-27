@@ -359,6 +359,15 @@ final class DiviLibraryEditor {
 			return $editable;
 		}
 
+		// Mandar a la papelera y sacar de ella son `delete_post` y `untrash_post` (que WordPress mapea a `delete_post`), no `edit_post`.
+		if ( ( ! $restore || 'trash' === $post->post_status ) && ! current_user_can( 'delete_post', $id ) ) {
+			return new \WP_Error(
+				self::CODE_DENIED,
+				__( 'No tienes permiso para borrar este ítem de la biblioteca de Divi 5 (hace falta delete_post sobre él).', 'nexo-mcp' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		if ( ! $restore && defined( 'EMPTY_TRASH_DAYS' ) && 0 === (int) EMPTY_TRASH_DAYS ) {
 			return new \WP_Error(
 				'nexo_mcp_divi_library_trash_disabled',
@@ -522,12 +531,12 @@ final class DiviLibraryEditor {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function create_unlocked( array $parsed ) {
-		$known  = array() === (array) ( $parsed['categories'] ?? array() ) ? null : $this->schema->category_ids();
-		$result = $this->create_prepared( $parsed );
+		$created = array();
+		$result  = $this->create_prepared( $parsed, $created );
 
-		// Un alta que se deshace no deja las categorías nuevas que alcanzó a crear.
-		if ( $result instanceof \WP_Error && null !== $known ) {
-			$this->schema->drop_categories_since( $known );
+		// Un alta que se deshace no deja las categorías que creó ella misma (y sólo esas).
+		if ( $result instanceof \WP_Error ) {
+			$this->schema->drop_categories( $created );
 		}
 
 		return $result;
@@ -536,11 +545,12 @@ final class DiviLibraryEditor {
 	/**
 	 * Valida el árbol y crea el ítem; si algo falla después de crearlo, lo borra.
 	 *
-	 * @param array<string, mixed> $parsed Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 * @param array<string, mixed> $parsed  Entrada de {@see DiviLibrarySchema::parse_save()}.
+	 * @param array<int, int>      $created Se llena con los ids de las categorías que crea esta llamada.
 	 *
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	private function create_prepared( array $parsed ) {
+	private function create_prepared( array $parsed, array &$created ) {
 		$type     = (string) $parsed['type'];
 		$prepared = $this->prepare( $type, $parsed['nodes'] );
 
@@ -550,6 +560,7 @@ final class DiviLibraryEditor {
 
 		$scope      = (string) $parsed['scope'];
 		$categories = (array) ( $parsed['categories'] ?? array() );
+		$created    = $this->schema->ensure_categories( $categories );
 		$stored     = $this->schema->stored( $type, $scope, $prepared['module_type'] );
 		$marker     = bin2hex( random_bytes( 16 ) );
 		$meta       = array_merge( $stored['meta'], array( self::MARKER_META => $marker ) );
@@ -703,16 +714,14 @@ final class DiviLibraryEditor {
 			return $guard;
 		}
 
-		$known   = null === $parsed['categories'] ? null : $this->schema->category_ids();
+		$created = null === $parsed['categories'] ? array() : $this->schema->ensure_categories( $parsed['categories'] );
 		$failure = $this->apply( $id, $parsed, $prepared );
 
 		if ( null !== $failure ) {
 			$error = $this->restore_state( $id, $snapshot, $failure );
 
-			// Las categorías nuevas que alcanzó a crear no se quedan de sobra.
-			if ( null !== $known ) {
-				$this->schema->drop_categories_since( $known );
-			}
+			// Las categorías que creó esta llamada (sólo ésas) no se quedan de sobra.
+			$this->schema->drop_categories( $created );
 
 			return $error;
 		}
