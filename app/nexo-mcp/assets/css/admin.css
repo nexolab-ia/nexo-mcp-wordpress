@@ -945,9 +945,10 @@
 
 /* ------------------------------------------------------- Conectar: pasos */
 
+/* Secuencia vertical: círculo numerado y hilo que une un paso con el siguiente. */
 .nexo-mcp-admin .nexo-mcp-steps {
 	display: grid;
-	gap: 32px;
+	gap: 0;
 	margin: 0;
 	padding: 0;
 	counter-reset: nexo-step;
@@ -955,19 +956,50 @@
 }
 
 .nexo-mcp-admin .nexo-mcp-steps > li {
+	position: relative;
 	min-width: 0;
 	margin: 0;
+	padding: 0 0 32px 44px;
+	counter-increment: nexo-step;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li:last-child {
+	padding-bottom: 0;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li::before {
+	content: counter(nexo-step);
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: grid;
+	width: 28px;
+	height: 28px;
+	place-items: center;
+	border: 1px solid var(--nexo-primary);
+	border-radius: 50%;
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-primary-hover);
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.nexo-mcp-admin .nexo-mcp-steps > li:not(:last-child)::after {
+	content: "";
+	position: absolute;
+	top: 34px;
+	bottom: 6px;
+	left: 13px;
+	width: 2px;
+	background: var(--nexo-border);
 }
 
 .nexo-mcp-admin .nexo-mcp-step__title {
-	margin: 0 0 4px;
+	margin: 3px 0 4px;
+	color: var(--nexo-fg);
 	font-size: 14px;
-	font-weight: 500;
-}
-
-.nexo-mcp-step__title::before {
-	content: counter(nexo-step) ". ";
-	counter-increment: nexo-step;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-step__hint {
@@ -1006,9 +1038,11 @@
 	background: var(--nexo-muted-soft);
 }
 
+/* Elegido: borde teal doble, fondo teñido y marca de verificación (no sólo color). */
 .nexo-mcp-client-card:has(input:checked) {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-muted-soft);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-primary);
 }
 
 .nexo-mcp-client-card:has(input:focus-visible) {
@@ -1031,11 +1065,12 @@
 	height: 32px;
 	flex: none;
 	place-items: center;
-	border-radius: 8px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
 	background: var(--nexo-muted);
-	color: var(--nexo-muted-fg);
+	color: var(--nexo-muted-fg-strong);
 	font-size: 10px;
-	font-weight: 600;
+	font-weight: 700;
 }
 
 .nexo-mcp-client-card__mark img {
@@ -1053,7 +1088,7 @@
 .nexo-mcp-client-card__copy strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 	line-height: 1.3;
 }
 
@@ -1065,15 +1100,18 @@
 }
 
 .nexo-mcp-client-card__check {
-	width: 16px;
-	height: 16px;
+	width: 18px;
+	height: 18px;
 	flex: none;
+	padding: 2px;
+	border-radius: 50%;
+	background: var(--nexo-primary);
 	fill: none;
 	opacity: 0;
-	stroke: currentColor;
+	stroke: #fff;
 	stroke-linecap: round;
 	stroke-linejoin: round;
-	stroke-width: 2;
+	stroke-width: 3;
 }
 
 .nexo-mcp-client-card:has(input:checked) .nexo-mcp-client-card__check {
@@ -1088,11 +1126,12 @@
 	gap: 12px;
 }
 
+/* Tarjeta-radio: el círculo (::before) se rellena al elegir; el texto de la
+   tarjeta y la etiqueta «Recomendado» / «Sensible» dicen lo mismo con palabras. */
 .nexo-mcp-profile-card {
 	position: relative;
 	display: flex;
 	align-items: flex-start;
-	justify-content: space-between;
 	gap: 12px;
 	padding: 16px;
 	border: 1px solid var(--nexo-border);
@@ -1102,13 +1141,40 @@
 	transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.nexo-mcp-profile-card::before {
+	content: "";
+	width: 16px;
+	height: 16px;
+	flex: none;
+	margin-top: 2px;
+	border: 2px solid var(--nexo-input);
+	border-radius: 50%;
+	background: var(--nexo-bg);
+	box-sizing: border-box;
+}
+
+.nexo-mcp-profile-card__copy {
+	flex: 1;
+	min-width: 0;
+}
+
+.nexo-mcp-profile-card .nexo-mcp-tag {
+	flex: none;
+}
+
 .nexo-mcp-profile-card:hover {
 	background: var(--nexo-muted-soft);
 }
 
 .nexo-mcp-profile-card:has(input:checked) {
-	border-color: var(--nexo-fg);
-	background: var(--nexo-muted-soft);
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-primary);
+}
+
+.nexo-mcp-profile-card:has(input:checked)::before {
+	border-color: var(--nexo-primary);
+	background: radial-gradient(circle, var(--nexo-primary) 0 3px, var(--nexo-bg) 3.5px);
 }
 
 .nexo-mcp-profile-card:has(input:focus-visible) {
@@ -1118,6 +1184,17 @@
 .nexo-mcp-profile-card--sensitive:has(input:checked) {
 	border-color: var(--nexo-err);
 	background: var(--nexo-err-soft);
+	box-shadow: inset 0 0 0 1px var(--nexo-err);
+}
+
+.nexo-mcp-profile-card--sensitive:has(input:checked)::before {
+	border-color: var(--nexo-err);
+	background: radial-gradient(circle, var(--nexo-err) 0 3px, var(--nexo-bg) 3.5px);
+}
+
+.nexo-mcp-profile-card--sensitive:has(input:focus-visible),
+.nexo-mcp-profile-card:has(input:checked:focus-visible) {
+	box-shadow: var(--nexo-ring);
 }
 
 .nexo-mcp-profile-card:has(input:disabled) {
@@ -1128,7 +1205,7 @@
 .nexo-mcp-profile-card__copy strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-profile-card__copy small {
@@ -1161,50 +1238,38 @@
 	justify-content: space-between;
 	gap: 12px;
 	padding: 12px 16px;
+	border-bottom: 1px solid var(--nexo-border);
+	background: var(--nexo-muted-soft);
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
+/* Banda de la acción principal: clara, con filete teal al borde. */
 .nexo-mcp-recipe-band {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
 	padding: 16px;
-	background: var(--nexo-fg);
-	color: #fff;
+	border-left: 3px solid var(--nexo-primary);
+	background: var(--nexo-primary-soft);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-recipe-band strong {
 	display: block;
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-recipe-band p {
 	margin: 2px 0 0;
-	color: rgba(255, 255, 255, 0.8);
+	color: var(--nexo-muted-fg-strong);
 	font-size: 12px;
 }
 
-/* Botón claro sobre la banda oscura (variante secondary del diseño). */
-.nexo-mcp-admin .nexo-mcp-recipe-band .button,
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus,
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:active {
+.nexo-mcp-admin .nexo-mcp-recipe-band .button {
 	flex: none;
-	border-color: var(--nexo-muted);
-	background: var(--nexo-muted);
-	color: var(--nexo-fg);
-}
-
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:hover {
-	border-color: var(--nexo-accent-lt);
-	background: var(--nexo-accent-lt);
-	color: var(--nexo-fg);
-}
-
-.nexo-mcp-admin .nexo-mcp-recipe-band .button:focus-visible {
-	box-shadow: 0 0 0 2px var(--nexo-fg), 0 0 0 4px var(--nexo-accent);
 }
 
 /* Codex: la banda lleva pasos y el comando del puente. */
@@ -1222,10 +1287,13 @@
 .nexo-mcp-codex-native__mark {
 	flex: none;
 	padding: 3px 8px;
-	border: 1px solid rgba(255, 255, 255, 0.25);
-	border-radius: 8px;
+	border: 1px solid var(--nexo-primary);
+	border-radius: 4px;
+	background: var(--nexo-bg);
+	color: var(--nexo-primary-hover);
+	font-family: var(--nexo-mono);
 	font-size: 10px;
-	font-weight: 600;
+	font-weight: 700;
 	letter-spacing: 0.08em;
 }
 
@@ -1251,10 +1319,12 @@
 	height: 20px;
 	flex: none;
 	place-items: center;
-	border: 1px solid rgba(255, 255, 255, 0.3);
+	border: 1px solid var(--nexo-primary);
 	border-radius: 50%;
+	background: var(--nexo-bg);
+	color: var(--nexo-primary-hover);
 	font-size: 11px;
-	font-weight: 500;
+	font-weight: 700;
 }
 
 .nexo-mcp-admin .nexo-mcp-codex-native__steps p {
@@ -1273,17 +1343,24 @@
 	gap: 12px;
 }
 
+/* Comandos y configuración: superficie de código clara, mono, borde fino. */
+.nexo-mcp-admin .nexo-mcp-codex-native__actions code,
+.nexo-mcp-admin .nexo-mcp-copyfield--block code {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	color: var(--nexo-fg-soft);
+	font-family: var(--nexo-mono);
+	font-size: 12px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
 .nexo-mcp-admin .nexo-mcp-codex-native__actions code {
 	flex: 1;
 	min-width: 0;
-	margin: 0;
-	padding: 8px 10px;
-	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.08);
-	color: rgba(255, 255, 255, 0.8);
-	font-size: 11px;
-	line-height: 1.5;
-	overflow-wrap: anywhere;
 }
 
 /* Prueba de OAuth (sólo Codex). */
@@ -1299,7 +1376,7 @@
 .nexo-mcp-oauth-diagnostic strong {
 	display: block;
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic p {
@@ -1311,6 +1388,7 @@
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic__status {
 	grid-column: 1 / -1;
 	margin: 0;
+	font-weight: 600;
 }
 
 .nexo-mcp-admin .nexo-mcp-oauth-diagnostic[data-state="running"] .nexo-mcp-oauth-diagnostic__status {
@@ -1335,13 +1413,19 @@
 	padding: 12px 16px;
 	color: var(--nexo-muted-fg-strong);
 	font-size: 13px;
-	font-weight: 500;
+	font-weight: 600;
 	cursor: pointer;
 }
 
 .nexo-mcp-manual-details > summary:hover,
 .nexo-mcp-compat-fallback > summary:hover {
 	color: var(--nexo-fg);
+}
+
+.nexo-mcp-manual-details > summary:focus-visible,
+.nexo-mcp-compat-fallback > summary:focus-visible {
+	outline: 2px solid var(--nexo-focus);
+	outline-offset: -2px;
 }
 
 .nexo-mcp-manual-details__body {
@@ -1363,14 +1447,8 @@
 .nexo-mcp-admin .nexo-mcp-copyfield--block code {
 	display: block;
 	width: 100%;
-	margin: 0;
 	padding: 12px 14px;
-	border-radius: var(--nexo-radius-md);
-	background: var(--nexo-fg);
-	color: #f5f5f5;
-	font-size: 12px;
-	line-height: 1.6;
-	overflow-wrap: anywhere;
+	background: var(--nexo-muted-soft);
 	white-space: pre-wrap;
 }
 
@@ -2918,5 +2996,13 @@
 	.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth,
 	.nexo-mcp-log tbody tr td {
 		transition: none;
+	}
+}
+
+/* Conectar: bajo 1100px los clientes y los pasos de Codex pasan a dos columnas. */
+@media (max-width: 1099px) {
+	.nexo-mcp-client-grid,
+	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
