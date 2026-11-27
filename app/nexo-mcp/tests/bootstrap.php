@@ -61,6 +61,8 @@ final class WP_Test_State {
 
 	/** @var array<int, array<string, array<string, int>>> Términos por contenido y taxonomía: slug => ID. */
 	public static array $terms = array();
+	/** Taxonomía cuya lectura de términos falla con WP_Error (doble de una taxonomía sin registrar). */
+	public static ?string $terms_error = null;
 
 	/** @var array<int, array<string, mixed>> */
 	public static array $audit = array();
@@ -154,6 +156,7 @@ final class WP_Test_State {
 		self::$abilities = array();
 		self::$object_taxonomies = array();
 		self::$terms     = array();
+		self::$terms_error = null;
 		self::$audit     = array();
 		self::$rate_hits = array();
 		self::$hooks     = array();
@@ -628,9 +631,12 @@ function get_object_taxonomies( $object_type, $output = 'names' ) {
 	return WP_Test_State::$object_taxonomies[ (string) $object_type ] ?? array();
 }
 function wp_get_object_terms( $object_ids, $taxonomies, $args = array() ) {
+	if ( WP_Test_State::$terms_error === (string) $taxonomies ) {
+		return new WP_Error( 'invalid_taxonomy', 'Invalid taxonomy.' );
+	}
 	$terms  = WP_Test_State::$terms[ (int) $object_ids ][ (string) $taxonomies ] ?? array();
 	$fields = $args['fields'] ?? 'all';
-	if ( 'slugs' === $fields ) {
+	if ( 'slugs' === $fields || 'names' === $fields ) {
 		return array_map( 'strval', array_keys( $terms ) );
 	}
 	if ( 'ids' === $fields ) {
@@ -710,7 +716,16 @@ function wp_update_post( $data, $wp_error = false ) {
 
 if ( ! function_exists( 'has_filter' ) ) {
 	function has_filter( $hook, $callback = false ) {
-		return 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ? 10 : false;
+		if ( 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback && WP_Test_State::$kses_active ) {
+			return 10;
+		}
+		// Los filtros que la prueba registró con `add_filter()`.
+		foreach ( WP_Test_State::$hooks as $registered ) {
+			if ( $registered[0] === $hook && $registered[1] === $callback ) {
+				return $registered[2];
+			}
+		}
+		return false;
 	}
 }
 if ( ! function_exists( 'kses_remove_filters' ) ) {
@@ -742,12 +757,21 @@ function wp_trash_post( $post_id ) {
 	if ( ! isset( WP_Test_State::$posts[ (int) $post_id ] ) ) {
 		return false;
 	}
+	// Como WordPress: un filtro `pre_trash_post` que devuelve algo distinto de null corta el borrado con ese valor.
+	foreach ( WP_Test_State::$hooks as $registered ) {
+		if ( 'pre_trash_post' === $registered[0] ) {
+			$check = call_user_func( $registered[1], null, WP_Test_State::$posts[ (int) $post_id ] );
+			if ( null !== $check ) {
+				return $check;
+			}
+		}
+	}
 	WP_Test_State::$posts[ (int) $post_id ]->post_status = 'trash';
 	return WP_Test_State::$posts[ (int) $post_id ];
 }
 function wp_delete_post( $post_id, $force = false ) {
 	$post = WP_Test_State::$posts[ (int) $post_id ] ?? false;
-	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ], WP_Test_State::$multi_meta[ (int) $post_id ] );
+	unset( WP_Test_State::$posts[ (int) $post_id ], WP_Test_State::$meta[ (int) $post_id ], WP_Test_State::$multi_meta[ (int) $post_id ], WP_Test_State::$terms[ (int) $post_id ] );
 	return $post;
 }
 

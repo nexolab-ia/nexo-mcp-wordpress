@@ -57,9 +57,9 @@ final class DiviThemeBuilderPermissionTest extends NexoTestCase {
 		$switches = ( new \ReflectionClassConstant( ScopeMap::class, 'MODULE_SWITCH' ) )->getValue();
 		$labels   = ( new \ReflectionClassConstant( ScopeMap::class, 'LABELS' ) )->getValue();
 
-		$this->assertSame( 'mcp:divi_conditions', array_key_last( array_slice( $switches, 0, -1, true ) ) );
-		$this->assertSame( self::SCOPE, array_key_last( $switches ) );
-		$this->assertSame( self::SWITCH, end( $switches ) );
+		$keys = array_keys( $switches );
+		$this->assertSame( self::SCOPE, $keys[ array_search( 'mcp:divi_conditions', $keys, true ) + 1 ], 'va justo tras condiciones; la biblioteca se agrega después' );
+		$this->assertSame( self::SWITCH, $switches[ self::SCOPE ] );
 		$this->assertSame( 'divi_conditions_tools_enabled', $switches['mcp:divi_conditions'] );
 		$this->assertSame( 'divi_dynamic_tools_enabled', $switches['mcp:divi_dynamic'] );
 		$this->assertSame( 'divi_presets_tools_enabled', $switches['mcp:divi_presets'] );
@@ -303,8 +303,8 @@ final class DiviThemeBuilderPermissionTest extends NexoTestCase {
 		$this->assertSame( $header[1], $constant[1], 'cabecera y constante coinciden' );
 		$this->assertSame( $header[1], $stable[1], 'cabecera y Stable tag coinciden' );
 		$this->assertTrue( version_compare( $header[1], '1.11.0', '>' ), 'maybe_upgrade sólo concede la capacidad si la versión cambia respecto a la instalada (1.11.0)' );
-		$this->assertStringContainsString( '= ' . $header[1] . ' =', $readme, 'el changelog documenta esta versión' );
-		$this->assertStringContainsString( 'mcp:divi_theme_builder', substr( $readme, (int) strpos( $readme, '= ' . $header[1] . ' =' ), 600 ), 'y menciona el scope nuevo' );
+		$this->assertStringContainsString( '= 1.12.0 =', $readme, 'el changelog documenta la versión que trajo la capacidad' );
+		$this->assertStringContainsString( 'mcp:divi_theme_builder', substr( $readme, (int) strpos( $readme, '= 1.12.0 =' ), 600 ), 'y menciona el scope nuevo' );
 	}
 
 	private function input_tag( string $html ): string {

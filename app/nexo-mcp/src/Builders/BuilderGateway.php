@@ -1179,6 +1179,79 @@ final class BuilderGateway {
 	}
 
 	/**
+	 * Lista los ítems de la biblioteca de Divi 5 (sólo lee).
+	 *
+	 * Exige el permiso de la biblioteca (`PermissionPolicy::can_write_divi_library()`) ANTES de mirar la entrada. Ver {@see DiviLibraryEditor}.
+	 *
+	 * @param array<string, mixed> $input Filtros: `type`, `scope`, `category`, `search`, `limit`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function list_divi_library( array $input ) {
+		return $this->library_editor()->list_items( $input );
+	}
+
+	/**
+	 * Lee un ítem de la biblioteca de Divi 5 con la lista de sus nodos.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function get_divi_library_item( array $input ) {
+		return $this->library_editor()->get_item( $input );
+	}
+
+	/**
+	 * Crea (sin `id`) o actualiza (con `id`) un ítem de la biblioteca de Divi 5.
+	 *
+	 * Exige el permiso de la biblioteca (con el id del ítem si lo hay) ANTES de mirar la entrada. Ver {@see DiviLibraryEditor::save_item()}.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id?`, `title`, `type`, `scope`, `nodes`, `categories`, `replace_foreign`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function save_divi_library_item( array $input ) {
+		return $this->library_editor()->save_item( $input );
+	}
+
+	/**
+	 * Manda un ítem de la biblioteca de Divi 5 a la papelera, con respaldo.
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function delete_divi_library_item( array $input ) {
+		return $this->library_editor()->delete_item( $input );
+	}
+
+	/**
+	 * Devuelve un ítem de la biblioteca de Divi 5 al estado de su respaldo (también uno borrado).
+	 *
+	 * @param array<string, mixed> $input Parámetros: `id`.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function restore_divi_library_item( array $input ) {
+		return $this->library_editor()->restore_item( $input );
+	}
+
+	/**
+	 * Editor de la biblioteca de Divi 5 con los componentes de producción.
+	 */
+	private function library_editor(): DiviLibraryEditor {
+		return new DiviLibraryEditor(
+			new DiviLibrarySchema(),
+			new DiviLibraryBackup(),
+			$this->divi_validator(),
+			fn( ?int $item_id ): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_library( $item_id ),
+			null,
+			$this->divi_presets_lock()
+		);
+	}
+
+	/**
 	 * Editor de plantillas del Theme Builder con los componentes de producción.
 	 */
 	private function template_editor(): DiviTemplateEditor {
@@ -1201,20 +1274,7 @@ final class BuilderGateway {
 			return $post;
 		}
 
-		$editor = new Divi5SectionEditor(
-			$this->settings,
-			new Divi5Adapter(),
-			$this->backup,
-			new WorkingCopy( $this->settings ),
-			$this->divi_validator(),
-			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
-			null,
-			null,
-			null,
-			$this->divi_presets_lock(),
-			$this->divi_conditions,
-			$this->layout_allowed_callable()
-		);
+		$editor = $this->divi_section_editor( $this->divi_validator() );
 
 		return $editor->edit(
 			$post,
@@ -1226,6 +1286,48 @@ final class BuilderGateway {
 				'sections'    => $input['sections'] ?? null,
 				'draft'       => $input['draft'] ?? false,
 			)
+		);
+	}
+
+	/**
+	 * Inserta un ítem de la biblioteca de Divi 5 en una página, como copia o como referencia global, en la copia de trabajo.
+	 *
+	 * Exige el permiso de la biblioteca (con el id del ítem) ANTES de mirar la entrada y el de constructores sobre la página.
+	 * Ver {@see DiviLibraryInserter}.
+	 *
+	 * @param array<string, mixed> $input Parámetros de la herramienta.
+	 *
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function insert_divi_library_item( array $input ) {
+		return ( new DiviLibraryInserter(
+			new DiviLibrarySchema(),
+			fn( ?int $item_id ): bool => ( new PermissionPolicy( $this->settings ) )->can_write_divi_library( $item_id ),
+			array( Divi5ContentWriter::class, 'divi5_installed' ),
+			fn( int $post_id ) => $this->resolve_page_or_copy( array( 'id' => $post_id ) ),
+			fn( \WP_Post $page, array $edit, bool $global_refs ) => $this->divi_section_editor( $global_refs ? $this->divi_validator()->with_global_refs() : $this->divi_validator() )->edit( $page, $edit )
+		) )->insert( $input );
+	}
+
+	/**
+	 * Editor de secciones de Divi 5 con los componentes de producción y el validador dado.
+	 *
+	 * @param DiviTreeValidator $validator Validador del subárbol.
+	 */
+	private function divi_section_editor( DiviTreeValidator $validator ): Divi5SectionEditor {
+		return new Divi5SectionEditor(
+			$this->settings,
+			new Divi5Adapter(),
+			$this->backup,
+			new WorkingCopy( $this->settings ),
+			$validator,
+			fn( \WP_Post $locked ) => $this->locked_by_other( $locked ),
+			null,
+			null,
+			null,
+			$this->divi_presets_lock(),
+			$this->divi_conditions,
+			$this->layout_allowed_callable()
 		);
 	}
 
