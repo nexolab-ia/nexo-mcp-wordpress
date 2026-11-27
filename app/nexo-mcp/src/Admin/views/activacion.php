@@ -28,12 +28,8 @@ defined( 'ABSPATH' ) || exit;
 	<div class="nexo-mcp-onboarding__sheet">
 		<aside class="nexo-mcp-onboarding__aside">
 			<div class="nexo-mcp-onboarding__brand">
-				<img
-					src="<?php echo esc_url( plugins_url( 'assets/images/logo-nexo.svg', NEXO_MCP_FILE ) ); ?>"
-					alt="<?php esc_attr_e( 'Nexo MCP', 'nexo-mcp' ); ?>"
-					width="153"
-					height="28"
-				>
+				<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M8 24 L8 8 L24 24 L24 8" fill="none" stroke="#22d3ee" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="3.4" fill="#0f172a"/><circle cx="24" cy="24" r="3.4" fill="#0f172a"/><circle cx="8" cy="24" r="2.4" fill="#22d3ee"/><circle cx="24" cy="8" r="2.4" fill="#2dd4bf"/></svg>
+				<span class="nexo-mcp-onboarding__wordmark"><b>nexo</b> <span><?php esc_html_e( 'MCP', 'nexo-mcp' ); ?></span></span>
 			</div>
 
 			<ol class="nexo-mcp-onboarding__steps">

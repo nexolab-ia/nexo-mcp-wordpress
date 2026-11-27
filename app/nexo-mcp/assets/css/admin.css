@@ -2637,24 +2637,14 @@
 }
 
 .nexo-mcp-onboarding__aside {
-	position: relative;
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
 	gap: 32px;
 	padding: 32px;
-	background: var(--nexo-fg);
-	color: #fff;
-}
-
-.nexo-mcp-onboarding__aside::after {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	height: 4px;
-	background: var(--nexo-accent);
-	content: "";
+	border-right: 1px solid var(--nexo-border);
+	background: var(--nexo-muted-soft);
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-onboarding__brand {
@@ -2663,24 +2653,23 @@
 	gap: 10px;
 }
 
-.nexo-mcp-onboarding__brand img {
-	display: block;
-	width: auto;
-	height: 28px;
+.nexo-mcp-onboarding__brand svg {
+	flex: none;
 }
 
-/* Marca antigua de la vista de registro por email (sin uso hoy). */
-.nexo-mcp-onboarding__brand span {
-	font-size: 18px;
-	font-weight: 600;
+.nexo-mcp-onboarding__wordmark {
+	color: var(--nexo-fg);
+	font-size: 22px;
+	line-height: 1.2;
 }
 
-.nexo-mcp-admin .nexo-mcp-onboarding__product {
-	margin: 8px 0 0;
-	font-size: 10px;
-	letter-spacing: 0.18em;
-	opacity: 0.6;
-	text-transform: uppercase;
+.nexo-mcp-onboarding__wordmark b {
+	font-weight: 800;
+}
+
+.nexo-mcp-onboarding__wordmark span {
+	color: var(--nexo-muted-fg);
+	font-weight: 300;
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__steps {
@@ -2695,36 +2684,50 @@
 	display: flex;
 	gap: 12px;
 	margin: 0;
-	opacity: 0.55;
+	color: var(--nexo-muted-fg);
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__steps li.is-current {
-	opacity: 1;
+	color: var(--nexo-fg);
 }
 
 .nexo-mcp-onboarding__steps span {
-	padding-top: 2px;
+	flex: none;
+	align-self: flex-start;
+	min-width: 28px;
+	padding: 2px 0;
+	border: 1px solid var(--nexo-border);
+	border-radius: var(--nexo-radius-md);
+	background: var(--nexo-bg);
+	font-family: var(--nexo-mono);
 	font-size: 11px;
-	font-weight: 500;
-	letter-spacing: 0.1em;
+	font-weight: 600;
+	text-align: center;
+}
+
+.nexo-mcp-onboarding__steps li.is-current span {
+	border-color: var(--nexo-primary);
+	background: var(--nexo-primary);
+	color: #fff;
 }
 
 .nexo-mcp-onboarding__steps strong {
 	display: block;
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 }
 
 .nexo-mcp-onboarding__steps small {
 	display: block;
+	color: var(--nexo-muted-fg);
 	font-size: 12px;
-	opacity: 0.75;
 }
 
 .nexo-mcp-admin .nexo-mcp-onboarding__version {
 	margin: 0;
+	color: var(--nexo-muted-fg);
+	font-family: var(--nexo-mono);
 	font-size: 11px;
-	opacity: 0.5;
 }
 
 .nexo-mcp-onboarding__main {
@@ -2763,6 +2766,12 @@
 .nexo-mcp-admin .nexo-mcp-registration__form input[name="code"] {
 	font-family: var(--nexo-mono);
 	letter-spacing: 0.06em;
+}
+
+.nexo-mcp-admin .nexo-mcp-registration__form input:focus-visible {
+	border-color: var(--nexo-focus);
+	box-shadow: var(--nexo-ring);
+	outline: 2px solid transparent;
 }
 
 .nexo-mcp-registration__consent {
@@ -2958,6 +2967,8 @@
 
 	.nexo-mcp-onboarding__aside {
 		padding: 24px;
+		border-right: 0;
+		border-bottom: 1px solid var(--nexo-border);
 	}
 
 	.nexo-mcp-onboarding__main {
