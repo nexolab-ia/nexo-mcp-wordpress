@@ -87,7 +87,7 @@ final class DashboardTabsTest extends NexoTestCase {
 	}
 
 	private function panel( string $html, string $id ): string {
-		$start = (int) strpos( $html, 'data-nexo-panel="' . $id . '"' );
+		$start = $this->pos( $html, 'data-nexo-panel="' . $id . '"' );
 		$next  = strpos( $html, 'data-nexo-panel="', $start + 10 );
 		$end   = false === $next ? strlen( $html ) : $next;
 
@@ -96,10 +96,10 @@ final class DashboardTabsTest extends NexoTestCase {
 
 	/** Etiqueta de apertura del panel `$id` (atributos incluidos). */
 	private function panel_tag( string $html, string $id ): string {
-		$start = (int) strpos( $html, 'id="nexo-mcp-panel-' . $id . '"' );
+		$start = $this->pos( $html, 'id="nexo-mcp-panel-' . $id . '"' );
 		$from  = (int) strrpos( substr( $html, 0, $start ), '<section' );
 
-		return substr( $html, $from, (int) strpos( $html, '>', $start ) - $from );
+		return substr( $html, $from, $this->pos( $html, '>', $start ) - $from );
 	}
 
 	/** @return list<array<string, mixed>> */
@@ -137,8 +137,8 @@ final class DashboardTabsTest extends NexoTestCase {
 
 	public function test_hay_exactamente_cinco_pestanas_en_orden(): void {
 		$html = $this->render();
-		$nav  = substr( $html, (int) strpos( $html, '<nav class="nexo-mcp-tabs"' ) );
-		$nav  = substr( $nav, 0, (int) strpos( $nav, '</nav>' ) );
+		$nav  = substr( $html, $this->pos( $html, '<nav class="nexo-mcp-tabs"' ) );
+		$nav  = substr( $nav, 0, $this->pos( $nav, '</nav>' ) );
 
 		preg_match_all( '/class="nexo-mcp-tab"[^>]*data-nexo-tab="([a-z]+)"/s', $nav, $m );
 
@@ -159,7 +159,7 @@ final class DashboardTabsTest extends NexoTestCase {
 
 		$this->assertStringNotContainsString( 'hidden', $this->panel_tag( $html, 'resumen' ) );
 		$this->assertStringContainsString( 'hidden', $this->panel_tag( $html, 'sistema' ) );
-		$this->assertSame( 1, substr_count( substr( $html, (int) strpos( $html, '<nav class="nexo-mcp-tabs"' ), 1500 ), 'aria-current="page"' ) );
+		$this->assertSame( 1, substr_count( substr( $html, $this->pos( $html, '<nav class="nexo-mcp-tabs"' ), 1500 ), 'aria-current="page"' ) );
 	}
 
 	public function test_sistema_agrupa_sus_cinco_secciones_en_orden_con_el_ancla_de_soporte(): void {
@@ -173,7 +173,7 @@ final class DashboardTabsTest extends NexoTestCase {
 			$last = (int) $pos;
 		}
 
-		$this->assertGreaterThan( $last, (int) strpos( $sistema, 'id="nexo-mcp-reportar"' ), 'el ancla de reporte vive dentro de Soporte' );
+		$this->assertGreaterThan( $last, $this->pos( $sistema, 'id="nexo-mcp-reportar"' ), 'el ancla de reporte vive dentro de Soporte' );
 		$this->assertStringContainsString( 'id="nexo-mcp-endpoint-url"', $sistema );
 		$this->assertStringContainsString( 'nexo-mcp-discovery"', $sistema, 'la tarjeta de descubrimiento vive en Endpoint' );
 		$this->assertStringContainsString( 'Aún no hay actividad registrada.', $sistema );

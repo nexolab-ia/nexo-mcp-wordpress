@@ -155,8 +155,8 @@ final class ConnectionMapTest extends NexoTestCase {
 		require dirname( __DIR__ ) . '/src/Admin/views/dashboard.php';
 		$html = (string) ob_get_clean();
 
-		$start = (int) strpos( $html, '<header class="nexo-mcp-map"' );
-		$end   = (int) strpos( $html, '</header>', $start );
+		$start = $this->pos( $html, '<header class="nexo-mcp-map"' );
+		$end   = $this->pos( $html, '</header>', $start );
 
 		return substr( $html, $start, $end - $start + 9 );
 	}

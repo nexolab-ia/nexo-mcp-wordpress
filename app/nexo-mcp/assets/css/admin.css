@@ -758,12 +758,23 @@
 	box-shadow: inset 3px 0 0 var(--nexo-primary);
 }
 
+/* Nombre y chip en una línea; si no caben, el nombre se parte y el chip no. */
+.nexo-mcp-modrow__name {
+	display: flex;
+	flex-wrap: nowrap;
+	gap: 8px;
+	align-items: center;
+	min-width: 0;
+}
+
 .nexo-mcp-modrow__name strong {
+	min-width: 0;
 	font-size: 14px;
 }
 
 .nexo-mcp-modrow__name .nexo-mcp-tag {
-	margin-left: 8px;
+	flex: none;
+	white-space: nowrap;
 }
 
 .nexo-mcp-modrow__scopes code,
@@ -1003,7 +1014,7 @@
 /* ------------------------------------------------------- Conectar: pasos */
 
 /* Secuencia vertical: círculo numerado y hilo que une un paso con el siguiente. */
-.nexo-mcp-admin .nexo-mcp-steps {
+.nexo-mcp-admin .nexo-mcp-oauth-steps {
 	display: grid;
 	gap: 0;
 	margin: 0;
@@ -1012,7 +1023,7 @@
 	list-style: none;
 }
 
-.nexo-mcp-admin .nexo-mcp-steps > li {
+.nexo-mcp-admin .nexo-mcp-oauth-steps > li {
 	position: relative;
 	min-width: 0;
 	margin: 0;
@@ -1020,11 +1031,11 @@
 	counter-increment: nexo-step;
 }
 
-.nexo-mcp-admin .nexo-mcp-steps > li:last-child {
+.nexo-mcp-admin .nexo-mcp-oauth-steps > li:last-child {
 	padding-bottom: 0;
 }
 
-.nexo-mcp-admin .nexo-mcp-steps > li::before {
+.nexo-mcp-admin .nexo-mcp-oauth-steps > li::before {
 	content: counter(nexo-step);
 	position: absolute;
 	top: 0;
@@ -1042,7 +1053,7 @@
 	line-height: 1;
 }
 
-.nexo-mcp-admin .nexo-mcp-steps > li:not(:last-child)::after {
+.nexo-mcp-admin .nexo-mcp-oauth-steps > li:not(:last-child)::after {
 	content: "";
 	position: absolute;
 	top: 34px;
@@ -2074,6 +2085,11 @@
 	white-space: nowrap;
 }
 
+/* Herramienta: el nombre no se parte; la tabla se desplaza dentro de su envoltorio. */
+.nexo-mcp-log__tool code {
+	white-space: nowrap;
+}
+
 .nexo-mcp-log__detail {
 	min-width: 140px;
 	color: var(--nexo-fg-soft);
@@ -2851,7 +2867,8 @@
 	}
 }
 
-@media (max-width: 960px) {
+/* Conectar: bajo 1100px los clientes y los pasos de Codex pasan a dos columnas (una bajo 783px, más abajo). */
+@media (max-width: 1099px) {
 	.nexo-mcp-client-grid,
 	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3050,13 +3067,5 @@
 	.nexo-mcp-admin .nexo-mcp-conn-card .nexo-mcp-revoke-oauth,
 	.nexo-mcp-log tbody tr td {
 		transition: none;
-	}
-}
-
-/* Conectar: bajo 1100px los clientes y los pasos de Codex pasan a dos columnas. */
-@media (max-width: 1099px) {
-	.nexo-mcp-client-grid,
-	.nexo-mcp-admin .nexo-mcp-codex-native__steps {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }

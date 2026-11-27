@@ -54,8 +54,8 @@ final class DashboardConnectTabTest extends NexoTestCase {
 
 	private function panel( bool $https = true ): string {
 		$html  = $this->render( $https );
-		$start = (int) strpos( $html, 'data-nexo-panel="conectar"' );
-		$end   = (int) strpos( $html, 'data-nexo-panel="accesos"', $start );
+		$start = $this->pos( $html, 'data-nexo-panel="conectar"' );
+		$end   = $this->pos( $html, 'data-nexo-panel="accesos"', $start );
 
 		return substr( $html, $start, $end - $start );
 	}
@@ -65,7 +65,7 @@ final class DashboardConnectTabTest extends NexoTestCase {
 		$last  = -1;
 
 		foreach ( array( '¿Con qué IA quieres conectar WordPress?', 'Elige qué podrá hacer la IA', 'Sigue el método recomendado', 'Autoriza en el navegador' ) as $title ) {
-			$pos = (int) strpos( $panel, $title );
+			$pos = $this->pos( $panel, $title );
 			$this->assertGreaterThan( $last, $pos, $title );
 			$last = $pos;
 		}
@@ -94,5 +94,20 @@ final class DashboardConnectTabTest extends NexoTestCase {
 	public function test_aviso_https_solo_sin_https(): void {
 		$this->assertStringNotContainsString( 'nexo-mcp-oauth-warning', $this->panel( true ) );
 		$this->assertStringContainsString( 'Este sitio no usa HTTPS.', $this->panel( false ) );
+	}
+
+	public function test_la_lista_de_pasos_de_conectar_lleva_su_clase_propia(): void {
+		$panel = $this->panel();
+
+		$this->assertSame( 1, substr_count( $panel, '<ol class="nexo-mcp-steps nexo-mcp-oauth-steps">' ) );
+		$this->assertSame( 1, substr_count( $this->render(), 'nexo-mcp-steps' ), 'ninguna otra lista del panel usa la clase de los pasos' );
+	}
+
+	public function test_los_circulos_y_el_hilo_de_los_pasos_solo_alcanzan_la_lista_de_conectar(): void {
+		$css = (string) file_get_contents( dirname( __DIR__ ) . '/assets/css/admin.css' );
+
+		$this->assertStringNotContainsString( '.nexo-mcp-steps', $css, 'los estilos de pasos cuelgan de .nexo-mcp-oauth-steps, no de la clase genérica' );
+		$this->assertStringContainsString( '.nexo-mcp-admin .nexo-mcp-oauth-steps > li::before', $css );
+		$this->assertStringContainsString( '.nexo-mcp-admin .nexo-mcp-oauth-steps > li:not(:last-child)::after', $css );
 	}
 }

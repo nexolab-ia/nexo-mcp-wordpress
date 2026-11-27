@@ -69,6 +69,9 @@ final class WP_Test_State {
 
 	public static int $user_id = 1;
 
+	/** Login del usuario actual (`wp_get_current_user()`). */
+	public static string $user_login = 'admin';
+
 	/** @var array<string, WP_Role_Double> Roles de WordPress simulados. */
 	public static array $roles = array();
 
@@ -900,4 +903,17 @@ function sanitize_html_class( $class ) { return (string) preg_replace( '/[^A-Za-
 function settings_errors( ...$args ): void {}
 function settings_fields( $group ): void {}
 function submit_button( ...$args ): void {}
-function wp_nonce_field( ...$args ): void {}
+/**
+ * Campo de nonce reconocible: sólo se devuelve con `$display = false` (como WordPress);
+ * al imprimirlo, sigue sin escribir nada (los renders del panel no lo necesitan).
+ */
+function wp_nonce_field( $action = -1, $name = '_wpnonce', $referer = true, $display = true ) {
+	if ( $display ) {
+		return;
+	}
+
+	return sprintf( '<input type="hidden" id="%1$s" name="%1$s" value="nonce-for-%2$s" />', $name, $action );
+}
+function wp_get_current_user(): object { return (object) array( 'user_login' => WP_Test_State::$user_login ); }
+function status_header( $code ): void {}
+function get_locale(): string { return 'es_ES'; }

@@ -611,18 +611,22 @@ final class AuthorizationController {
 	 */
 	private function styles(): string {
 		return ":root{
-			--bg:#e9eef4; --panel:#f8fafc; --fg:#0f172a; --fg-soft:#475569; --muted:#475569;
+			/* Paleta base: cada literal vive aquí una sola vez. */
+			--slate-200:#e2e8f0; --slate-300:#cbd5e1; --slate-muted:#a5b4c8; --slate-700:#334155;
+			--bg:#e9eef4; --panel:#f8fafc; --fg:#0f172a; --fg-soft:#475569; --muted:var(--fg-soft);
 			--border:#c7d2de; --input:#64748b; --row:#eef2f7; --rail:#0f172a;
+			--rail-fg:var(--slate-200); --rail-muted:var(--slate-muted); --rail-line:var(--slate-700);
 			--primary:#0f766e; --primary-hover:#115e59; --accent:#22d3ee; --focus:#4f46e5;
+			--accent-ink:var(--primary);
 			--err:#b91c1c;
 			--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
 			--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 		}
 		@media (prefers-color-scheme:dark){
 			:root{
-				--bg:#0b1220; --panel:#111c2e; --fg:#e2e8f0; --fg-soft:#cbd5e1; --muted:#a5b4c8;
-				--border:#334155; --input:#64748b; --row:#16233a; --rail:#0f172a;
-				--primary:#0f766e; --primary-hover:#115e59; --focus:#22d3ee;
+				--bg:#0b1220; --panel:#111c2e; --fg:var(--slate-200); --fg-soft:var(--slate-300); --muted:var(--slate-muted);
+				--border:var(--slate-700); --row:#16233a;
+				--focus:#22d3ee; --accent-ink:#5eead4;
 				--err:#f87171;
 			}
 		}
@@ -645,31 +649,30 @@ final class AuthorizationController {
 
 		/* ---------- Banda de identidad ---------- */
 		.rail{
-			position:relative; background:var(--rail); color:#e2e8f0;
+			position:relative; background:var(--rail); color:var(--rail-fg);
 			border-bottom:3px solid var(--accent);
 			padding:28px 24px 32px; display:flex; flex-direction:column; gap:24px;
 		}
 		.rail-top{display:flex;flex-direction:column;gap:10px}
 		.logo{display:block;width:auto;height:26px;max-width:100%}
-		.sig-sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4c8}
+		.sig-sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--rail-muted)}
 		.rail-meta{margin-top:auto;display:grid;gap:16px}
 		.rail-meta div{display:flex;flex-direction:column;gap:2px}
-		.rail-meta dt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#a5b4c8}
+		.rail-meta dt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--rail-muted)}
 		.rail-meta dd{font-size:14px;font-weight:600;word-break:break-word}
 		.rail-foot{
 			display:flex; flex-direction:column; gap:2px;
-			padding-top:16px; border-top:1px solid #334155;
+			padding-top:16px; border-top:1px solid var(--rail-line);
 		}
 		.ver{font-size:13px;font-weight:600}
-		.proto{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a5b4c8}
+		.proto{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--rail-muted)}
 
 		/* ---------- Zona de decisión ---------- */
 		.stage{padding:32px;display:flex;flex-direction:column}
 		.eyebrow{
 			font-size:12px; letter-spacing:.08em; text-transform:uppercase;
-			color:var(--primary); font-weight:700; margin-bottom:8px;
+			color:var(--accent-ink); font-weight:700; margin-bottom:8px;
 		}
-		@media (prefers-color-scheme:dark){.eyebrow{color:#5eead4}}
 		.eyebrow--halt{color:var(--err)}
 		.title{
 			font-size:clamp(22px,3.6vw,28px); font-weight:700; letter-spacing:-.2px;
@@ -697,9 +700,8 @@ final class AuthorizationController {
 		/* Visto dibujado con bordes: sin imágenes ni íconos externos. */
 		.tick{
 			width:6px; height:11px; justify-self:center; margin-top:-3px;
-			border:solid var(--primary); border-width:0 2px 2px 0; transform:rotate(45deg);
+			border:solid var(--accent-ink); border-width:0 2px 2px 0; transform:rotate(45deg);
 		}
-		@media (prefers-color-scheme:dark){.tick{border-color:#5eead4}}
 
 		/* ---------- Acciones ---------- */
 		.decide{display:flex;gap:10px;margin-top:24px}

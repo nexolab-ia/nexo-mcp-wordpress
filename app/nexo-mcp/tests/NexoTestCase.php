@@ -135,4 +135,18 @@ abstract class NexoTestCase extends TestCase {
 			( new \ReflectionProperty( BearerTokenGuard::class, $property ) )->setValue( null, $value );
 		}
 	}
+
+	/**
+	 * Posición de un marcador en el HTML; falla la prueba si no está (en vez de leer 0).
+	 *
+	 * @param string $haystack Texto donde buscar.
+	 * @param string $needle   Marcador esperado.
+	 * @param int    $offset   Posición desde la que buscar.
+	 */
+	protected function pos( string $haystack, string $needle, int $offset = 0 ): int {
+		$position = strpos( $haystack, $needle, $offset );
+		$this->assertNotFalse( $position, 'falta el marcador: ' . $needle );
+
+		return (int) $position;
+	}
 }
